@@ -165,7 +165,7 @@ func (t *Tree) TerminateAndConfirm(ctx context.Context) (TerminationProof, error
 	if err := t.job.Terminate(); err != nil {
 		return TerminationProof{}, fmt.Errorf("terminate job object: %w", err)
 	}
-	if err := t.waitForNoActiveLocked(ctx); err != nil {
+	if err := waitForNoActive(ctx, t.job); err != nil {
 		return TerminationProof{}, err
 	}
 
@@ -203,7 +203,7 @@ func (t *Tree) WaitAndConfirm(ctx context.Context) (TerminationProof, error) {
 	if t.closed {
 		return TerminationProof{}, errors.New("process tree already closed without termination proof")
 	}
-	if err := t.waitForNoActiveLocked(ctx); err != nil {
+	if err := waitForNoActive(ctx, t.job); err != nil {
 		return TerminationProof{}, err
 	}
 	select {
@@ -220,12 +220,12 @@ func (t *Tree) WaitAndConfirm(ctx context.Context) (TerminationProof, error) {
 	return proof, nil
 }
 
-func (t *Tree) waitForNoActiveLocked(ctx context.Context) error {
+func waitForNoActive(ctx context.Context, job *winjob.JobObject) error {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		var c winjob.Counters
-		if err := t.job.QueryCounters(&c); err != nil {
+		if err := job.QueryCounters(&c); err != nil {
 			return fmt.Errorf("query job counters: %w", err)
 		}
 		if c.ActiveProcesses == 0 {

@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 2
+const latestSchemaVersion = 3
 
 type SQLite struct {
 	db *sql.DB
@@ -134,6 +134,25 @@ CREATE TABLE execution_attempts (
 );
 
 CREATE INDEX idx_attempts_task_authority ON execution_attempts(task_id, authority_state);
+`
+	case 3:
+		script = `
+CREATE TABLE workspaces (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE,
+    project_id TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    base_revision TEXT NOT NULL,
+    head_revision TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    failure TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    removed_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE INDEX idx_workspaces_project_state ON workspaces(project_id, state);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

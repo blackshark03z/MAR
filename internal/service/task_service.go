@@ -78,6 +78,19 @@ func (s *TaskService) Status(ctx context.Context, taskID string) (domain.Task, e
 	return s.store.GetTask(ctx, taskID)
 }
 
+func (s *TaskService) CancelBeforeAttempt(ctx context.Context, taskID string) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	switch task.State {
+	case domain.TaskSubmitted, domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady:
+		return s.store.OrchestratorTransition(ctx, taskID, task.State, domain.TaskCancelled, s.now().UTC())
+	default:
+		return store.ErrStateConflict
+	}
+}
+
 func (s *TaskService) AdvancePreExecution(ctx context.Context, taskID string, to domain.TaskState) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {
