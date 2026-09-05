@@ -64,6 +64,7 @@ func (s *TaskService) Submit(ctx context.Context, idempotencyKey string, contrac
 		Contract:       contract,
 		ContractHash:   hash,
 		State:          domain.TaskSubmitted,
+		RunEpoch:       0,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -75,6 +76,91 @@ func (s *TaskService) Status(ctx context.Context, taskID string) (domain.Task, e
 		return domain.Task{}, errors.New("task id is required")
 	}
 	return s.store.GetTask(ctx, taskID)
+}
+
+func (s *TaskService) AdvancePreExecution(ctx context.Context, taskID string, to domain.TaskState) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if !allowedPreExecutionTransition(task.State, to) {
+		return store.ErrStateConflict
+	}
+	return s.store.OrchestratorTransition(ctx, taskID, task.State, to, s.now().UTC())
+}
+
+func (s *TaskService) BeginAttempt(ctx context.Context, taskID, workerID, supervisorID string, lease time.Duration) (domain.ExecutionAttempt, error) {
+	if strings.TrimSpace(workerID) == "" || strings.TrimSpace(supervisorID) == "" {
+		return domain.ExecutionAttempt{}, errors.New("worker_id and supervisor_id are required")
+	}
+	if lease <= 0 {
+		return domain.ExecutionAttempt{}, errors.New("lease duration must be positive")
+	}
+	now := s.now().UTC()
+	return s.store.BeginAttempt(ctx, taskID, newID("attempt"), workerID, supervisorID, now, now.Add(lease))
+}
+
+func (s *TaskService) HeartbeatAttempt(ctx context.Context, taskID, attemptID string, epoch int64, lease time.Duration) error {
+	if lease <= 0 {
+		return errors.New("lease duration must be positive")
+	}
+	now := s.now().UTC()
+	return s.store.HeartbeatAttempt(ctx, taskID, attemptID, epoch, now, now.Add(lease))
+}
+
+// LogicalFenceAttempt revokes MAR logical authority. It does not prove that the
+// OS process tree has stopped mutating the workspace.
+func (s *TaskService) LogicalFenceAttempt(ctx context.Context, taskID, attemptID string, epoch int64) error {
+	return s.store.LogicalFenceAttempt(ctx, taskID, attemptID, epoch, s.now().UTC())
+}
+
+// ConfirmAttemptTerminated records a physical fact that must come from the
+// process supervisor. Slice 003 will make this proof OS-backed with Job Objects.
+func (s *TaskService) ConfirmAttemptTerminated(ctx context.Context, taskID, attemptID string, epoch int64, terminalStatus string) error {
+	return s.store.ConfirmAttemptTerminated(ctx, taskID, attemptID, epoch, terminalStatus, s.now().UTC())
+}
+
+func (s *TaskService) RecoverForReplacement(ctx context.Context, taskID string) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	switch task.State {
+	case domain.TaskRunning, domain.TaskBlocked, domain.TaskRetryWait:
+		return s.store.RecoverTaskToWorkspaceReady(ctx, taskID, task.State, s.now().UTC())
+	default:
+		return store.ErrStateConflict
+	}
+}
+
+func (s *TaskService) TransitionForAttempt(ctx context.Context, taskID, attemptID string, epoch int64, to domain.TaskState) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if !allowedAttemptTransition(task.State, to) {
+		return store.ErrStateConflict
+	}
+	return s.store.TransitionTaskForAttempt(ctx, taskID, attemptID, epoch, task.State, to, s.now().UTC())
+}
+
+func allowedPreExecutionTransition(from, to domain.TaskState) bool {
+	return (from == domain.TaskSubmitted && to == domain.TaskPreflight) ||
+		(from == domain.TaskPreflight && to == domain.TaskWaitingResource) ||
+		(from == domain.TaskWaitingResource && to == domain.TaskWorkspaceReady)
+}
+
+func allowedAttemptTransition(from, to domain.TaskState) bool {
+	switch from {
+	case domain.TaskRunning:
+		return to == domain.TaskVerifying || to == domain.TaskInputRequired || to == domain.TaskBlocked || to == domain.TaskRetryWait || to == domain.TaskFailed || to == domain.TaskCancelled
+	case domain.TaskVerifying:
+		return to == domain.TaskReviewing || to == domain.TaskVerified || to == domain.TaskBlocked || to == domain.TaskFailed
+	case domain.TaskReviewing:
+		return to == domain.TaskReadyToIntegrate || to == domain.TaskBlocked || to == domain.TaskFailed
+	default:
+		return false
+	}
 }
 
 func newID(prefix string) string {
