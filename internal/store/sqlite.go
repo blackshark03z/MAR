@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 8
+const latestSchemaVersion = 9
 
 type SQLite struct {
 	db *sql.DB
@@ -274,6 +274,36 @@ CREATE TABLE task_controls (
 );
 CREATE INDEX idx_task_controls_task_version ON task_controls(task_id, version DESC);
 CREATE INDEX idx_task_controls_task_kind ON task_controls(task_id, kind, version DESC);
+`
+	case 9:
+		script = `
+CREATE TABLE integration_attempts (
+    integration_attempt_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    project_id TEXT NOT NULL,
+    expected_ref TEXT NOT NULL,
+    expected_head TEXT NOT NULL,
+    task_result_id TEXT NOT NULL,
+    task_result_version INTEGER NOT NULL,
+    task_result_revision TEXT NOT NULL,
+    candidate_revision TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    observed_head TEXT NOT NULL DEFAULT '',
+    failure TEXT NOT NULL DEFAULT '',
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(task_result_id) REFERENCES task_results(result_id),
+    FOREIGN KEY(evidence_id) REFERENCES verification_evidence(evidence_id),
+    UNIQUE(task_id, version),
+    UNIQUE(task_id, task_result_id)
+);
+CREATE INDEX idx_integration_task_version ON integration_attempts(task_id, version DESC);
+CREATE INDEX idx_integration_status ON integration_attempts(status, updated_at);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)
