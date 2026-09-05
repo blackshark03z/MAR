@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `e31942ce19237b5b1fffe380c9523016c1811a26`
+**Verified implementation HEAD:** `1af96dc`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -15,10 +15,11 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 005 Isolated Workspace Manager — `2efbcb8`
 - 006 Durable Fair Scheduler — `ba9db93`
 - 007 Side-Effect Ledger / T15 — `e31942c`
+- 008 Model Gateway — `1af96dc`
 
 ## Current state
 
-Repo implementation is verified through Slice 007.
+Repo implementation is verified through Slice 008.
 
 Latest verification:
 - `go test -count=1 ./...`: PASS
@@ -26,21 +27,21 @@ Latest verification:
 - Windows `go build ./cmd/mar`: PASS
 - `git diff --check`: PASS
 - T15 real local-file crash/reopen reconciliation: PASS
+- Model Gateway targeted suite (tool calls, timeout/cancellation, bounded errors/output, no implicit retry): PASS
 
 ## Next slice
 
-`008` Model Gateway.
+`009` Coding ACI / Tool Runtime.
 
-Goal: create the minimal provider-neutral inference boundary required for `MAR_BOOTSTRAP_STABLE`, with one concrete provider first, bounded request/response accounting, cancellation/timeouts, and no provider logic leaking into the autonomous agent loop.
+Goal: expose the minimal bounded coding-tool surface required for self-hosting: workspace-scoped read/search, patch, Git diff/status, contained command/test execution, and compact observations suitable for the model loop.
 
-Do not add multi-provider routing complexity before one backend works end-to-end.
+Do not expose unrestricted host filesystem or raw machine authority to the worker.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 008 Model Gateway
 - 009 Coding ACI / Tool Runtime
 - 010 Minimal Context Engine
 - 011 Autonomous Agent Loop
