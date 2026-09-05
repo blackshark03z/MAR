@@ -75,10 +75,11 @@ func New(cfg Config) (*Client, error) {
 }
 
 type chatRequest struct {
-	Model           string        `json:"model"`
-	Messages        []chatMessage `json:"messages"`
-	Tools           []chatTool    `json:"tools,omitempty"`
-	ReasoningEffort string        `json:"reasoning_effort,omitempty"`
+	Model               string        `json:"model"`
+	Messages            []chatMessage `json:"messages"`
+	Tools               []chatTool    `json:"tools,omitempty"`
+	ReasoningEffort     string        `json:"reasoning_effort,omitempty"`
+	MaxCompletionTokens int64         `json:"max_completion_tokens,omitempty"`
 }
 
 type chatMessage struct {
@@ -134,7 +135,7 @@ func (c *Client) Turn(ctx context.Context, req model.TurnRequest) (model.TurnRes
 	if apiKey == "" {
 		return model.TurnResponse{}, fmt.Errorf("model API key environment variable %s is empty", c.apiKeyEnv)
 	}
-	wire := chatRequest{Model: req.Model, ReasoningEffort: req.ReasoningEffort}
+	wire := chatRequest{Model: req.Model, ReasoningEffort: req.ReasoningEffort, MaxCompletionTokens: req.MaxOutputTokens}
 	wire.Messages = make([]chatMessage, 0, len(req.Messages))
 	for _, msg := range req.Messages {
 		wm := chatMessage{Role: string(msg.Role), Content: msg.Content, ToolCallID: msg.ToolCallID}

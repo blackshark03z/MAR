@@ -90,6 +90,28 @@ func TestLogicalFenceRejectsFurtherHeartbeatBeforeReplacement(t *testing.T) {
 	}
 }
 
+func TestValidateAttemptAuthorityRejectsFencedAndWrongEpoch(t *testing.T) {
+	_, svc, _ := newHarness(t)
+	task := readyTask(t, svc, "attempt-authority-validation")
+	ctx := context.Background()
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-authority", "supervisor-authority", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ValidateAttemptAuthority(ctx, task.ID, attempt.ID, attempt.RunEpoch); err != nil {
+		t.Fatalf("active current attempt rejected: %v", err)
+	}
+	if err := svc.ValidateAttemptAuthority(ctx, task.ID, attempt.ID, attempt.RunEpoch+1); !errors.Is(err, store.ErrStaleAttempt) {
+		t.Fatalf("wrong epoch not fenced: %v", err)
+	}
+	if err := svc.LogicalFenceAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ValidateAttemptAuthority(ctx, task.ID, attempt.ID, attempt.RunEpoch); !errors.Is(err, store.ErrStaleAttempt) {
+		t.Fatalf("logically fenced attempt remained authoritative: %v", err)
+	}
+}
+
 func TestConcurrentBeginAttemptAdmitsOnlyOneWriter(t *testing.T) {
 	_, svc, _ := newHarness(t)
 	task := readyTask(t, svc, "concurrent-attempt")

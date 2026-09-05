@@ -46,6 +46,9 @@ func TestClientMapsToolConversationAndUsage(t *testing.T) {
 		if !ok || len(tools) != 1 {
 			t.Fatalf("unexpected tools: %#v", request["tools"])
 		}
+		if got := request["max_completion_tokens"]; got != float64(321) {
+			t.Fatalf("unexpected max_completion_tokens: %#v", got)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Request-Id", "provider-request-7")
 		_, _ = io.WriteString(w, `{"id":"resp-1","model":"router-model","choices":[{"message":{"role":"assistant","content":"","tool_calls":[{"id":"call-2","type":"function","function":{"name":"run_test","arguments":"{\"pkg\":\"./...\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":120,"completion_tokens":15,"total_tokens":135}}`)
@@ -66,7 +69,8 @@ func TestClientMapsToolConversationAndUsage(t *testing.T) {
 			{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read_file", Arguments: `{"path":"a.go"}`}}},
 			{Role: model.RoleTool, ToolCallID: "call-1", Content: "package a"},
 		},
-		Tools: []model.ToolDefinition{{Name: "run_test", Description: "Run tests", Parameters: json.RawMessage(`{"type":"object","properties":{"pkg":{"type":"string"}}}`), Strict: true}},
+		Tools:           []model.ToolDefinition{{Name: "run_test", Description: "Run tests", Parameters: json.RawMessage(`{"type":"object","properties":{"pkg":{"type":"string"}}}`), Strict: true}},
+		MaxOutputTokens: 321,
 	})
 	if err != nil {
 		t.Fatal(err)

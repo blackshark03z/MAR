@@ -42,6 +42,7 @@ type TurnRequest struct {
 	Messages        []Message        `json:"messages"`
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	MaxOutputTokens int64            `json:"max_output_tokens,omitempty"`
 }
 
 type Usage struct {
@@ -90,6 +91,9 @@ func ValidateTurnRequest(req TurnRequest) error {
 	}
 	if len(req.Messages) == 0 {
 		return errors.New("at least one message is required")
+	}
+	if req.MaxOutputTokens < 0 {
+		return errors.New("max_output_tokens cannot be negative")
 	}
 	for i, msg := range req.Messages {
 		switch msg.Role {

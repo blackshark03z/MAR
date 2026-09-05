@@ -113,6 +113,23 @@ func (s *TaskService) BeginAttempt(ctx context.Context, taskID, workerID, superv
 	return s.store.BeginAttempt(ctx, taskID, newID("attempt"), workerID, supervisorID, now, now.Add(lease))
 }
 
+func (s *TaskService) ValidateAttemptAuthority(ctx context.Context, taskID, attemptID string, epoch int64) error {
+	return s.store.ValidateAttemptAuthority(ctx, taskID, attemptID, epoch)
+}
+
+// AttemptAuthoritative exposes a provider-neutral read-only authority predicate
+// for worker runtimes. A stale/fenced attempt is not an infrastructure error.
+func (s *TaskService) AttemptAuthoritative(ctx context.Context, taskID, attemptID string, epoch int64) (bool, error) {
+	err := s.store.ValidateAttemptAuthority(ctx, taskID, attemptID, epoch)
+	if errors.Is(err, store.ErrStaleAttempt) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *TaskService) HeartbeatAttempt(ctx context.Context, taskID, attemptID string, epoch int64, lease time.Duration) error {
 	if lease <= 0 {
 		return errors.New("lease duration must be positive")
