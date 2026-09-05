@@ -114,12 +114,6 @@ func (s *TaskService) LogicalFenceAttempt(ctx context.Context, taskID, attemptID
 	return s.store.LogicalFenceAttempt(ctx, taskID, attemptID, epoch, s.now().UTC())
 }
 
-// ConfirmAttemptTerminated records a physical fact that must come from the
-// process supervisor. Slice 003 will make this proof OS-backed with Job Objects.
-func (s *TaskService) ConfirmAttemptTerminated(ctx context.Context, taskID, attemptID string, epoch int64, terminalStatus string) error {
-	return s.store.ConfirmAttemptTerminated(ctx, taskID, attemptID, epoch, terminalStatus, s.now().UTC())
-}
-
 func (s *TaskService) RecoverForReplacement(ctx context.Context, taskID string) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {

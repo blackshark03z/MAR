@@ -69,29 +69,8 @@ func TestLogicalFenceDoesNotPermitReplacementUntilPhysicalTermination(t *testing
 	if err := svc.RecoverForReplacement(ctx, task.ID); !errors.Is(err, store.ErrPhysicalFenceRequired) {
 		t.Fatalf("logical fence must not unlock workspace, got %v", err)
 	}
-
-	if err := svc.ConfirmAttemptTerminated(ctx, task.ID, a.ID, a.RunEpoch, "killed"); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.RecoverForReplacement(ctx, task.ID); err != nil {
-		t.Fatal(err)
-	}
-	b, err := svc.BeginAttempt(ctx, task.ID, "worker-b", "supervisor-a", time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.RunEpoch != 2 {
-		t.Fatalf("expected epoch 2, got %d", b.RunEpoch)
-	}
-
 	if err := svc.HeartbeatAttempt(ctx, task.ID, a.ID, a.RunEpoch, time.Minute); !errors.Is(err, store.ErrStaleAttempt) {
-		t.Fatalf("stale attempt heartbeat should be fenced, got %v", err)
-	}
-	if err := svc.TransitionForAttempt(ctx, task.ID, a.ID, a.RunEpoch, domain.TaskVerifying); !errors.Is(err, store.ErrStaleAttempt) {
-		t.Fatalf("stale attempt transition should be fenced, got %v", err)
-	}
-	if err := svc.TransitionForAttempt(ctx, task.ID, b.ID, b.RunEpoch, domain.TaskVerifying); err != nil {
-		t.Fatalf("current attempt transition failed: %v", err)
+		t.Fatalf("expected stale heartbeat after logical fence, got %v", err)
 	}
 }
 

@@ -23,7 +23,7 @@ Implement durable execution-attempt identity and logical authority fencing witho
 
 Slice 002 does **not** claim to prove OS process termination.
 
-`ConfirmAttemptTerminated` records a physical fact supplied by the supervisor. Slice 003 must make that fact trustworthy using Windows process-tree / Job Object enforcement.
+The durable store contains the physical-termination transition primitive, but Slice 002 exposes no trusted OS proof by itself. Slice 003 is the only production service path that may invoke that transition, and it requires a Windows Job Object-backed `TerminationProof`.
 
 `run_epoch` is logical fencing only.
 
