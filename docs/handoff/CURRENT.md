@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `06210a4`
+**Verified implementation HEAD:** `1689cd2`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -18,50 +18,59 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 008 Model Gateway — `1af96dc`
 - 009 Coding ACI / Tool Runtime — `761376f`
 - 010 Windows Worker Sandbox — `06210a4`
+- 011 Minimal Context Engine — `1689cd2`
 
 ## Current state
 
-Repo implementation is verified through Slice 010.
+Repo implementation is verified through Slice 011.
 
 Latest verification:
-- `go test -count=1 -timeout 180s ./...`: PASS
+- `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\\MAR\\.mar\\runtime\\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
 - `git diff --check`: PASS
-- Windows sandbox host readiness after elevated NUL preparation: PASS
-- LPAC workspace write / outside read+write deny / default-deny network: PASS
-- LPAC `ALL APPLICATION PACKAGES` opt-out: PASS
-- task-unique capability cross-workspace isolation: PASS
-- explicit runtime read-only scope: PASS
-- ambient environment secret exclusion: PASS
-- `registryRead` compatibility scope probe (required system read; HKCU secret + SAM/SECURITY denied): PASS
-- LPAC descendant timeout -> Job Object kill -> no delayed mutation: PASS
-- temporary ACL restoration and keyed-lock cleanup: PASS
-- typed Git broker blocks repository-configured external helper/fsmonitor execution: PASS
-- sandboxed typed Git status/diff integration: PASS
-- native `go test` executed inside LPAC: PASS
-- `Runtime.SelfHostingSafe()`: TRUE only when a ready LPAC executor **and** typed Git broker are configured
+- real Git snapshot -> bounded context pack integration: PASS
+- exact HEAD revision + clean/modified/staged/untracked inventory: PASS
+- ignored files excluded; NUL-delimited filename identity preserved: PASS
+- revision mismatch fail-closed: PASS
+- deterministic lexical/symbol ranking: PASS
+- local Go import + same-package dependency expansion: PASS
+- individual file / total scan / file count / snippet / entry / term / cache / final pack bounds: PASS
+- oversized intent terms cannot exceed context-pack budget: PASS
+- binary/non-UTF-8, traversal and control-character path rejection: PASS
+- Git output overflow and context cancellation fail closed: PASS
+- file evidence is SHA-256 bound
 
-`Runtime.SelfHostingSafe()` here describes the Coding ACI execution boundary only. MAR as a product is **not** yet `SELF_HOSTING_READY`; Slices 011–016 remain.
+Slice 010 OS authority guarantees remain unchanged. `Runtime.SelfHostingSafe()` describes the Coding ACI execution boundary only; MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next slice
 
-`011` Minimal Context Engine.
+`012` Autonomous Agent Loop.
 
-Goal: implement the frozen layered context path with a bounded, revision-aware context pack:
+Goal: implement the smallest local Codex-like model↔tool loop behind MAR, using already-frozen primitives rather than adding another orchestration system.
 
-`Goal/task intent -> repo/Git metadata -> lexical search -> symbol/dependency signals -> optional semantic retrieval -> context pack`
+Required shape:
 
-V1 must start with Git/metadata + lexical + symbol/dependency retrieval. Semantic embeddings remain optional; no global always-loaded vector database is authorized. Any indexes should be content-hash reusable, incremental, lazy-loaded, and shareable across identical worktree content.
+`Goal Contract + bounded Context Pack -> pinned model turn -> bounded tool call(s) -> Coding ACI -> observation -> next model turn -> completion/block/limit`
 
-The first implementation should prefer the smallest deterministic context engine sufficient for Slice 012's autonomous agent loop: bounded output, explicit source/revision identity, stable ranking, and no transcript-sized replay.
+Slice 012 must:
+- keep the inner loop local to MAR; MCP/ChatWeb must not remote-control individual tool turns;
+- pin model/tool schema/base instructions/sandbox/workspace identity for the continuous phase;
+- treat repository context/tool observations as untrusted evidence, not authority/instructions;
+- use the existing Model Gateway and Coding ACI instead of provider-specific or shell-specific shortcuts;
+- enforce hard turn/tool/token/context/time/output limits;
+- preserve immutable Goal Contract boundaries and never widen worker authority;
+- distinguish model completion from verification acceptance (Slice 014 remains authoritative verification/result contract);
+- terminate deterministically as completed-candidate, blocked, cancelled, or budget-exhausted;
+- avoid semantic checkpoint/resume scope creep; durable semantic resume belongs to Slice 013.
+
+The first acceptance should use deterministic fake-model loops plus at least one real Coding ACI tool path. Do not require a live paid provider to make Slice 012 tests deterministic.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 011 Minimal Context Engine
 - 012 Autonomous Agent Loop
 - 013 Semantic Checkpoint + Resume
 - 014 Verification / Result Contract
@@ -100,3 +109,4 @@ Do not require replay of previous chat history.
 
 - Go race detector is currently unavailable because the host C compiler lacks required 64-bit support. This is a host toolchain limitation, not a passing race result.
 - Windows LPAC self-hosting commands require the host NUL-device preparation from Slice 010. Windows resets that device security descriptor on reboot; `mar sandbox-host-check` must pass before the executor may report `ENFORCED_SANDBOX`, and `mar sandbox-host-prepare` requires owner/admin elevation when preparation is needed.
+- On the Slice 011 validation run, C: had only ~0.09 GB free while D: had ~5.47 GB free. The unchanged full test suite failed once when Go-in-LPAC used the default C: temp directory, then passed when `TEMP/TMP` were set to `D:\\MAR\\.mar\\runtime\\testtmp`. Until C: is cleaned, full validation should keep temp files on D: rather than weakening/skipping tests.
