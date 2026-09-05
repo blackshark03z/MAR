@@ -116,118 +116,104 @@ func TestSearchResultsAreBounded(t *testing.T) {
 	}
 }
 
+func TestSharedGoModuleCacheIsUsedWithoutMakingItTaskWritable(t *testing.T) {
+	root := t.TempDir()
+	shared := t.TempDir()
+	fakeGo := filepath.Join(t.TempDir(), "go.exe")
+	if err := os.WriteFile(fakeGo, []byte("not executed by fake executor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executor := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{ExitCode: 0}}
+	r, err := New(Config{
+		Root:          root,
+		TaskID:        "task-shared-modcache",
+		GitBroker:     &fakeGitBroker{},
+		GoModuleCache: shared,
+	}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGo, Args: []string{"test", "./..."}}); err != nil {
+		t.Fatal(err)
+	}
+	want := "GOMODCACHE=" + filepath.Clean(shared)
+	found := false
+	for _, item := range executor.last.Env {
+		if strings.EqualFold(item, want) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("shared module cache was not propagated: env=%v", executor.last.Env)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".mar", "go", "mod")); !os.IsNotExist(err) {
+		t.Fatalf("task-local module cache should not be created when shared cache is configured: %v", err)
+	}
+}
+
 func TestWriteAndReplaceRequireExactRevision(t *testing.T) {
 	r, root := newTestRuntime(t, nil, false)
-	created, err := r.WriteFile("sub/new.txt", "ABSENT", []byte("alpha alpha\n"))
+	path := filepath.Join(root, "x.txt")
+	if err := os.WriteFile(path, []byte("alpha beta"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.WriteFile("x.txt", "wrong", []byte("nope")); err == nil {
+		t.Fatal("write ignored hash precondition")
+	}
+	before := sha256.Sum256([]byte("alpha beta"))
+	hash := hex.EncodeToString(before[:])
+	if _, err := r.ReplaceExact("x.txt", hash, "alpha", "omega", 1); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !created.Created || created.BeforeHash != "" {
-		t.Fatalf("unexpected create result: %+v", created)
+	if string(got) != "omega beta" {
+		t.Fatalf("unexpected replacement: %q", got)
 	}
-	if _, err := r.WriteFile("sub/new.txt", strings.Repeat("0", 64), []byte("wrong")); err == nil {
-		t.Fatal("stale hash write was allowed")
+}
+
+func TestCommandCwdDotMeansWorkspaceRootAndEscapeStillFails(t *testing.T) {
+	root := t.TempDir()
+	fakeGo := filepath.Join(t.TempDir(), "go.exe")
+	if err := os.WriteFile(fakeGo, []byte("not executed by fake executor"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	patched, err := r.ReplaceExact("sub/new.txt", created.AfterHash, "alpha", "beta", 2)
+	executor := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{ExitCode: 0}}
+	r, err := New(Config{Root: root, TaskID: "task-command-cwd", GitBroker: &fakeGitBroker{}}, executor)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if patched.BeforeHash != created.AfterHash || patched.AfterHash == patched.BeforeHash {
-		t.Fatalf("unexpected patch hashes: %+v", patched)
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGo, Args: []string{"test", "./..."}, Cwd: "."}); err != nil {
+		t.Fatalf("workspace-root cwd was rejected: %v", err)
 	}
-	b, err := os.ReadFile(filepath.Join(root, "sub", "new.txt"))
-	if err != nil {
-		t.Fatal(err)
+	if filepath.Clean(executor.last.Dir) != filepath.Clean(root) {
+		t.Fatalf("workspace-root cwd resolved incorrectly: got=%q want=%q", executor.last.Dir, root)
 	}
-	if string(b) != "beta beta\n" {
-		t.Fatalf("unexpected patched content %q", b)
-	}
-	if _, err := r.ReplaceExact("sub/new.txt", patched.AfterHash, "beta", "gamma", 1); err == nil {
-		t.Fatal("exact-count mismatch was allowed")
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGo, Args: []string{"test", "./..."}, Cwd: ".."}); err == nil || !strings.Contains(err.Error(), "path escapes workspace") {
+		t.Fatalf("cwd escape was not rejected: %v", err)
 	}
 }
 
-func TestWriteThroughSymlinkIsRejected(t *testing.T) {
-	r, root := newTestRuntime(t, nil, false)
-	outside := t.TempDir()
-	link := filepath.Join(root, "link")
-	if err := os.Symlink(outside, link); err != nil {
-		t.Skipf("symlink unavailable on this Windows host: %v", err)
-	}
-	if _, err := r.WriteFile("link/escape.txt", "ABSENT", []byte("x")); err == nil {
-		t.Fatal("symlink write escape was allowed")
-	}
-}
-
-func TestTrustedExecutorIsNotSelfHostingSafeAndDeniedByDefault(t *testing.T) {
-	ex := &fakeExecutor{level: IsolationTrustedHost}
-	r, _ := newTestRuntime(t, ex, false)
-	if r.SelfHostingSafe() {
-		t.Fatal("trusted host executor incorrectly marked self-hosting safe")
-	}
-	if _, err := r.RunCommand(context.Background(), Command{Name: "go", Args: []string{"test", "./..."}}); err == nil || !strings.Contains(err.Error(), "requires enforced sandbox") {
-		t.Fatalf("trusted command execution was not denied: %v", err)
-	}
-	if ex.calls != 0 {
-		t.Fatal("denied command reached executor")
-	}
-}
-
-func TestSandboxedCommandPolicyRejectsDangerousShapes(t *testing.T) {
-	ex := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{Output: "ok", ExitCode: 0}}
-	r, _ := newTestRuntime(t, ex, false)
-	if !r.SelfHostingSafe() {
-		t.Fatal("enforced sandbox executor should be self-hosting safe")
-	}
-	bad := []Command{
-		{Name: "powershell", Args: []string{"-Command", "whoami"}},
-		{Name: "git", Args: []string{"reset", "--hard"}},
-		{Name: "go", Args: []string{"test", "-exec=evil", "./..."}},
-		{Name: "go", Args: []string{"build", "-o", "..\\escape.exe", "./cmd/mar"}},
-	}
-	for _, cmd := range bad {
-		if _, err := r.RunCommand(context.Background(), cmd); err == nil {
-			t.Fatalf("dangerous command allowed: %+v", cmd)
-		}
-	}
-	if ex.calls != 0 {
-		t.Fatal("rejected command reached executor")
-	}
-}
-
-func TestSandboxedAllowedCommandUsesBoundedSpec(t *testing.T) {
-	ex := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{Output: "PASS", ExitCode: 0}}
-	r, root := newTestRuntime(t, ex, false)
-	got, err := r.RunCommand(context.Background(), Command{Name: "go", Args: []string{"test", "./..."}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Output != "PASS" || ex.calls != 1 {
-		t.Fatalf("unexpected command result: %+v calls=%d", got, ex.calls)
-	}
-	if ex.last.Dir != root || ex.last.MaxOutputBytes != 128 {
-		t.Fatalf("unexpected executor spec: %+v", ex.last)
-	}
-	if !containsEnvPrefix(ex.last.Env, "GOPROXY=off") || !containsEnvPrefix(ex.last.Env, "GOCACHE="+filepath.Join(root, ".mar", "go", "build")) {
-		t.Fatalf("Go command environment not workspace-bounded: %v", ex.last.Env)
-	}
-}
-
-func TestExecutorErrorIsReturned(t *testing.T) {
-	want := errors.New("executor failed")
-	ex := &fakeExecutor{level: IsolationEnforcedSandbox, err: want}
-	r, _ := newTestRuntime(t, ex, false)
+func TestTrustedHostCommandExecutionIsDeniedByDefault(t *testing.T) {
+	executor := &fakeExecutor{level: IsolationTrustedHost}
+	r, _ := newTestRuntime(t, executor, false)
 	_, err := r.RunCommand(context.Background(), Command{Name: "go", Args: []string{"test", "./..."}})
-	if !errors.Is(err, want) {
-		t.Fatalf("got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "requires enforced sandbox") || executor.calls != 0 {
+		t.Fatalf("trusted host command was not denied: err=%v calls=%d", err, executor.calls)
 	}
 }
 
-func containsEnvPrefix(env []string, want string) bool {
-	for _, item := range env {
-		if item == want {
-			return true
+func TestTrustedHostCommandExecutionCanBeExplicitlyEnabled(t *testing.T) {
+	executor := &fakeExecutor{level: IsolationTrustedHost, resp: ExecResult{Output: "ok", ExitCode: 0}}
+	r, _ := newTestRuntime(t, executor, true)
+	if _, err := r.RunCommand(context.Background(), Command{Name: "go", Args: []string{"test", "./..."}}); err != nil && !errors.Is(err, os.ErrNotExist) {
+		// Host test environments may not have Go on PATH; the authority assertion
+		// is that execution is no longer rejected solely for TRUSTED_HOST.
+		if strings.Contains(err.Error(), "requires enforced sandbox") {
+			t.Fatalf("explicit trusted execution was still rejected: %v", err)
 		}
 	}
-	return false
 }

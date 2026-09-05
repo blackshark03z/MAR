@@ -62,14 +62,16 @@ type Config struct {
 	CommandTimeout               time.Duration
 	AllowTrustedCommandExecution bool
 	GitBroker                    GitBroker
+	GoModuleCache                string
 }
 
 type Runtime struct {
-	root      string
-	taskID    string
-	cfg       Config
-	executor  Executor
-	gitBroker GitBroker
+	root          string
+	taskID        string
+	cfg           Config
+	executor      Executor
+	gitBroker     GitBroker
+	goModuleCache string
 }
 
 type ReadResult struct {
@@ -142,7 +144,26 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 	if cfg.CommandTimeout <= 0 {
 		cfg.CommandTimeout = 2 * time.Minute
 	}
-	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker}, nil
+	goModuleCache := ""
+	if strings.TrimSpace(cfg.GoModuleCache) != "" {
+		cache, err := filepath.Abs(cfg.GoModuleCache)
+		if err != nil {
+			return nil, fmt.Errorf("resolve shared Go module cache: %w", err)
+		}
+		cache, err = filepath.EvalSymlinks(cache)
+		if err != nil {
+			return nil, fmt.Errorf("resolve shared Go module cache identity: %w", err)
+		}
+		info, err := os.Stat(cache)
+		if err != nil || !info.IsDir() {
+			if err != nil {
+				return nil, fmt.Errorf("stat shared Go module cache: %w", err)
+			}
+			return nil, errors.New("shared Go module cache is not a directory")
+		}
+		goModuleCache = filepath.Clean(cache)
+	}
+	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker, goModuleCache: goModuleCache}, nil
 }
 
 func (r *Runtime) Root() string { return r.root }
@@ -387,8 +408,8 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 		return ExecResult{}, err
 	}
 	cwd := r.root
-	if strings.TrimSpace(cmd.Cwd) != "" {
-		resolved, err := r.resolveExisting(cmd.Cwd)
+	if rawCwd := strings.TrimSpace(cmd.Cwd); rawCwd != "" && filepath.Clean(rawCwd) != "." {
+		resolved, err := r.resolveExisting(rawCwd)
 		if err != nil {
 			return ExecResult{}, err
 		}
@@ -411,15 +432,19 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 		if err := os.MkdirAll(filepath.Join(cacheRoot, "build"), 0o755); err != nil {
 			return ExecResult{}, err
 		}
-		if err := os.MkdirAll(filepath.Join(cacheRoot, "mod"), 0o755); err != nil {
-			return ExecResult{}, err
+		modCache := r.goModuleCache
+		if modCache == "" {
+			modCache = filepath.Join(cacheRoot, "mod")
+			if err := os.MkdirAll(modCache, 0o755); err != nil {
+				return ExecResult{}, err
+			}
 		}
 		if err := os.MkdirAll(filepath.Join(cacheRoot, "tmp"), 0o755); err != nil {
 			return ExecResult{}, err
 		}
 		env = append(env,
 			"GOCACHE="+filepath.Join(cacheRoot, "build"),
-			"GOMODCACHE="+filepath.Join(cacheRoot, "mod"),
+			"GOMODCACHE="+modCache,
 			"GOTMPDIR="+filepath.Join(cacheRoot, "tmp"),
 			"GOPROXY=off",
 			"GOSUMDB=off",

@@ -162,6 +162,13 @@ func (s *TaskService) LogicalFenceAttempt(ctx context.Context, taskID, attemptID
 	return s.store.LogicalFenceAttempt(ctx, taskID, attemptID, epoch, s.now().UTC())
 }
 
+func (s *TaskService) RequirePhysicalRecovery(ctx context.Context, taskID, attemptID string, epoch int64) error {
+	if strings.TrimSpace(taskID) == "" || strings.TrimSpace(attemptID) == "" || epoch <= 0 {
+		return errors.New("task id, attempt id and positive epoch are required")
+	}
+	return s.store.RequirePhysicalRecovery(ctx, taskID, attemptID, epoch, s.now().UTC())
+}
+
 func (s *TaskService) RecoverForReplacement(ctx context.Context, taskID string) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {

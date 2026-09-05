@@ -17,11 +17,15 @@ type ProjectScheduleState struct {
 }
 
 func (s *SQLite) ListWaitingTasks(ctx context.Context) ([]domain.Task, error) {
+	return s.ListTasksByState(ctx, domain.TaskWaitingResource)
+}
+
+func (s *SQLite) ListTasksByState(ctx context.Context, wanted domain.TaskState) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, idempotency_key, contract_json, contract_hash, state, run_epoch, created_at, updated_at
-FROM tasks WHERE state = ? ORDER BY updated_at ASC, id ASC`, string(domain.TaskWaitingResource))
+FROM tasks WHERE state = ? ORDER BY updated_at ASC, id ASC`, string(wanted))
 	if err != nil {
-		return nil, fmt.Errorf("list waiting tasks: %w", err)
+		return nil, fmt.Errorf("list tasks in state %s: %w", wanted, err)
 	}
 	defer rows.Close()
 	var tasks []domain.Task
@@ -33,7 +37,7 @@ FROM tasks WHERE state = ? ORDER BY updated_at ASC, id ASC`, string(domain.TaskW
 			return nil, err
 		}
 		if err := json.Unmarshal(payload, &task.Contract); err != nil {
-			return nil, fmt.Errorf("decode waiting goal contract: %w", err)
+			return nil, fmt.Errorf("decode task in state %s: %w", wanted, err)
 		}
 		task.State = domain.TaskState(state)
 		if task.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
