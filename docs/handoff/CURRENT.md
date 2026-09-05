@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `e65f74856e055ad64bf998b9750df39946947397`
+**Verified implementation HEAD:** `e8bb5b9`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -22,12 +22,13 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 012 Autonomous Agent Loop — `c1924e2`
 - 013 Semantic Checkpoint + Resume — `432a5c8`
 - 014 Verification / Result Contract — `e65f748`
+- 015 MCP Control Surface — `e8bb5b9`
 
 ## Current state
 
-Repo implementation is verified through Slice 014.
+Repo implementation is verified through Slice 015.
 
-Latest verification on the Slice 014 implementation commit candidate:
+Latest repository-wide verification on the Slice 015 implementation commit candidate:
 - `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
@@ -44,40 +45,52 @@ Latest verification on the Slice 014 implementation commit candidate:
 - evidence/result integrity tamper is rejected: PASS
 - durable Goal Contract/profile/acceptance identity is revalidated by the store before VERIFIED publication: PASS
 - result/evidence survive SQLite close/reopen with valid integrity: PASS
+- official MCP Go SDK stdio server: PASS
+- public MCP surface is exactly `submit/status/steer/input/cancel/result/inspect`: PASS
+- low-level worker filesystem/shell primitives are absent from the public MCP surface: PASS
+- durable `task_controls` schema/migration v8: PASS
+- task control stream is monotonic, idempotent, integrity-bound and survives SQLite reopen: PASS
+- control tamper is rejected: PASS
+- concurrent clients append to one SQLite-backed coordination truth: PASS
+- steering cannot rewrite the immutable Goal Contract: PASS
+- `steer(kind=cancel)` uses the same authoritative cancellation path as `cancel`: PASS
+- `input` requires `INPUT_REQUIRED` + current ACTIVE attempt and resumes atomically: PASS
+- running cancellation logical-fences before final task cancellation: PASS
+- final cancellation is rejected until physical termination is confirmed: PASS
+- safe pre-attempt cancellation finalizes immediately: PASS
 
-`VerificationEvidence` and `TaskResult` are now durable technical truth. Agent self-assertion remains only a candidate assertion.
+`VerificationEvidence` and `TaskResult` are durable technical truth. The MCP edge is now a bounded task control plane over that durable kernel; it is not the coding inner loop and owns no independent coordination truth.
 
 MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next slice
 
-`015` MCP Control Surface.
+`016` Self-Hosting Acceptance.
 
-Goal: expose the small ChatWeb-facing control plane over the durable MAR kernel without leaking low-level worker primitives into the public workflow.
+Goal: close the remaining runtime wiring needed for one real MCP-submitted Goal to run autonomously through bounded context, worker execution, semantic resume, authoritative verification/result, cancellation/recovery and serialized integration/reject handling; then execute the frozen acceptance suite before any `SELF_HOSTING_READY` claim.
 
 Frozen requirements:
-- required public operations are exactly the product-level capabilities `submit`, `status`, `steer`, `input`, `cancel`, `result`, and `inspect`;
-- normal ChatWeb autonomous workflow must not require direct `read_file`, `write_file`, or unrestricted shell calls;
-- low-level coding/file/process primitives remain inside the worker runtime;
-- `submit` must preserve Goal Contract validation, base-revision validation, idempotent submission and durable-before-execution semantics already owned by the kernel/service layer;
-- `status`, `result`, and `inspect` must expose bounded durable truth rather than reconstructing authority from chat history;
-- `result` must surface the durable revision-bound `TaskResult`/verification identity from Slice 014;
-- steering may add factual context, clarify priority, choose among explicitly blocked alternatives, request cancellation, or request additional verification;
-- steering must never silently rewrite the immutable Goal Contract; a material goal/acceptance/boundary change requires a new superseding task;
-- `input` may satisfy explicit task input requirements but must not widen authority or mutate immutable task intent;
-- cancellation/steering/input must preserve attempt fencing, resource policy, process containment and side-effect reconciliation guarantees;
-- multiple ChatWeb clients may observe/steer the same durable task without creating a second coordination truth;
-- no parallel shell/orchestration system and no worker-authority widening;
-- no final self-hosting claim; Slice 016 owns self-hosting acceptance.
+- prove the public MCP workflow reaches the existing autonomous worker without turning MCP into the inner coding loop;
+- prove durable steering/input controls are consumed by the active/replacement runtime while Goal Contract authority remains immutable;
+- prove cancellation reaches graceful interruption/contained process-tree termination and leaves zero orphan mutation-capable children (T10);
+- preserve logical fencing + confirmed physical termination before mutable replacement (T14);
+- preserve crash reconciliation/no blind duplicate local side effects (T15);
+- close and verify serialized authoritative integration with durable `expected_head` validation, evidence identity and deterministic crash recovery (T16); if implementation is missing, treat that as a Slice 016 implementation defect rather than bypassing integration;
+- reject stale verification after base/candidate/profile/environment drift, including base-branch drift (T12);
+- exercise client disconnect, worker crash and MAR restart recovery without false completion or lost durable state (T7-T9);
+- exercise concurrency/fairness/resource/disk-pressure behavior required by T5, T6, T11 and T17;
+- surface semantic integration conflicts rather than silently integrating incompatible goals (T13);
+- execute the frozen T1-T17 acceptance suite and collect required resource/workflow metrics;
+- perform owner real-use acceptance: real project -> bounded Goal -> autonomous execution -> result/evidence inspection -> integrate or reject;
+- do not claim `SELF_HOSTING_READY` until all mandatory hard acceptance conditions and owner acceptance pass.
 
-Use the existing service/store/worker contracts. MCP is control plane, not the coding inner loop.
+Slice 016 may add the missing integration/runtime glue and benchmark harness required to satisfy these frozen acceptance conditions, but must not redesign the frozen architecture.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 015 MCP Control Surface
 - 016 Self-Hosting Acceptance
 
 After Slice 016 passes, MAR becomes the primary coding worker for continuing MAR V1 development. ChatCode remains fallback/inspection/emergency repair.
