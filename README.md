@@ -8,6 +8,20 @@ The V1 architecture is frozen. Canonical architecture documents live under `docs
 
 `Goal -> Durable Task -> Autonomous Worker -> Isolated Worktree -> Verification -> Crash-safe Integration -> Result`
 
+## MCP control surface
+
+The local MCP edge is available over stdio:
+
+```text
+mar mcp-stdio -db .mar/mar.db
+```
+
+The public task-oriented surface is intentionally limited to:
+
+`submit`, `status`, `steer`, `input`, `cancel`, `result`, `inspect`.
+
+Low-level coding primitives such as repository reads/writes and command execution remain inside the worker runtime rather than the public MCP workflow.
+
 ## Development rule
 
 Architecture is closed. Implementation may only reopen architecture when benchmark or recovery evidence proves a frozen invariant insufficient.

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"mar/internal/domain"
+	"mar/internal/mcpedge"
 	"mar/internal/processctl"
 	"mar/internal/service"
 	"mar/internal/store"
@@ -112,6 +113,19 @@ func run(ctx context.Context, args []string) error {
 		}
 		return printJSON(task)
 
+	case "mcp-stdio":
+		fs := flag.NewFlagSet("mcp-stdio", flag.ContinueOnError)
+		dbPath := fs.String("db", defaultDB, "SQLite database path")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		s, svc, err := openService(*dbPath)
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+		return mcpedge.RunStdio(ctx, svc)
+
 	case "sandbox-host-check":
 		fs := flag.NewFlagSet("sandbox-host-check", flag.ContinueOnError)
 		workspace := fs.String("workspace", ".", "Workspace used for the AppContainer readiness probe")
@@ -157,5 +171,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status|sandbox-host-check|sandbox-host-prepare> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|sandbox-host-check|sandbox-host-prepare> [options]")
 }
