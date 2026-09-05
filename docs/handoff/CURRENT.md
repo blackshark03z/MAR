@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `c1924e2`
+**Verified implementation HEAD:** `432a5c8`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -20,66 +20,57 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 010 Windows Worker Sandbox — `06210a4`
 - 011 Minimal Context Engine — `1689cd2`
 - 012 Autonomous Agent Loop — `c1924e2`
+- 013 Semantic Checkpoint + Resume — `432a5c8`
 
 ## Current state
 
-Repo implementation is verified through Slice 012.
+Repo implementation is verified through Slice 013.
 
 Latest verification:
 - `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
 - `git diff --check`: PASS
-- real Coding ACI autonomous loop (`write_file` -> typed Git status -> finish): PASS
-- durable SQLite `attempt_id/run_epoch` authority validation before real ACI mutation: PASS
-- logical fence stops stale attempt before subsequent model/tool dispatch: PASS
-- Goal Contract authority filters mutation tool surface: PASS
-- unclassified/unauthorized tools fail closed: PASS
-- context revision + Goal-hash identity pinning: PASS
-- explicit `finish_task` terminal protocol; mixed finish+mutation batch denied: PASS
-- turn/tool/token/context/request/assistant/observation/time bounds: PASS
-- provider output cap/length termination blocks tool side effects: PASS
-- duplicate tool-call IDs blocked before unsafe execution: PASS
-- repository/tool/test text remains untrusted evidence, not authority
+- semantic checkpoint schema/migration v6: PASS
+- immutable task-local checkpoint versions + SHA-256 integrity: PASS
+- checkpoint payload hard bound: PASS
+- stale `attempt_id/run_epoch` cannot publish checkpoint: PASS
+- corrupt newest checkpoint skipped for older valid snapshot: PASS
+- checkpoint persists across SQLite close/reopen: PASS
+- agent `checkpoint_task` publication: PASS
+- checkpoint tool must be sole tool call: PASS
+- hard resume byte bound before provider call: PASS
+- replacement attempt receives prior checkpoint + fresh context in a two-message new model session: PASS
+- no full transcript replay required for resume: PASS
 
-`completed_candidate` is only an agent-loop result. Slice 014 remains the authoritative verification/result contract. MAR as a product is **not** yet `SELF_HOSTING_READY`.
+Semantic checkpoint content is durable task memory but remains untrusted relative to the immutable Goal Contract and fresh evidence.
+
+MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next slice
 
-`013` Semantic Checkpoint + Resume.
+`014` Verification / Result Contract.
 
-Goal: persist the minimum immutable/versioned semantic recovery state needed to reconstruct a bounded new model session after worker interruption without replaying the full transcript.
+Goal: make verification authoritative over model self-assertion and produce a revision-bound durable result/evidence identity.
 
-Frozen checkpoint minimum:
-- Goal Contract hash;
-- base revision;
-- current revision;
-- completed work;
-- current hypothesis;
-- changed areas;
-- verification status;
-- blockers;
-- remaining work;
-- next action;
-- critical evidence references.
+Frozen requirements:
+- a task cannot become technically VERIFIED because the agent returned `completed_candidate`;
+- verification evidence is bound to exact candidate revision + verification-profile hash + relevant environment/toolchain identity;
+- acceptance evaluation and required verification must execute before VERIFIED/READY_TO_INTEGRATE eligibility;
+- stale evidence must be rejected after revision/base/profile/environment drift;
+- result must identify task ID, Goal hash, base revision, final task revision, changed areas/files, verification executed, pass/fail evidence, unresolved risks, integration status, workspace disposition, resource summary and verdict;
+- remaining risk must be explicit;
+- verification/result state must be durable and attempt/revision fenced;
+- no MCP control surface scope creep; Slice 015 owns the external API;
+- no final self-hosting claim; Slice 016 owns self-hosting acceptance.
 
-Required properties:
-- checkpoint snapshots are immutable/versioned;
-- atomic durable write;
-- integrity hash/checksum;
-- checkpoint is bound to task + authoritative attempt/run_epoch and stale attempts cannot publish a new checkpoint;
-- recovery chooses the latest valid compatible checkpoint; corrupt/incompatible snapshots never override durable task truth;
-- full transcripts/tool logs remain external artifacts and are not replayed by default;
-- resume input is bounded Goal + latest valid semantic checkpoint + selected evidence/current context;
-- same-workspace mutable replacement still requires Slice 002/003 physical/logical fencing before a replacement attempt becomes mutation-capable;
-- do not implement final verification/result contract or MCP control surface here.
+Use the existing Coding ACI verification command path and durable task state. Do not create a parallel shell/orchestration system.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 013 Semantic Checkpoint + Resume
 - 014 Verification / Result Contract
 - 015 MCP Control Surface
 - 016 Self-Hosting Acceptance
@@ -100,6 +91,7 @@ After Slice 016 passes, MAR becomes the primary coding worker for continuing MAR
 - worker authority is OS-enforced and strictly weaker than daemon authority
 - context retrieval is layered and bounded; vector infrastructure is optional, not a prerequisite
 - live model cognition, transcript artifacts and durable semantic checkpoints are distinct state layers
+- verification evidence is revision/profile/environment bound and supersedes model self-assertion
 
 ## Session rotation protocol
 
