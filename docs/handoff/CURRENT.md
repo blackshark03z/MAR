@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `e8bb5b9`
+**Verified implementation HEAD:** `81c0042`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -26,9 +26,11 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 
 ## Current state
 
-Repo implementation is verified through Slice 015.
+Repo implementation is verified through Slice 015 plus the T16 authoritative-integration substep of Slice 016. Slice 016 remains **IN PROGRESS** and MAR is not yet `SELF_HOSTING_READY`.
 
-Latest repository-wide verification on the Slice 015 implementation commit candidate:
+T16 integration checkpoint: `81c0042` — durable `integration_attempt`, serialized expected-head CAS, deterministic pre/post-CAS crash recovery, stale-evidence/base-drift blocking, and explicit integration-result integrity preservation.
+
+Latest repository-wide verification on the Slice 016/T16 implementation checkpoint:
 - `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
@@ -58,6 +60,15 @@ Latest repository-wide verification on the Slice 015 implementation commit candi
 - running cancellation logical-fences before final task cancellation: PASS
 - final cancellation is rejected until physical termination is confirmed: PASS
 - safe pre-attempt cancellation finalizes immediately: PASS
+- durable integration schema/migration v9: PASS
+- integration attempt identity/integrity survives SQLite reopen: PASS
+- PREPARED/DISPATCHED integration is serialized per project in the V1 daemon process: PASS
+- authoritative integration uses `git update-ref <ref> <candidate> <expected_head>` CAS semantics: PASS
+- crash before CAS deterministically advances exactly once and finalizes: PASS
+- crash after CAS but before durable finalize reconciles without a second ref advance: PASS
+- authoritative base drift blocks integration before an attempt is created: PASS
+- verification that becomes stale before integration dispatch is blocked before ref mutation: PASS
+- integration result cloning preserves explicit empty-array identity required by `TaskResult` integrity: PASS
 
 `VerificationEvidence` and `TaskResult` are durable technical truth. The MCP edge is now a bounded task control plane over that durable kernel; it is not the coding inner loop and owns no independent coordination truth.
 
@@ -70,6 +81,7 @@ MAR as a product is **not** yet `SELF_HOSTING_READY`.
 Goal: close the remaining runtime wiring needed for one real MCP-submitted Goal to run autonomously through bounded context, worker execution, semantic resume, authoritative verification/result, cancellation/recovery and serialized integration/reject handling; then execute the frozen acceptance suite before any `SELF_HOSTING_READY` claim.
 
 Frozen requirements:
+- **T16 integration lane implementation: CLOSED at `81c0042`; retain it as a regression boundary while completing Slice 016.**
 - prove the public MCP workflow reaches the existing autonomous worker without turning MCP into the inner coding loop;
 - prove durable steering/input controls are consumed by the active/replacement runtime while Goal Contract authority remains immutable;
 - prove cancellation reaches graceful interruption/contained process-tree termination and leaves zero orphan mutation-capable children (T10);
