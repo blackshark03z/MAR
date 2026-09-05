@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -128,6 +129,23 @@ func (s *TaskService) AttemptAuthoritative(ctx context.Context, taskID, attemptI
 		return false, err
 	}
 	return true, nil
+}
+
+const maxSemanticCheckpointBytes = 64 << 10
+
+func (s *TaskService) PublishCheckpoint(ctx context.Context, taskID, attemptID string, epoch int64, currentRevision string, payload domain.SemanticCheckpointPayload) (domain.SemanticCheckpoint, error) {
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return domain.SemanticCheckpoint{}, fmt.Errorf("encode semantic checkpoint: %w", err)
+	}
+	if len(encoded) > maxSemanticCheckpointBytes {
+		return domain.SemanticCheckpoint{}, fmt.Errorf("semantic checkpoint exceeds %d bytes", maxSemanticCheckpointBytes)
+	}
+	return s.store.PublishCheckpoint(ctx, newID("checkpoint"), taskID, attemptID, epoch, currentRevision, payload, s.now().UTC())
+}
+
+func (s *TaskService) LatestValidCheckpoint(ctx context.Context, taskID string) (domain.SemanticCheckpoint, bool, error) {
+	return s.store.LatestValidCheckpoint(ctx, taskID)
 }
 
 func (s *TaskService) HeartbeatAttempt(ctx context.Context, taskID, attemptID string, epoch int64, lease time.Duration) error {

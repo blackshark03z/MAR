@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 5
+const latestSchemaVersion = 6
 
 type SQLite struct {
 	db *sql.DB
@@ -186,6 +186,27 @@ CREATE TABLE effect_intents (
 );
 CREATE INDEX idx_effects_task_state ON effect_intents(task_id, state);
 CREATE INDEX idx_effects_attempt_state ON effect_intents(attempt_id, state);
+`
+	case 6:
+		script = `
+CREATE TABLE semantic_checkpoints (
+    checkpoint_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    run_epoch INTEGER NOT NULL,
+    version INTEGER NOT NULL,
+    goal_hash TEXT NOT NULL,
+    base_revision TEXT NOT NULL,
+    current_revision TEXT NOT NULL,
+    payload_json BLOB NOT NULL,
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(attempt_id) REFERENCES execution_attempts(attempt_id),
+    UNIQUE(task_id, version)
+);
+CREATE INDEX idx_checkpoints_task_version ON semantic_checkpoints(task_id, version DESC);
+CREATE INDEX idx_checkpoints_attempt ON semantic_checkpoints(attempt_id, run_epoch);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

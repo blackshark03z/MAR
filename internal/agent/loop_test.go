@@ -85,6 +85,26 @@ func (f *fakeAttemptAuthority) AttemptAuthoritative(_ context.Context, taskID, a
 	return true, nil
 }
 
+type fakeCheckpointStore struct {
+	latest     domain.SemanticCheckpoint
+	hasLatest  bool
+	latestErr  error
+	publishErr error
+	published  []domain.SemanticCheckpointPayload
+}
+
+func (f *fakeCheckpointStore) LatestValidCheckpoint(context.Context, string) (domain.SemanticCheckpoint, bool, error) {
+	return f.latest, f.hasLatest, f.latestErr
+}
+
+func (f *fakeCheckpointStore) PublishCheckpoint(_ context.Context, taskID, attemptID string, epoch int64, currentRevision string, payload domain.SemanticCheckpointPayload) (domain.SemanticCheckpoint, error) {
+	if f.publishErr != nil {
+		return domain.SemanticCheckpoint{}, f.publishErr
+	}
+	f.published = append(f.published, payload)
+	return domain.SemanticCheckpoint{ID: "checkpoint-fake", TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch, Version: int64(len(f.published)), CurrentRevision: currentRevision, IntegrityHash: strings.Repeat("a", 64)}, nil
+}
+
 func (f fakeContextBuilder) Build(ctx context.Context, req contextengine.Request) (contextengine.Pack, error) {
 	if err := ctx.Err(); err != nil {
 		return contextengine.Pack{}, err
@@ -179,7 +199,7 @@ func TestLoopFailsClosedOnUnclassifiedRuntimeTool(t *testing.T) {
 func TestLoopRejectsStaleAttemptBeforeModelTurn(t *testing.T) {
 	gateway := &scriptedGateway{}
 	authority := &fakeAttemptAuthority{fn: func(_ int, _, _ string, _ int64) (bool, error) { return false, nil }}
-	loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{}, authority, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{}, authority, &fakeCheckpointStore{}, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +220,7 @@ func TestLoopFencesAttemptAfterModelBeforeMutationDispatch(t *testing.T) {
 	authority := &fakeAttemptAuthority{fn: func(call int, _, _ string, _ int64) (bool, error) {
 		return call < 3, nil
 	}}
-	loop, err := New(gateway, tools, fakeContextBuilder{}, authority, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	loop, err := New(gateway, tools, fakeContextBuilder{}, authority, &fakeCheckpointStore{}, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +236,7 @@ func TestLoopFencesAttemptAfterModelBeforeMutationDispatch(t *testing.T) {
 func TestLoopAttemptAuthorityInfrastructureErrorBlocksBeforeModel(t *testing.T) {
 	gateway := &scriptedGateway{}
 	authority := &fakeAttemptAuthority{fn: func(_ int, _, _ string, _ int64) (bool, error) { return false, errors.New("db unavailable") }}
-	loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{}, authority, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{}, authority, &fakeCheckpointStore{}, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +428,7 @@ func TestLoopRejectsMismatchedContextIdentityBeforeModelTurn(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gateway := &scriptedGateway{}
-			loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{pack: tc.pack}, &fakeAttemptAuthority{}, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+			loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{pack: tc.pack}, &fakeAttemptAuthority{}, &fakeCheckpointStore{}, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -491,7 +511,122 @@ func TestLoopRequestByteBudgetStopsBeforeProviderCall(t *testing.T) {
 	}
 }
 
+func TestLoopPublishesSemanticCheckpointAndContinues(t *testing.T) {
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(30, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "checkpoint-1", Name: checkpointToolName, Arguments: `{"completed_work":["implemented parser"],"current_hypothesis":"parser is correct","changed_areas":["parser.go"],"verification_status":"unit tests pending","blockers":[],"remaining_work":["run tests"],"next_action":"run targeted tests","critical_evidence_refs":["parser.go:10"]}`}}}),
+		assistantResponse(30, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"ready for verification"}`}}}),
+	}}
+	checkpoints := &fakeCheckpointStore{}
+	loop := newTestLoopWithCheckpoints(t, gateway, newFakeTools(true, "read_file"), checkpoints, testConfig())
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || len(checkpoints.published) != 1 || checkpoints.published[0].NextAction != "run targeted tests" {
+		t.Fatalf("semantic checkpoint was not published: result=%+v published=%+v", result, checkpoints.published)
+	}
+	if !hasTool(gateway.requests[0].Tools, checkpointToolName) {
+		t.Fatal("checkpoint_task was not exposed to the model")
+	}
+	last := gateway.requests[1].Messages[len(gateway.requests[1].Messages)-1]
+	if last.Role != model.RoleTool || last.ToolCallID != "checkpoint-1" || !strings.Contains(last.Content, "checkpoint-fake") {
+		t.Fatalf("checkpoint observation was not returned to model: %+v", last)
+	}
+}
+
+func TestLoopResumesFromLatestValidSemanticCheckpointWithoutTranscriptReplay(t *testing.T) {
+	req := testRunRequest(false)
+	hash, err := req.Contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := domain.SemanticCheckpoint{
+		ID: "checkpoint-resume", TaskID: req.TaskID, AttemptID: "attempt-old", RunEpoch: 1, Version: 3,
+		GoalHash: hash, BaseRevision: req.Contract.BaseRevision, CurrentRevision: "rev-prior",
+		Payload:   domain.SemanticCheckpointPayload{CompletedWork: []string{"fixed parser"}, CurrentHypothesis: "remaining failure is serializer", ChangedAreas: []string{"parser.go"}, VerificationStatus: "parser tests pass", RemainingWork: []string{"fix serializer"}, NextAction: "inspect serializer", CriticalEvidenceRefs: []string{"test:parser"}},
+		CreatedAt: time.Unix(1234, 0).UTC(),
+	}
+	checkpoint.IntegrityHash, err = checkpoint.IntegrityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoints := &fakeCheckpointStore{latest: checkpoint, hasLatest: true}
+	gateway := &scriptedGateway{responses: []model.TurnResponse{assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"resume seed consumed"}`}}})}}
+	loop := newTestLoopWithCheckpoints(t, gateway, newFakeTools(true, "read_file"), checkpoints, testConfig())
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ResumeCheckpointID != checkpoint.ID || result.ResumeCheckpointVersion != 3 {
+		t.Fatalf("resume checkpoint identity missing: %+v", result)
+	}
+	if len(gateway.requests) != 1 || len(gateway.requests[0].Messages) != 2 {
+		t.Fatalf("resume unexpectedly replayed transcript: %+v", gateway.requests)
+	}
+	initial := gateway.requests[0].Messages[1].Content
+	if !strings.Contains(initial, "UNTRUSTED_DURABLE_SEMANTIC_CHECKPOINT_JSON") || !strings.Contains(initial, "inspect serializer") || !strings.Contains(initial, "UNTRUSTED_REPOSITORY_CONTEXT_JSON") {
+		t.Fatalf("bounded resume seed missing checkpoint/current evidence: %s", initial)
+	}
+}
+
+func TestLoopHardBoundsSemanticResumeBeforeProviderCall(t *testing.T) {
+	req := testRunRequest(false)
+	hash, _ := req.Contract.Hash()
+	checkpoint := domain.SemanticCheckpoint{ID: "checkpoint-large", TaskID: req.TaskID, AttemptID: "attempt-old", RunEpoch: 1, Version: 1, GoalHash: hash, BaseRevision: req.Contract.BaseRevision, CurrentRevision: "rev-prior", Payload: domain.SemanticCheckpointPayload{CurrentHypothesis: strings.Repeat("x", 2000), VerificationStatus: "pending", NextAction: "continue"}, CreatedAt: time.Unix(1234, 0).UTC()}
+	checkpoint.IntegrityHash, _ = checkpoint.IntegrityDigest()
+	gateway := &scriptedGateway{}
+	cfg := testConfig()
+	cfg.MaxResumeBytes = 512
+	loop := newTestLoopWithCheckpoints(t, gateway, newFakeTools(true, "read_file"), &fakeCheckpointStore{latest: checkpoint, hasLatest: true}, cfg)
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusBudgetExhausted || len(gateway.requests) != 0 || !strings.Contains(result.Blocker, "resume bound") {
+		t.Fatalf("oversized semantic resume reached provider: result=%+v requests=%d", result, len(gateway.requests))
+	}
+}
+
+func TestLoopCheckpointTaskMustBeSoleCallBeforeAnyExecution(t *testing.T) {
+	gateway := &scriptedGateway{responses: []model.TurnResponse{assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{
+		{ID: "checkpoint", Name: checkpointToolName, Arguments: `{}`},
+		{ID: "read", Name: "read_file", Arguments: `{}`},
+	}})}}
+	tools := newFakeTools(true, "read_file")
+	checkpoints := &fakeCheckpointStore{}
+	loop := newTestLoopWithCheckpoints(t, gateway, tools, checkpoints, testConfig())
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusBlocked || len(tools.calls) != 0 || len(checkpoints.published) != 0 || !strings.Contains(result.Blocker, "checkpoint_task must be the sole") {
+		t.Fatalf("mixed checkpoint batch executed partially: result=%+v tools=%+v checkpoints=%+v", result, tools.calls, checkpoints.published)
+	}
+}
+
+func TestLoopFencesAttemptImmediatelyBeforeCheckpointPublish(t *testing.T) {
+	gateway := &scriptedGateway{responses: []model.TurnResponse{assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "checkpoint", Name: checkpointToolName, Arguments: `{"completed_work":[],"current_hypothesis":"state","changed_areas":[],"verification_status":"pending","blockers":[],"remaining_work":["work"],"next_action":"continue","critical_evidence_refs":[]}`}}})}}
+	authority := &fakeAttemptAuthority{fn: func(call int, _, _ string, _ int64) (bool, error) { return call < 3, nil }}
+	checkpoints := &fakeCheckpointStore{}
+	loop, err := New(gateway, newFakeTools(true, "read_file"), fakeContextBuilder{}, authority, checkpoints, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCancelled || len(checkpoints.published) != 0 || authority.calls != 3 {
+		t.Fatalf("stale attempt published checkpoint: result=%+v published=%+v checks=%d", result, checkpoints.published, authority.calls)
+	}
+}
+
 func newTestLoop(t *testing.T, gateway ModelGateway, tools ToolRuntime, cfg Config) *Loop {
+	t.Helper()
+	return newTestLoopWithCheckpoints(t, gateway, tools, &fakeCheckpointStore{}, cfg)
+}
+
+func newTestLoopWithCheckpoints(t *testing.T, gateway ModelGateway, tools ToolRuntime, checkpoints CheckpointStore, cfg Config) *Loop {
 	t.Helper()
 	loop, err := New(gateway, tools, fakeContextBuilder{pack: contextengine.Pack{
 		Revision: "rev-test",
@@ -500,7 +635,7 @@ func newTestLoop(t *testing.T, gateway ModelGateway, tools ToolRuntime, cfg Conf
 			Path: "worker.go", SHA256: strings.Repeat("a", 64), Score: 10, StartLine: 1, EndLine: 2, Reasons: []string{"symbol:Worker"}, Text: "package worker\nfunc Worker() {}\n",
 		}},
 		Bytes: 256,
-	}}, &fakeAttemptAuthority{}, Profile{Model: "test-model", ReasoningEffort: "high", BaseInstructions: "You are the MAR coding worker."}, cfg)
+	}}, &fakeAttemptAuthority{}, checkpoints, Profile{Model: "test-model", ReasoningEffort: "high", BaseInstructions: "You are the MAR coding worker."}, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -523,6 +658,7 @@ func testConfig() Config {
 		MaxTotalTokens:         1000,
 		MaxOutputTokensPerTurn: 200,
 		MaxContextBytes:        8 << 10,
+		MaxResumeBytes:         8 << 10,
 		MaxRequestBytes:        32 << 10,
 		MaxAssistantBytes:      8 << 10,
 		MaxObservationBytes:    4 << 10,
