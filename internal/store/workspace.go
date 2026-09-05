@@ -109,6 +109,43 @@ WHERE id = ? AND task_id = ? AND state = ?`,
 	return tx.Commit()
 }
 
+func (s *SQLite) RecordWorkspaceHeadForAttempt(ctx context.Context, taskID, attemptID string, epoch int64, expectedHead, candidateHead string, now time.Time) error {
+	if expectedHead == "" || candidateHead == "" {
+		return errors.New("expected and candidate workspace head are required")
+	}
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := validateAttemptAuthorityTx(ctx, tx, taskID, attemptID, epoch); err != nil {
+		return err
+	}
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	res, err := tx.ExecContext(ctx, `
+UPDATE workspaces SET head_revision = ?, updated_at = ?
+WHERE task_id = ? AND state = ? AND head_revision = ?`,
+		candidateHead, stamp, taskID, string(domain.WorkspaceReady), expectedHead,
+	)
+	if err != nil {
+		return fmt.Errorf("record workspace candidate head: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		var current string
+		if err := tx.QueryRowContext(ctx, `SELECT head_revision FROM workspaces WHERE task_id = ? AND state = ?`, taskID, string(domain.WorkspaceReady)).Scan(&current); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if current != candidateHead {
+			return ErrStateConflict
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *SQLite) MarkWorkspaceFailed(ctx context.Context, workspaceID, taskID, failure string, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {

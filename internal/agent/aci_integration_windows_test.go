@@ -167,6 +167,13 @@ func TestLoopUsesDurableAttemptAuthorityBeforeRealACIMutation(t *testing.T) {
 	if result.Status != StatusCompletedCandidate {
 		t.Fatalf("active durable attempt failed to run: %+v", result)
 	}
+	durableTask, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if durableTask.State != domain.TaskRunning {
+		t.Fatalf("completed_candidate bypassed authoritative verification: state=%s", durableTask.State)
+	}
 	if got, err := os.ReadFile(filepath.Join(root, "durable.txt")); err != nil || string(got) != "durable\n" {
 		t.Fatalf("active durable attempt did not mutate through ACI: content=%q err=%v", got, err)
 	}

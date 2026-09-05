@@ -38,6 +38,11 @@ func (g GoalContract) Validate() error {
 	if len(g.Acceptance) == 0 {
 		return errors.New("at least one acceptance criterion is required")
 	}
+	for _, criterion := range g.Acceptance {
+		if strings.TrimSpace(criterion) == "" {
+			return errors.New("acceptance criteria cannot be blank")
+		}
+	}
 	if strings.TrimSpace(g.ProjectID) == "" {
 		return errors.New("project_id is required")
 	}

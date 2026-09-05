@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 6
+const latestSchemaVersion = 7
 
 type SQLite struct {
 	db *sql.DB
@@ -207,6 +207,55 @@ CREATE TABLE semantic_checkpoints (
 );
 CREATE INDEX idx_checkpoints_task_version ON semantic_checkpoints(task_id, version DESC);
 CREATE INDEX idx_checkpoints_attempt ON semantic_checkpoints(attempt_id, run_epoch);
+`
+	case 7:
+		script = `
+CREATE TABLE verification_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    run_epoch INTEGER NOT NULL,
+    goal_hash TEXT NOT NULL,
+    base_revision TEXT NOT NULL,
+    candidate_revision TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    profile_hash TEXT NOT NULL,
+    environment_json BLOB NOT NULL,
+    environment_hash TEXT NOT NULL,
+    commands_json BLOB NOT NULL,
+    acceptance_json BLOB NOT NULL,
+    verdict TEXT NOT NULL,
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(attempt_id) REFERENCES execution_attempts(attempt_id)
+);
+CREATE INDEX idx_verification_task_created ON verification_evidence(task_id, created_at DESC);
+CREATE INDEX idx_verification_candidate ON verification_evidence(task_id, candidate_revision);
+
+CREATE TABLE task_results (
+    result_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    goal_hash TEXT NOT NULL,
+    base_revision TEXT NOT NULL,
+    final_revision TEXT NOT NULL,
+    changed_areas_json BLOB NOT NULL,
+    evidence_id TEXT NOT NULL,
+    verification_executed_json BLOB NOT NULL,
+    pass_fail_evidence_json BLOB NOT NULL,
+    unresolved_risks_json BLOB NOT NULL,
+    integration_status TEXT NOT NULL,
+    workspace_disposition TEXT NOT NULL,
+    resource_summary_json BLOB NOT NULL,
+    verdict TEXT NOT NULL,
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(evidence_id) REFERENCES verification_evidence(evidence_id),
+    UNIQUE(task_id, version)
+);
+CREATE INDEX idx_results_task_version ON task_results(task_id, version DESC);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"mar/internal/contextengine"
 	"mar/internal/domain"
 	"mar/internal/model"
+	"mar/internal/service"
+	"mar/internal/store"
 )
 
 type scriptedGateway struct {
@@ -618,6 +621,60 @@ func TestLoopFencesAttemptImmediatelyBeforeCheckpointPublish(t *testing.T) {
 	}
 	if result.Status != StatusCancelled || len(checkpoints.published) != 0 || authority.calls != 3 {
 		t.Fatalf("stale attempt published checkpoint: result=%+v published=%+v checks=%d", result, checkpoints.published, authority.calls)
+	}
+}
+
+func TestCompletedCandidateDoesNotTransitionDurableTaskToVerified(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := service.NewTaskService(db)
+	project, _, err := svc.RegisterProject(ctx, "project-completed-candidate", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "produce a candidate without asserting verification",
+		Acceptance:          []string{"authoritative verification is still required"},
+		ProjectID:           project.ID,
+		BaseRevision:        "rev-candidate",
+		VerificationProfile: "test",
+		Priority:            "P2",
+	}
+	task, _, err := svc.Submit(ctx, "completed-candidate-no-verify", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker", "supervisor", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway := &scriptedGateway{responses: []model.TurnResponse{assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"candidate ready for MAR verification"}`}}})}}
+	loop, err := New(gateway, newFakeTools(true), fakeContextBuilder{pack: contextengine.Pack{Revision: contract.BaseRevision}}, svc, svc, Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(ctx, RunRequest{TaskID: task.ID, AttemptID: attempt.ID, RunEpoch: attempt.RunEpoch, Root: project.Root, Contract: contract, ExpectedRevision: contract.BaseRevision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate {
+		t.Fatalf("unexpected agent terminal status: %+v", result)
+	}
+	persisted, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.State != domain.TaskRunning {
+		t.Fatalf("completed_candidate bypassed authoritative verification: state=%s", persisted.State)
 	}
 }
 
