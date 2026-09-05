@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `1689cd2`
+**Verified implementation HEAD:** `c1924e2`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -19,59 +19,66 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 009 Coding ACI / Tool Runtime — `761376f`
 - 010 Windows Worker Sandbox — `06210a4`
 - 011 Minimal Context Engine — `1689cd2`
+- 012 Autonomous Agent Loop — `c1924e2`
 
 ## Current state
 
-Repo implementation is verified through Slice 011.
+Repo implementation is verified through Slice 012.
 
 Latest verification:
-- `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\\MAR\\.mar\\runtime\\testtmp`
+- `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
 - `git diff --check`: PASS
-- real Git snapshot -> bounded context pack integration: PASS
-- exact HEAD revision + clean/modified/staged/untracked inventory: PASS
-- ignored files excluded; NUL-delimited filename identity preserved: PASS
-- revision mismatch fail-closed: PASS
-- deterministic lexical/symbol ranking: PASS
-- local Go import + same-package dependency expansion: PASS
-- individual file / total scan / file count / snippet / entry / term / cache / final pack bounds: PASS
-- oversized intent terms cannot exceed context-pack budget: PASS
-- binary/non-UTF-8, traversal and control-character path rejection: PASS
-- Git output overflow and context cancellation fail closed: PASS
-- file evidence is SHA-256 bound
+- real Coding ACI autonomous loop (`write_file` -> typed Git status -> finish): PASS
+- durable SQLite `attempt_id/run_epoch` authority validation before real ACI mutation: PASS
+- logical fence stops stale attempt before subsequent model/tool dispatch: PASS
+- Goal Contract authority filters mutation tool surface: PASS
+- unclassified/unauthorized tools fail closed: PASS
+- context revision + Goal-hash identity pinning: PASS
+- explicit `finish_task` terminal protocol; mixed finish+mutation batch denied: PASS
+- turn/tool/token/context/request/assistant/observation/time bounds: PASS
+- provider output cap/length termination blocks tool side effects: PASS
+- duplicate tool-call IDs blocked before unsafe execution: PASS
+- repository/tool/test text remains untrusted evidence, not authority
 
-Slice 010 OS authority guarantees remain unchanged. `Runtime.SelfHostingSafe()` describes the Coding ACI execution boundary only; MAR as a product is **not** yet `SELF_HOSTING_READY`.
+`completed_candidate` is only an agent-loop result. Slice 014 remains the authoritative verification/result contract. MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next slice
 
-`012` Autonomous Agent Loop.
+`013` Semantic Checkpoint + Resume.
 
-Goal: implement the smallest local Codex-like model↔tool loop behind MAR, using already-frozen primitives rather than adding another orchestration system.
+Goal: persist the minimum immutable/versioned semantic recovery state needed to reconstruct a bounded new model session after worker interruption without replaying the full transcript.
 
-Required shape:
+Frozen checkpoint minimum:
+- Goal Contract hash;
+- base revision;
+- current revision;
+- completed work;
+- current hypothesis;
+- changed areas;
+- verification status;
+- blockers;
+- remaining work;
+- next action;
+- critical evidence references.
 
-`Goal Contract + bounded Context Pack -> pinned model turn -> bounded tool call(s) -> Coding ACI -> observation -> next model turn -> completion/block/limit`
-
-Slice 012 must:
-- keep the inner loop local to MAR; MCP/ChatWeb must not remote-control individual tool turns;
-- pin model/tool schema/base instructions/sandbox/workspace identity for the continuous phase;
-- treat repository context/tool observations as untrusted evidence, not authority/instructions;
-- use the existing Model Gateway and Coding ACI instead of provider-specific or shell-specific shortcuts;
-- enforce hard turn/tool/token/context/time/output limits;
-- preserve immutable Goal Contract boundaries and never widen worker authority;
-- distinguish model completion from verification acceptance (Slice 014 remains authoritative verification/result contract);
-- terminate deterministically as completed-candidate, blocked, cancelled, or budget-exhausted;
-- avoid semantic checkpoint/resume scope creep; durable semantic resume belongs to Slice 013.
-
-The first acceptance should use deterministic fake-model loops plus at least one real Coding ACI tool path. Do not require a live paid provider to make Slice 012 tests deterministic.
+Required properties:
+- checkpoint snapshots are immutable/versioned;
+- atomic durable write;
+- integrity hash/checksum;
+- checkpoint is bound to task + authoritative attempt/run_epoch and stale attempts cannot publish a new checkpoint;
+- recovery chooses the latest valid compatible checkpoint; corrupt/incompatible snapshots never override durable task truth;
+- full transcripts/tool logs remain external artifacts and are not replayed by default;
+- resume input is bounded Goal + latest valid semantic checkpoint + selected evidence/current context;
+- same-workspace mutable replacement still requires Slice 002/003 physical/logical fencing before a replacement attempt becomes mutation-capable;
+- do not implement final verification/result contract or MCP control surface here.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 012 Autonomous Agent Loop
 - 013 Semantic Checkpoint + Resume
 - 014 Verification / Result Contract
 - 015 MCP Control Surface
@@ -92,6 +99,7 @@ After Slice 016 passes, MAR becomes the primary coding worker for continuing MAR
 - uncertain side effects reconcile before retry
 - worker authority is OS-enforced and strictly weaker than daemon authority
 - context retrieval is layered and bounded; vector infrastructure is optional, not a prerequisite
+- live model cognition, transcript artifacts and durable semantic checkpoints are distinct state layers
 
 ## Session rotation protocol
 
@@ -109,4 +117,4 @@ Do not require replay of previous chat history.
 
 - Go race detector is currently unavailable because the host C compiler lacks required 64-bit support. This is a host toolchain limitation, not a passing race result.
 - Windows LPAC self-hosting commands require the host NUL-device preparation from Slice 010. Windows resets that device security descriptor on reboot; `mar sandbox-host-check` must pass before the executor may report `ENFORCED_SANDBOX`, and `mar sandbox-host-prepare` requires owner/admin elevation when preparation is needed.
-- On the Slice 011 validation run, C: had only ~0.09 GB free while D: had ~5.47 GB free. The unchanged full test suite failed once when Go-in-LPAC used the default C: temp directory, then passed when `TEMP/TMP` were set to `D:\\MAR\\.mar\\runtime\\testtmp`. Until C: is cleaned, full validation should keep temp files on D: rather than weakening/skipping tests.
+- C: remains nearly full. Full validation should keep `TEMP/TMP=D:\MAR\.mar\runtime\testtmp` until C: is cleaned; do not weaken or skip tests to work around storage pressure.
