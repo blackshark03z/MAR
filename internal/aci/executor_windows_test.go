@@ -23,12 +23,17 @@ func TestContainedHostExecutorIntegratesWithGitToolsButIsNotSelfHostingSafe(t *t
 	runGitSetup(t, root, "add", "a.txt")
 	runGitSetup(t, root, "commit", "-m", "base")
 
+	broker, err := NewContainedGitBroker()
+	if err != nil {
+		t.Fatal(err)
+	}
 	runtime, err := New(Config{
 		Root:                         root,
 		TaskID:                       "task-git-integration",
 		MaxCommandOutputBytes:        8 << 10,
 		CommandTimeout:               10 * time.Second,
 		AllowTrustedCommandExecution: true,
+		GitBroker:                    broker,
 	}, NewContainedHostExecutor())
 	if err != nil {
 		t.Fatal(err)

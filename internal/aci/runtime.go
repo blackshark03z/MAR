@@ -42,6 +42,15 @@ type Executor interface {
 	Run(ctx context.Context, taskID string, spec ExecSpec) (ExecResult, error)
 }
 
+type GitBroker interface {
+	Status(ctx context.Context, taskID, root string, maxOutputBytes int) (ExecResult, error)
+	Diff(ctx context.Context, taskID, root string, paths []string, maxOutputBytes int) (ExecResult, error)
+}
+
+type sandboxEnvironmentPolicy interface {
+	RequiresSanitizedEnvironment() bool
+}
+
 type Config struct {
 	Root                         string
 	TaskID                       string
@@ -52,13 +61,15 @@ type Config struct {
 	MaxCommandOutputBytes        int
 	CommandTimeout               time.Duration
 	AllowTrustedCommandExecution bool
+	GitBroker                    GitBroker
 }
 
 type Runtime struct {
-	root     string
-	taskID   string
-	cfg      Config
-	executor Executor
+	root      string
+	taskID    string
+	cfg       Config
+	executor  Executor
+	gitBroker GitBroker
 }
 
 type ReadResult struct {
@@ -131,13 +142,13 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 	if cfg.CommandTimeout <= 0 {
 		cfg.CommandTimeout = 2 * time.Minute
 	}
-	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor}, nil
+	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker}, nil
 }
 
 func (r *Runtime) Root() string { return r.root }
 
 func (r *Runtime) SelfHostingSafe() bool {
-	return r.executor != nil && r.executor.IsolationLevel() == IsolationEnforcedSandbox
+	return r.executor != nil && r.executor.IsolationLevel() == IsolationEnforcedSandbox && r.gitBroker != nil
 }
 
 func (r *Runtime) ReadFile(rel string, startLine, endLine int) (ReadResult, error) {
@@ -336,19 +347,29 @@ func (r *Runtime) ReplaceExact(rel, expectedSHA256, search, replacement string, 
 }
 
 func (r *Runtime) GitStatus(ctx context.Context) (ExecResult, error) {
-	return r.runCommand(ctx, Command{Name: "git", Args: []string{"status", "--short", "--branch"}})
+	if r.gitBroker == nil {
+		return ExecResult{}, errors.New("typed Git broker is not configured")
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	defer cancel()
+	return r.gitBroker.Status(commandCtx, r.taskID, r.root, r.cfg.MaxCommandOutputBytes)
 }
 
 func (r *Runtime) GitDiff(ctx context.Context, paths []string) (ExecResult, error) {
-	args := []string{"diff", "--"}
+	if r.gitBroker == nil {
+		return ExecResult{}, errors.New("typed Git broker is not configured")
+	}
+	cleanPaths := make([]string, 0, len(paths))
 	for _, rel := range paths {
 		clean, err := cleanRelative(rel)
 		if err != nil {
 			return ExecResult{}, err
 		}
-		args = append(args, clean)
+		cleanPaths = append(cleanPaths, clean)
 	}
-	return r.runCommand(ctx, Command{Name: "git", Args: args})
+	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	defer cancel()
+	return r.gitBroker.Diff(commandCtx, r.taskID, r.root, cleanPaths, r.cfg.MaxCommandOutputBytes)
 }
 
 func (r *Runtime) RunCommand(ctx context.Context, cmd Command) (ExecResult, error) {
@@ -381,7 +402,10 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	if err != nil {
 		return ExecResult{}, fmt.Errorf("resolve command %q: %w", cmd.Name, err)
 	}
-	env := os.Environ()
+	env, err := r.commandEnvironment(path)
+	if err != nil {
+		return ExecResult{}, err
+	}
 	if strings.EqualFold(filepath.Base(path), "go.exe") || strings.EqualFold(filepath.Base(path), "go") {
 		cacheRoot := filepath.Join(r.root, ".mar", "go")
 		if err := os.MkdirAll(filepath.Join(cacheRoot, "build"), 0o755); err != nil {
@@ -398,6 +422,10 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 			"GOMODCACHE="+filepath.Join(cacheRoot, "mod"),
 			"GOTMPDIR="+filepath.Join(cacheRoot, "tmp"),
 			"GOPROXY=off",
+			"GOSUMDB=off",
+			"GOENV=off",
+			"GOTOOLCHAIN=local",
+			"GOROOT="+filepath.Dir(filepath.Dir(path)),
 		)
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
@@ -412,6 +440,55 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	})
 }
 
+func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
+	requiresSanitized := r.executor != nil && r.executor.IsolationLevel() == IsolationEnforcedSandbox
+	if policy, ok := r.executor.(sandboxEnvironmentPolicy); ok && policy.RequiresSanitizedEnvironment() {
+		requiresSanitized = true
+	}
+	if !requiresSanitized {
+		return os.Environ(), nil
+	}
+
+	systemRoot := strings.TrimSpace(os.Getenv("SystemRoot"))
+	if systemRoot == "" {
+		systemRoot = strings.TrimSpace(os.Getenv("WINDIR"))
+	}
+	if systemRoot == "" {
+		return nil, errors.New("Windows SystemRoot is required for sandboxed command execution")
+	}
+	profileRoot := filepath.Join(r.root, ".mar", "runtime", "profile")
+	tempRoot := filepath.Join(r.root, ".mar", "runtime", "tmp")
+	appData := filepath.Join(profileRoot, "AppData", "Roaming")
+	localAppData := filepath.Join(profileRoot, "AppData", "Local")
+	for _, dir := range []string{profileRoot, tempRoot, appData, localAppData} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	pathValue := strings.Join([]string{
+		filepath.Dir(commandPath),
+		filepath.Join(systemRoot, "System32"),
+		systemRoot,
+	}, string(os.PathListSeparator))
+	return []string{
+		"SystemRoot=" + systemRoot,
+		"WINDIR=" + systemRoot,
+		"ComSpec=" + filepath.Join(systemRoot, "System32", "cmd.exe"),
+		"PATH=" + pathValue,
+		"PATHEXT=.COM;.EXE;.BAT;.CMD",
+		"USERPROFILE=" + profileRoot,
+		"HOME=" + profileRoot,
+		"APPDATA=" + appData,
+		"LOCALAPPDATA=" + localAppData,
+		"TEMP=" + tempRoot,
+		"TMP=" + tempRoot,
+		"PWD=" + r.root,
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_TERMINAL_PROMPT=0",
+		"GCM_INTERACTIVE=Never",
+	}, nil
+}
+
 func validateCommand(cmd Command) error {
 	name := strings.ToLower(filepath.Base(strings.TrimSpace(cmd.Name)))
 	if name == "" {
@@ -419,13 +496,7 @@ func validateCommand(cmd Command) error {
 	}
 	switch name {
 	case "git", "git.exe":
-		if len(cmd.Args) == 0 {
-			return errors.New("git subcommand is required")
-		}
-		sub := strings.ToLower(cmd.Args[0])
-		if sub != "status" && sub != "diff" && sub != "rev-parse" && sub != "show" {
-			return fmt.Errorf("git subcommand %q is not allowed by coding ACI", sub)
-		}
+		return errors.New("Git is available only through typed git_status/git_diff tools")
 	case "go", "go.exe":
 		if len(cmd.Args) == 0 {
 			return errors.New("go subcommand is required")

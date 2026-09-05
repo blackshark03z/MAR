@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"mar/internal/domain"
+	"mar/internal/processctl"
 	"mar/internal/service"
 	"mar/internal/store"
 )
@@ -111,6 +112,31 @@ func run(ctx context.Context, args []string) error {
 		}
 		return printJSON(task)
 
+	case "sandbox-host-check":
+		fs := flag.NewFlagSet("sandbox-host-check", flag.ContinueOnError)
+		workspace := fs.String("workspace", ".", "Workspace used for the AppContainer readiness probe")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := processctl.CheckSandboxHostReady(ctx, *workspace); err != nil {
+			return err
+		}
+		return printJSON(map[string]any{"sandbox_host_ready": true, "workspace": *workspace})
+
+	case "sandbox-host-prepare":
+		fs := flag.NewFlagSet("sandbox-host-prepare", flag.ContinueOnError)
+		workspace := fs.String("workspace", ".", "Workspace used to verify the AppContainer prerequisite after preparation")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if err := processctl.PrepareSandboxHost(); err != nil {
+			return err
+		}
+		if err := processctl.CheckSandboxHostReady(ctx, *workspace); err != nil {
+			return err
+		}
+		return printJSON(map[string]any{"sandbox_host_ready": true, "prepared": true, "workspace": *workspace})
+
 	default:
 		return usage()
 	}
@@ -131,5 +157,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|sandbox-host-check|sandbox-host-prepare> [options]")
 }

@@ -20,6 +20,16 @@ type fakeExecutor struct {
 	err   error
 }
 
+type fakeGitBroker struct{}
+
+func (f *fakeGitBroker) Status(context.Context, string, string, int) (ExecResult, error) {
+	return ExecResult{Output: "## main", ExitCode: 0}, nil
+}
+
+func (f *fakeGitBroker) Diff(context.Context, string, string, []string, int) (ExecResult, error) {
+	return ExecResult{Output: "diff", ExitCode: 0}, nil
+}
+
 func (f *fakeExecutor) IsolationLevel() IsolationLevel { return f.level }
 func (f *fakeExecutor) Run(_ context.Context, _ string, spec ExecSpec) (ExecResult, error) {
 	f.calls++
@@ -30,6 +40,10 @@ func (f *fakeExecutor) Run(_ context.Context, _ string, spec ExecSpec) (ExecResu
 func newTestRuntime(t *testing.T, executor Executor, allowTrusted bool) (*Runtime, string) {
 	t.Helper()
 	root := t.TempDir()
+	var gitBroker GitBroker
+	if executor != nil {
+		gitBroker = &fakeGitBroker{}
+	}
 	r, err := New(Config{
 		Root:                         root,
 		TaskID:                       "task-test",
@@ -40,6 +54,7 @@ func newTestRuntime(t *testing.T, executor Executor, allowTrusted bool) (*Runtim
 		MaxCommandOutputBytes:        128,
 		CommandTimeout:               time.Second,
 		AllowTrustedCommandExecution: allowTrusted,
+		GitBroker:                    gitBroker,
 	}, executor)
 	if err != nil {
 		t.Fatal(err)
