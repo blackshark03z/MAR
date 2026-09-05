@@ -22,6 +22,10 @@ func TestRunContainedHelper(t *testing.T) {
 		_, _ = os.Stdout.WriteString("contained-ok")
 		return
 	}
+	if mode == "flood" {
+		_, _ = os.Stdout.WriteString(strings.Repeat("x", 32<<10))
+		return
+	}
 	if mode != "tree" && mode != "orphan" {
 		os.Exit(2)
 	}
@@ -63,6 +67,23 @@ func TestRunContainedCommandSuccess(t *testing.T) {
 	}
 	if !strings.Contains(out, "contained-ok") {
 		t.Fatalf("missing contained output: %q", out)
+	}
+}
+
+func TestRunContainedCommandOutputIsBounded(t *testing.T) {
+	out, err := RunContainedCommand(context.Background(), CommandSpec{
+		TaskID:         "task-control",
+		OperationID:    "flood",
+		Path:           os.Args[0],
+		Args:           []string{"-test.run=TestRunContainedHelper"},
+		Env:            append(os.Environ(), "MAR_CONTAINED_COMMAND_HELPER=flood"),
+		MaxOutputBytes: 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[MAR output truncated]") || len(out) > 1100 {
+		t.Fatalf("contained output was not bounded: len=%d tail=%q", len(out), out[max(0, len(out)-80):])
 	}
 }
 

@@ -16,29 +16,50 @@ import (
 )
 
 type CommandSpec struct {
-	TaskID      string
-	OperationID string
-	Path        string
-	Args        []string
-	Dir         string
-	Env         []string
+	TaskID         string
+	OperationID    string
+	Path           string
+	Args           []string
+	Dir            string
+	Env            []string
+	MaxOutputBytes int
 }
 
 type lockedBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
+	mu        sync.Mutex
+	b         bytes.Buffer
+	max       int
+	truncated bool
 }
 
 func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.b.Write(p)
+	originalLen := len(p)
+	if b.max <= 0 {
+		b.max = 1 << 20
+	}
+	remaining := b.max - b.b.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return originalLen, nil
+	}
+	if len(p) > remaining {
+		_, _ = b.b.Write(p[:remaining])
+		b.truncated = true
+		return originalLen, nil
+	}
+	_, _ = b.b.Write(p)
+	return originalLen, nil
 }
 
 func (b *lockedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.b.String()
+	if !b.truncated {
+		return b.b.String()
+	}
+	return b.b.String() + "\n...[MAR output truncated]..."
 }
 
 // RunContainedCommand executes a MAR control-plane command in a Windows Job
@@ -58,9 +79,9 @@ func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) 
 	} else {
 		cmd.Env = os.Environ()
 	}
-	var output lockedBuffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
+	output := &lockedBuffer{max: spec.MaxOutputBytes}
+	cmd.Stdout = output
+	cmd.Stderr = output
 
 	job, err := winjob.Start(cmd, winjob.LimitKillOnJobClose)
 	if err != nil {
