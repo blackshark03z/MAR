@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `81c0042`
+**Verified implementation HEAD:** `d0b3290246c92524d6c4e0b142bf3e9a83310193`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -26,11 +26,13 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 
 ## Current state
 
-Repo implementation is verified through Slice 015 plus the T16 authoritative-integration substep of Slice 016. Slice 016 remains **IN PROGRESS** and MAR is not yet `SELF_HOSTING_READY`.
+Repo implementation is verified through Slice 015 plus the T16 authoritative-integration substep and the self-hosting runtime wiring substep of Slice 016. Slice 016 remains **IN PROGRESS** and MAR is not yet `SELF_HOSTING_READY`.
 
 T16 integration checkpoint: `81c0042` — durable `integration_attempt`, serialized expected-head CAS, deterministic pre/post-CAS crash recovery, stale-evidence/base-drift blocking, and explicit integration-result integrity preservation.
 
-Latest repository-wide verification on the Slice 016/T16 implementation checkpoint:
+Self-hosting runtime checkpoint: `d0b3290` — real worker process boundary, daemon/preflight/scheduler orchestration, cancellation watcher, fail-closed restart recovery, portable-Go sandbox grants/shared module cache, MCP runtime wiring, and end-to-end MCP→worker→verification→integration execution.
+
+Latest repository-wide verification on the Slice 016 runtime checkpoint:
 - `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
@@ -69,6 +71,17 @@ Latest repository-wide verification on the Slice 016/T16 implementation checkpoi
 - authoritative base drift blocks integration before an attempt is created: PASS
 - verification that becomes stale before integration dispatch is blocked before ref mutation: PASS
 - integration result cloning preserves explicit empty-array identity required by `TaskResult` integrity: PASS
+- worker runs in a separately killable Windows Job Object process tree via the internal `worker-run` protocol: PASS
+- worker RPC is bounded to attempt authority + semantic checkpoint operations and rejects task/attempt/epoch escape: PASS
+- abrupt worker exit returns no false success while preserving physical-termination proof when Windows confirms zero active processes: PASS
+- daemon startup fail-closes orphaned/unproven attempts into recovery-required blocking without admitting a replacement mutable worker: PASS
+- daemon startup recovery deduplicates each task within one reconciliation pass: PASS
+- `mcp-stdio` now runs the bounded MCP control surface and durable daemon runtime over one SQLite coordination truth: PASS
+- client stdio disconnect drains already-active bounded workers instead of treating disconnect as authority to kill mutation-capable work: PASS
+- portable Go is granted explicitly to the LPAC sandbox; shared Go module cache is read-only granted while build/tmp caches remain task-local: PASS
+- ACI command `cwd="."` correctly resolves to workspace root while `..`/absolute escape remains rejected: PASS
+- real E2E test `TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate` proves MCP submit → preflight → resource admission → isolated worktree → real worker child → model/tool loop → candidate seal → `go test/vet/build` → physical termination → serialized integration → authoritative project update: PASS
+- E2E candidate changed only the requested `marker.txt`; final task state `COMPLETE`; final result `VERIFIED` with `integration_status=INTEGRATED`: PASS
 
 `VerificationEvidence` and `TaskResult` are durable technical truth. The MCP edge is now a bounded task control plane over that durable kernel; it is not the coding inner loop and owns no independent coordination truth.
 
