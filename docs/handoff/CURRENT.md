@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `432a5c8`
+**Verified implementation HEAD:** `e65f74856e055ad64bf998b9750df39946947397`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -21,57 +21,62 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 - 011 Minimal Context Engine — `1689cd2`
 - 012 Autonomous Agent Loop — `c1924e2`
 - 013 Semantic Checkpoint + Resume — `432a5c8`
+- 014 Verification / Result Contract — `e65f748`
 
 ## Current state
 
-Repo implementation is verified through Slice 013.
+Repo implementation is verified through Slice 014.
 
-Latest verification:
+Latest verification on the Slice 014 implementation commit candidate:
 - `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
 - `go vet ./...`: PASS
 - Windows `go build ./cmd/mar`: PASS
 - `git diff --check`: PASS
-- semantic checkpoint schema/migration v6: PASS
-- immutable task-local checkpoint versions + SHA-256 integrity: PASS
-- checkpoint payload hard bound: PASS
-- stale `attempt_id/run_epoch` cannot publish checkpoint: PASS
-- corrupt newest checkpoint skipped for older valid snapshot: PASS
-- checkpoint persists across SQLite close/reopen: PASS
-- agent `checkpoint_task` publication: PASS
-- checkpoint tool must be sole tool call: PASS
-- hard resume byte bound before provider call: PASS
-- replacement attempt receives prior checkpoint + fresh context in a two-message new model session: PASS
-- no full transcript replay required for resume: PASS
+- durable verification/result schema + migration: PASS
+- candidate sealing is effect-ledger reconciled and idempotent after crash/retry: PASS
+- candidate reconciliation proves authorized workspace-state bytes, not only parent/message/path identity: PASS
+- `completed_candidate` cannot directly produce technical VERIFIED: PASS
+- stale `attempt_id/run_epoch` cannot publish verification/result: PASS
+- verification evidence is bound to Goal hash, base revision, candidate revision, profile hash and environment/toolchain identity: PASS
+- candidate/profile/environment drift invalidates evidence freshness: PASS
+- tracked and untracked workspace drift invalidates evidence freshness: PASS
+- failed verification cannot become VERIFIED and records explicit unresolved risk: PASS
+- evidence/result integrity tamper is rejected: PASS
+- durable Goal Contract/profile/acceptance identity is revalidated by the store before VERIFIED publication: PASS
+- result/evidence survive SQLite close/reopen with valid integrity: PASS
 
-Semantic checkpoint content is durable task memory but remains untrusted relative to the immutable Goal Contract and fresh evidence.
+`VerificationEvidence` and `TaskResult` are now durable technical truth. Agent self-assertion remains only a candidate assertion.
 
 MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next slice
 
-`014` Verification / Result Contract.
+`015` MCP Control Surface.
 
-Goal: make verification authoritative over model self-assertion and produce a revision-bound durable result/evidence identity.
+Goal: expose the small ChatWeb-facing control plane over the durable MAR kernel without leaking low-level worker primitives into the public workflow.
 
 Frozen requirements:
-- a task cannot become technically VERIFIED because the agent returned `completed_candidate`;
-- verification evidence is bound to exact candidate revision + verification-profile hash + relevant environment/toolchain identity;
-- acceptance evaluation and required verification must execute before VERIFIED/READY_TO_INTEGRATE eligibility;
-- stale evidence must be rejected after revision/base/profile/environment drift;
-- result must identify task ID, Goal hash, base revision, final task revision, changed areas/files, verification executed, pass/fail evidence, unresolved risks, integration status, workspace disposition, resource summary and verdict;
-- remaining risk must be explicit;
-- verification/result state must be durable and attempt/revision fenced;
-- no MCP control surface scope creep; Slice 015 owns the external API;
+- required public operations are exactly the product-level capabilities `submit`, `status`, `steer`, `input`, `cancel`, `result`, and `inspect`;
+- normal ChatWeb autonomous workflow must not require direct `read_file`, `write_file`, or unrestricted shell calls;
+- low-level coding/file/process primitives remain inside the worker runtime;
+- `submit` must preserve Goal Contract validation, base-revision validation, idempotent submission and durable-before-execution semantics already owned by the kernel/service layer;
+- `status`, `result`, and `inspect` must expose bounded durable truth rather than reconstructing authority from chat history;
+- `result` must surface the durable revision-bound `TaskResult`/verification identity from Slice 014;
+- steering may add factual context, clarify priority, choose among explicitly blocked alternatives, request cancellation, or request additional verification;
+- steering must never silently rewrite the immutable Goal Contract; a material goal/acceptance/boundary change requires a new superseding task;
+- `input` may satisfy explicit task input requirements but must not widen authority or mutate immutable task intent;
+- cancellation/steering/input must preserve attempt fencing, resource policy, process containment and side-effect reconciliation guarantees;
+- multiple ChatWeb clients may observe/steer the same durable task without creating a second coordination truth;
+- no parallel shell/orchestration system and no worker-authority widening;
 - no final self-hosting claim; Slice 016 owns self-hosting acceptance.
 
-Use the existing Coding ACI verification command path and durable task state. Do not create a parallel shell/orchestration system.
+Use the existing service/store/worker contracts. MCP is control plane, not the coding inner loop.
 
 ## Bootstrap milestone
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
 Remaining bootstrap slices:
-- 014 Verification / Result Contract
 - 015 MCP Control Surface
 - 016 Self-Hosting Acceptance
 
@@ -109,4 +114,5 @@ Do not require replay of previous chat history.
 
 - Go race detector is currently unavailable because the host C compiler lacks required 64-bit support. This is a host toolchain limitation, not a passing race result.
 - Windows LPAC self-hosting commands require the host NUL-device preparation from Slice 010. Windows resets that device security descriptor on reboot; `mar sandbox-host-check` must pass before the executor may report `ENFORCED_SANDBOX`, and `mar sandbox-host-prepare` requires owner/admin elevation when preparation is needed.
+- The Windows package inventory reports Go 1.27.0, but the normal installed `go.exe` was missing during Slice 014 validation. Slice 014 was validated with a hash-verified portable Go 1.27.0 toolchain kept under `D:\MAR\.mar\runtime`; if `go` is absent from PATH, use/re-locate that D:-hosted toolchain rather than weakening validation.
 - C: remains nearly full. Full validation should keep `TEMP/TMP=D:\MAR\.mar\runtime\testtmp` until C: is cleaned; do not weaken or skip tests to work around storage pressure.
