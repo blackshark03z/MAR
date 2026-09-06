@@ -12,6 +12,7 @@ import (
 	"mar/internal/aci"
 	"mar/internal/agent"
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/processctl"
 	"mar/internal/service"
 	"mar/internal/verification"
@@ -19,15 +20,19 @@ import (
 )
 
 type fakeTaskService struct {
-	task    domain.Task
-	attempt domain.ExecutionAttempt
-	cancel  bool
-	events  []string
+	task                   domain.Task
+	attempt                domain.ExecutionAttempt
+	cancel                 bool
+	events                 []string
+	rejectCancelledContext bool
 }
 
 func (s *fakeTaskService) Status(context.Context, string) (domain.Task, error) { return s.task, nil }
 
-func (s *fakeTaskService) StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error) {
+func (s *fakeTaskService) StatusSnapshot(ctx context.Context, _ string) (service.TaskStatusSnapshot, error) {
+	if s.rejectCancelledContext && ctx.Err() != nil {
+		return service.TaskStatusSnapshot{}, errors.New("cancelled context reached durable finalization")
+	}
 	return service.TaskStatusSnapshot{Task: s.task, CancelRequested: s.cancel}, nil
 }
 
@@ -46,7 +51,10 @@ func (s *fakeTaskService) BeginAttempt(_ context.Context, taskID, workerID, supe
 	return s.attempt, nil
 }
 
-func (s *fakeTaskService) TransitionForAttempt(_ context.Context, _ string, _ string, _ int64, to domain.TaskState) error {
+func (s *fakeTaskService) TransitionForAttempt(ctx context.Context, _ string, _ string, _ int64, to domain.TaskState) error {
+	if s.rejectCancelledContext && ctx.Err() != nil {
+		return errors.New("cancelled context reached durable transition")
+	}
 	s.events = append(s.events, "transition:"+string(to))
 	if s.attempt.AuthorityState != domain.AttemptActive {
 		return errors.New("attempt is not active")
@@ -61,7 +69,10 @@ func (s *fakeTaskService) LogicalFenceAttempt(context.Context, string, string, i
 	return nil
 }
 
-func (s *fakeTaskService) ConfirmAttemptProcessTermination(context.Context, processctl.TerminationProof, string) error {
+func (s *fakeTaskService) ConfirmAttemptProcessTermination(ctx context.Context, _ processctl.TerminationProof, _ string) error {
+	if s.rejectCancelledContext && ctx.Err() != nil {
+		return errors.New("cancelled context reached physical termination finalization")
+	}
 	s.events = append(s.events, "confirm")
 	s.attempt.AuthorityState = domain.AttemptPhysicallyTerminated
 	return nil
@@ -95,9 +106,11 @@ type fakeVerifier struct {
 	service *fakeTaskService
 	result  domain.TaskResult
 	err     error
+	request verification.VerifyRequest
 }
 
-func (v *fakeVerifier) Verify(context.Context, verification.VerifyRequest) (domain.TaskResult, error) {
+func (v *fakeVerifier) Verify(_ context.Context, request verification.VerifyRequest) (domain.TaskResult, error) {
+	v.request = request
 	v.service.events = append(v.service.events, "verify")
 	if v.err == nil {
 		v.service.task.State = domain.TaskVerified
@@ -133,11 +146,12 @@ func testRunner(t *testing.T, svc *fakeTaskService, workerProcess *fakeWorkerPro
 	runner, err := NewTaskRunner(svc, workerProcess, verifier, integrator, func(path, _ string) (verification.CommandRuntime, error) {
 		return fakeVerificationRuntime{root: path}, nil
 	}, TaskRunnerConfig{
-		WorkerID:      "worker-runtime",
-		SupervisorID:  "supervisor-runtime",
-		LeaseDuration: time.Minute,
-		Provider:      worker.ProviderConfig{BaseURL: "https://provider.invalid", APIKeyEnv: "MAR_TEST_KEY"},
-		AgentProfile:  agent.Profile{Model: "test-model", BaseInstructions: "bounded coding worker"},
+		WorkerID:            "worker-runtime",
+		SupervisorID:        "supervisor-runtime",
+		LeaseDuration:       time.Minute,
+		FinalizationTimeout: 5 * time.Second,
+		Provider:            worker.ProviderConfig{BaseURL: "https://provider.invalid", APIKeyEnv: "MAR_TEST_KEY"},
+		AgentProfile:        agent.Profile{Model: "test-model", BaseInstructions: "bounded coding worker"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -155,7 +169,7 @@ func readyTaskAndWorkspace() (domain.Task, domain.Workspace) {
 func TestCompletedCandidateVerifiesBeforeRecordingTerminationAndIntegratesAfter(t *testing.T) {
 	task, workspace := readyTaskAndWorkspace()
 	svc := &fakeTaskService{task: task}
-	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate}}
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate, Turns: 3, ToolCalls: 5, Usage: model.Usage{TotalTokens: 144}}}
 	verifier := &fakeVerifier{service: svc, result: domain.TaskResult{Verdict: domain.ResultVerified}}
 	integrator := &fakeIntegrator{service: svc}
 	runner := testRunner(t, svc, workerProcess, verifier, integrator)
@@ -170,6 +184,9 @@ func TestCompletedCandidateVerifiesBeforeRecordingTerminationAndIntegratesAfter(
 	want := []string{"begin", "worker", "verify", "confirm", "integrate"}
 	if !reflect.DeepEqual(svc.events, want) {
 		t.Fatalf("unexpected authoritative ordering: got=%v want=%v", svc.events, want)
+	}
+	if got := verifier.request.ResourceSummary; got.AgentTurns != 3 || got.AgentToolCalls != 5 || got.ModelTotalTokens != 144 {
+		t.Fatalf("agent resource summary was not bound into verification result: %+v", got)
 	}
 }
 
@@ -233,6 +250,70 @@ func TestBudgetExhaustionMovesToRetryWaitBeforeTerminationRecord(t *testing.T) {
 	want := []string{"begin", "worker", "transition:RETRY_WAIT", "confirm"}
 	if !reflect.DeepEqual(svc.events, want) {
 		t.Fatalf("unexpected budget ordering: got=%v want=%v", svc.events, want)
+	}
+}
+
+func TestCancelledExecutionContextStillDurablyBlocksAndConfirmsTermination(t *testing.T) {
+	task, workspace := readyTaskAndWorkspace()
+	svc := &fakeTaskService{task: task, rejectCancelledContext: true}
+	ctx, cancel := context.WithCancel(context.Background())
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCancelled}}
+	workerProcess.onRun = cancel
+	verifier := &fakeVerifier{service: svc}
+	integrator := &fakeIntegrator{service: svc}
+	runner := testRunner(t, svc, workerProcess, verifier, integrator)
+
+	if _, err := runner.RunWorkspaceReady(ctx, task.ID, workspace); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"begin", "worker", "transition:BLOCKED", "confirm"}
+	if !reflect.DeepEqual(svc.events, want) {
+		t.Fatalf("cancelled parent context lost durable finalization: got=%v want=%v", svc.events, want)
+	}
+	if svc.task.State != domain.TaskBlocked || svc.attempt.AuthorityState != domain.AttemptPhysicallyTerminated || integrator.called {
+		t.Fatalf("cancelled execution context released unsafe state: task=%s authority=%s integrated=%v", svc.task.State, svc.attempt.AuthorityState, integrator.called)
+	}
+}
+
+func TestAcceptanceT8WorkerCrashDurablyBlocksAfterPhysicalProof(t *testing.T) {
+	task, workspace := readyTaskAndWorkspace()
+	svc := &fakeTaskService{task: task}
+	workerProcess := &fakeWorkerProcess{service: svc, err: errors.New("worker exited unexpectedly")}
+	verifier := &fakeVerifier{service: svc}
+	integrator := &fakeIntegrator{service: svc}
+	runner := testRunner(t, svc, workerProcess, verifier, integrator)
+
+	_, err := runner.RunWorkspaceReady(context.Background(), task.ID, workspace)
+	if err == nil {
+		t.Fatal("worker crash must surface an execution error")
+	}
+	want := []string{"begin", "worker", "transition:BLOCKED", "confirm"}
+	if !reflect.DeepEqual(svc.events, want) {
+		t.Fatalf("worker crash did not preserve coherent durable ordering: got=%v want=%v", svc.events, want)
+	}
+	if svc.task.State != domain.TaskBlocked || svc.attempt.AuthorityState != domain.AttemptPhysicallyTerminated || integrator.called {
+		t.Fatalf("worker crash produced unsafe state: task=%s authority=%s integrated=%v", svc.task.State, svc.attempt.AuthorityState, integrator.called)
+	}
+}
+
+func TestVerificationTerminationUnconfirmedRequiresRecoveryWithoutPhysicalConfirmation(t *testing.T) {
+	task, workspace := readyTaskAndWorkspace()
+	svc := &fakeTaskService{task: task}
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate}}
+	verifier := &fakeVerifier{service: svc, err: processctl.ErrSandboxTerminationUnconfirmed}
+	integrator := &fakeIntegrator{service: svc}
+	runner := testRunner(t, svc, workerProcess, verifier, integrator)
+
+	_, err := runner.RunWorkspaceReady(context.Background(), task.ID, workspace)
+	if !errors.Is(err, ErrRecoveryRequired) || !errors.Is(err, processctl.ErrSandboxTerminationUnconfirmed) {
+		t.Fatalf("unconfirmed verification tree must require physical recovery, got %v", err)
+	}
+	want := []string{"begin", "worker", "verify", "transition:BLOCKED", "fence"}
+	if !reflect.DeepEqual(svc.events, want) {
+		t.Fatalf("verification uncertainty was incorrectly converted into physical confirmation: got=%v want=%v", svc.events, want)
+	}
+	if svc.attempt.AuthorityState != domain.AttemptLogicallyFenced || integrator.called {
+		t.Fatalf("verification uncertainty released unsafe authority: authority=%s integrated=%v", svc.attempt.AuthorityState, integrator.called)
 	}
 }
 

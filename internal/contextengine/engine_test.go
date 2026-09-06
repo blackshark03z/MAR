@@ -230,6 +230,24 @@ func TestEngineHardBoundsPackWithOversizedIntentTerms(t *testing.T) {
 	}
 }
 
+func TestAnalysisCacheCanBeEvictedUnderPressure(t *testing.T) {
+	root := t.TempDir()
+	writeContextFile(t, root, "a.go", "package p\n\nfunc PressureSymbol() {}\n")
+	engine, err := New(fakeRepository{snapshot: RepositorySnapshot{Revision: "pressure-cache", Files: []RepositoryFile{{Path: "a.go"}}}}, Config{CacheEntries: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Build(context.Background(), Request{Root: root, Contract: testContract("PressureSymbol", "pressure-cache"), ExpectedRevision: "pressure-cache"}); err != nil {
+		t.Fatal(err)
+	}
+	if engine.cache.size() == 0 {
+		t.Fatal("analysis cache was not populated")
+	}
+	if removed := engine.EvictOptionalCaches(); removed == 0 || engine.cache.size() != 0 {
+		t.Fatalf("optional cache eviction failed: removed=%d size=%d", removed, engine.cache.size())
+	}
+}
+
 func TestAnalysisCacheIsContentHashBounded(t *testing.T) {
 	root := t.TempDir()
 	files := []RepositoryFile{}

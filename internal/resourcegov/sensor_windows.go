@@ -42,6 +42,19 @@ type WindowsSensor struct {
 
 	diskCachedAt time.Time
 	diskCached   uint64
+
+	pressureScanMu sync.Mutex
+	pressureScan   *marDiskScan
+
+	// Test seam for fault-injecting a slow/failing recursive scan without
+	// changing the production Sensor interface.
+	marDiskUsageFn func(context.Context) (uint64, error)
+}
+
+type marDiskScan struct {
+	done  chan struct{}
+	bytes uint64
+	err   error
 }
 
 func NewWindowsSensor(cfg WindowsSensorConfig) (*WindowsSensor, error) {
@@ -95,7 +108,7 @@ func (s *WindowsSensor) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	marDisk, err := s.marDiskUsage(ctx)
+	marDisk, err := s.scanMARDiskUsage(ctx)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -113,6 +126,102 @@ func (s *WindowsSensor) Snapshot(ctx context.Context) (Snapshot, error) {
 		UserInteractive:   interactive,
 		IOPressureKnown:   false,
 	}, nil
+}
+
+// PressureSnapshot preserves fast host-reserve visibility even when the
+// recursive MAR disk scan is slow or fails. A bounded scan uses the most recent
+// cache when available; without any trustworthy cache it fails safe by
+// reporting an effectively exhausted MAR budget rather than suppressing an
+// already-observable disk emergency.
+func (s *WindowsSensor) PressureSnapshot(ctx context.Context) (Snapshot, error) {
+	if err := ctx.Err(); err != nil {
+		return Snapshot{}, err
+	}
+	cpu, cpuKnown, err := s.cpuPercent()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	mem, err := memorySnapshot()
+	if err != nil {
+		return Snapshot{}, err
+	}
+	freeDisk, totalDisk, err := diskSnapshot(s.cfg.DiskPath)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	interactive, err := userInteractive(s.cfg.InteractiveIdleThreshold)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	marDisk, scanErr := s.pressureMARDiskUsage(ctx, 500*time.Millisecond)
+	if scanErr != nil {
+		s.mu.Lock()
+		if !s.diskCachedAt.IsZero() {
+			marDisk = s.diskCached
+		} else {
+			marDisk = ^uint64(0)
+		}
+		s.mu.Unlock()
+	}
+	return Snapshot{
+		ObservedAt:        time.Now().UTC(),
+		CPUPercent:        cpu,
+		CPUKnown:          cpuKnown,
+		MemoryLoadPercent: float64(mem.MemoryLoad),
+		TotalRAMBytes:     mem.TotalPhys,
+		AvailableRAMBytes: mem.AvailPhys,
+		FreeDiskBytes:     freeDisk,
+		TotalDiskBytes:    totalDisk,
+		MARDiskUsedBytes:  marDisk,
+		UserInteractive:   interactive,
+		IOPressureKnown:   false,
+	}, nil
+}
+
+func (s *WindowsSensor) pressureMARDiskUsage(ctx context.Context, timeout time.Duration) (uint64, error) {
+	if timeout <= 0 {
+		timeout = 500 * time.Millisecond
+	}
+	s.pressureScanMu.Lock()
+	scan := s.pressureScan
+	if scan == nil {
+		scan = &marDiskScan{done: make(chan struct{})}
+		s.pressureScan = scan
+		go func(current *marDiskScan) {
+			bytes, err := s.scanMARDiskUsage(context.Background())
+			s.pressureScanMu.Lock()
+			current.bytes = bytes
+			current.err = err
+			close(current.done)
+			s.pressureScanMu.Unlock()
+		}(scan)
+	}
+	s.pressureScanMu.Unlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-scan.done:
+		s.pressureScanMu.Lock()
+		bytes, err := scan.bytes, scan.err
+		if s.pressureScan == scan {
+			s.pressureScan = nil
+		}
+		s.pressureScanMu.Unlock()
+		return bytes, err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	case <-timer.C:
+		return 0, context.DeadlineExceeded
+	}
+}
+
+func (s *WindowsSensor) scanMARDiskUsage(ctx context.Context) (uint64, error) {
+	if s.marDiskUsageFn != nil {
+		return s.marDiskUsageFn(ctx)
+	}
+	return s.marDiskUsage(ctx)
 }
 
 func (s *WindowsSensor) cpuPercent() (float64, bool, error) {
@@ -158,6 +267,22 @@ func (s *WindowsSensor) cpuPercent() (float64, bool, error) {
 		percent = 100
 	}
 	return percent, true, nil
+}
+
+func WindowsMemoryLoadPercent() (float64, error) {
+	mem, err := memorySnapshot()
+	if err != nil {
+		return 0, err
+	}
+	return float64(mem.MemoryLoad), nil
+}
+
+func WindowsPhysicalMemoryBytes() (total, available uint64, err error) {
+	mem, err := memorySnapshot()
+	if err != nil {
+		return 0, 0, err
+	}
+	return mem.TotalPhys, mem.AvailPhys, nil
 }
 
 func memorySnapshot() (memoryStatusEx, error) {

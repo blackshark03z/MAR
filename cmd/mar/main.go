@@ -252,7 +252,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			MinFreeDiskBytes:        2 << 30,
 			MaxMARDiskBytes:         20 << 30,
 			MaxHeavyJobs:            opts.MaxWorkers,
-			MaxHeavyJobsPerProject:  1,
+			MaxHeavyJobsPerProject:  opts.MaxWorkers,
 			MaxHeavyJobsInteractive: 1,
 		},
 		Scheduler: scheduler.Config{

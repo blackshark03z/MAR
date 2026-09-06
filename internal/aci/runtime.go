@@ -427,7 +427,8 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	if err != nil {
 		return ExecResult{}, err
 	}
-	if strings.EqualFold(filepath.Base(path), "go.exe") || strings.EqualFold(filepath.Base(path), "go") {
+	isGoCommand := strings.EqualFold(filepath.Base(path), "go.exe") || strings.EqualFold(filepath.Base(path), "go")
+	if isGoCommand {
 		cacheRoot := filepath.Join(r.root, ".mar", "go")
 		if err := os.MkdirAll(filepath.Join(cacheRoot, "build"), 0o755); err != nil {
 			return ExecResult{}, err
@@ -452,6 +453,9 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 			"GOTOOLCHAIN=local",
 			"GOROOT="+filepath.Dir(filepath.Dir(path)),
 		)
+		if err := r.ensureGoTelemetryOff(); err != nil {
+			return ExecResult{}, err
+		}
 	}
 	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
 	defer cancel()
@@ -463,6 +467,29 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 		Env:            env,
 		MaxOutputBytes: r.cfg.MaxCommandOutputBytes,
 	})
+}
+
+func (r *Runtime) ensureGoTelemetryOff() error {
+	// Go telemetry mode is read from os.UserConfigDir()/go/telemetry/mode.
+	// Sandboxed commands use a task-local APPDATA, so seed that file directly
+	// instead of launching `go telemetry off`. The command itself can leave a
+	// telemetry sidecar descendant alive, which conflicts with MAR's strict
+	// requirement that a sandbox Job Object be empty before returning.
+	modePath := filepath.Join(r.root, ".mar", "runtime", "profile", "AppData", "Roaming", "go", "telemetry", "mode")
+	if err := os.MkdirAll(filepath.Dir(modePath), 0o755); err != nil {
+		return fmt.Errorf("prepare task-scoped Go telemetry directory: %w", err)
+	}
+	if current, err := os.ReadFile(modePath); err == nil {
+		if strings.TrimSpace(string(current)) == "off" {
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read task-scoped Go telemetry mode: %w", err)
+	}
+	if err := os.WriteFile(modePath, []byte("off\n"), 0o600); err != nil {
+		return fmt.Errorf("disable task-scoped Go telemetry: %w", err)
+	}
+	return nil
 }
 
 func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {

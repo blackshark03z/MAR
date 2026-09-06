@@ -22,6 +22,22 @@ type AttemptRef struct {
 	RunEpoch  int64
 }
 
+type Limits struct {
+	CPUHardCapBasisPoints uint32
+	JobMemoryBytes        uint64
+	MaxActiveProcesses    uint32
+}
+
+func (l Limits) Validate() error {
+	if l.CPUHardCapBasisPoints > 10_000 {
+		return errors.New("CPU hard cap must be <= 10000 basis points")
+	}
+	if l.JobMemoryBytes > uint64(^uintptr(0)) {
+		return errors.New("job memory limit exceeds platform uintptr")
+	}
+	return nil
+}
+
 type Spec struct {
 	Attempt AttemptRef
 	Path    string
@@ -31,11 +47,26 @@ type Spec struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
+	Limits  Limits
 }
 
 type Supervisor struct{}
 
 func NewSupervisor() *Supervisor { return &Supervisor{} }
+
+func windowsJobLimits(limits Limits) []winjob.Limit {
+	out := []winjob.Limit{winjob.LimitKillOnJobClose}
+	if limits.CPUHardCapBasisPoints > 0 {
+		out = append(out, winjob.WithCPUHardCapLimit(limits.CPUHardCapBasisPoints))
+	}
+	if limits.JobMemoryBytes > 0 {
+		out = append(out, winjob.WithJobMemoryLimit(uintptr(limits.JobMemoryBytes)))
+	}
+	if limits.MaxActiveProcesses > 0 {
+		out = append(out, winjob.WithActiveProcessLimit(limits.MaxActiveProcesses))
+	}
+	return out
+}
 
 // TerminationProof cannot be forged outside this package into a valid proof
 // because all confirmation fields are private. Its only meaning is that the
@@ -73,6 +104,9 @@ func (s *Supervisor) Start(spec Spec) (*Tree, error) {
 	if spec.Path == "" {
 		return nil, errors.New("process path is required")
 	}
+	if err := spec.Limits.Validate(); err != nil {
+		return nil, err
+	}
 
 	cmd := exec.Command(spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
@@ -95,7 +129,7 @@ func (s *Supervisor) Start(spec Spec) (*Tree, error) {
 
 	// Start creates the process suspended, assigns it to the Job Object, then
 	// resumes it. We intentionally do NOT enable BREAKAWAY_OK/SILENT_BREAKAWAY.
-	job, err := winjob.Start(cmd, winjob.LimitKillOnJobClose)
+	job, err := winjob.Start(cmd, windowsJobLimits(spec.Limits)...)
 	if err != nil {
 		// go-winjob may have created a suspended process before an assignment
 		// failure. Kill/wait defensively so a failed Start cannot leak it.
@@ -135,6 +169,22 @@ func (s *Supervisor) Start(spec Spec) (*Tree, error) {
 
 func (t *Tree) Attempt() AttemptRef { return t.ref }
 func (t *Tree) PID() int            { return t.cmd.Process.Pid }
+
+func (t *Tree) AppliedLimits() (Limits, error) {
+	t.opMu.Lock()
+	defer t.opMu.Unlock()
+	if t.closed {
+		return Limits{}, errors.New("process tree is closed")
+	}
+	if err := t.job.QueryLimits(); err != nil {
+		return Limits{}, err
+	}
+	return Limits{
+		CPUHardCapBasisPoints: t.job.CPURateControl.Value,
+		JobMemoryBytes:        uint64(t.job.ExtendedLimits.JobMemoryLimit),
+		MaxActiveProcesses:    t.job.ExtendedLimits.BasicLimitInformation.ActiveProcessLimit,
+	}, nil
+}
 
 func (t *Tree) Counters() (winjob.Counters, error) {
 	t.opMu.Lock()

@@ -44,15 +44,17 @@ type integrationEngine interface {
 type RuntimeFactory func(workspacePath, taskID string) (verification.CommandRuntime, error)
 
 type TaskRunnerConfig struct {
-	WorkerID         string
-	SupervisorID     string
-	LeaseDuration    time.Duration
-	Provider         worker.ProviderConfig
-	AgentProfile     agent.Profile
-	AgentConfig      agent.Config
-	ResourceSummary  domain.ResourceSummary
-	SandboxReadPaths []string
-	GoModuleCache    string
+	WorkerID              string
+	SupervisorID          string
+	LeaseDuration         time.Duration
+	Provider              worker.ProviderConfig
+	AgentProfile          agent.Profile
+	AgentConfig           agent.Config
+	SandboxReadPaths      []string
+	GoModuleCache         string
+	CommandTimeout        time.Duration
+	FinalizationTimeout   time.Duration
+	MemoryPressurePercent float64
 }
 
 func (c TaskRunnerConfig) validate() error {
@@ -67,6 +69,9 @@ func (c TaskRunnerConfig) validate() error {
 	}
 	if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
 		return errors.New("task runner requires agent profile")
+	}
+	if c.FinalizationTimeout <= 0 {
+		return errors.New("task runner finalization timeout must be positive")
 	}
 	return nil
 }
@@ -135,88 +140,117 @@ func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, works
 	}
 
 	start := worker.StartRequest{
-		Task:             task,
-		Attempt:          attempt,
-		WorkspacePath:    workspace.Path,
-		Provider:         r.cfg.Provider,
-		AgentProfile:     r.cfg.AgentProfile,
-		AgentConfig:      r.cfg.AgentConfig,
-		SandboxReadPaths: append([]string{}, r.cfg.SandboxReadPaths...),
-		GoModuleCache:    r.cfg.GoModuleCache,
+		Task:                  task,
+		Attempt:               attempt,
+		WorkspacePath:         workspace.Path,
+		Provider:              r.cfg.Provider,
+		AgentProfile:          r.cfg.AgentProfile,
+		AgentConfig:           r.cfg.AgentConfig,
+		SandboxReadPaths:      append([]string{}, r.cfg.SandboxReadPaths...),
+		GoModuleCache:         r.cfg.GoModuleCache,
+		CommandTimeout:        r.cfg.CommandTimeout,
+		MemoryPressurePercent: r.cfg.MemoryPressurePercent,
 	}
 	agentResult, proof, runErr := r.worker.Run(ctx, start)
 	outcome := RunOutcome{TaskID: taskID, Agent: agentResult}
 
-	cancelRequested, cancelErr := r.cancelRequested(ctx, taskID)
+	// Worker termination can be caused by the parent execution context itself
+	// (owner cancellation, daemon shutdown, resource pressure). Durable cleanup
+	// must not reuse that already-cancelled context or MAR can release capacity
+	// before BLOCKED/CANCELLED state and physical termination are recorded.
+	finalCtx, cancelFinal := context.WithTimeout(context.Background(), r.cfg.FinalizationTimeout)
+	defer cancelFinal()
+	cancelRequested, cancelErr := r.cancelRequested(finalCtx, taskID)
 	if cancelErr != nil {
 		return outcome, cancelErr
 	}
 	if cancelRequested {
-		if err := r.finalizeCancellation(ctx, attempt, proof); err != nil {
+		if err := r.finalizeCancellation(finalCtx, attempt, proof); err != nil {
 			return outcome, err
 		}
 		return outcome, nil
 	}
 	if runErr != nil {
-		return outcome, r.failWorker(ctx, attempt, proof, fmt.Errorf("worker process failed: %w", runErr))
+		return outcome, r.failWorker(finalCtx, attempt, proof, fmt.Errorf("worker process failed: %w", runErr))
 	}
 
 	switch agentResult.Status {
 	case agent.StatusCompletedCandidate:
+		if ctx.Err() != nil {
+			return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, "execution-context-ended-before-verification")
+		}
 		return r.verifyAndIntegrate(ctx, outcome, attempt, proof, workspace)
 	case agent.StatusBlocked:
-		return outcome, r.finishNonCandidate(ctx, attempt, proof, domain.TaskBlocked, "worker-blocked")
+		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, "worker-blocked")
 	case agent.StatusBudgetExhausted:
-		return outcome, r.finishNonCandidate(ctx, attempt, proof, domain.TaskRetryWait, "worker-budget-exhausted")
+		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskRetryWait, "worker-budget-exhausted")
 	case agent.StatusCancelled:
 		// A worker can self-cancel because authority became stale for reasons other
 		// than an owner cancellation. Do not claim user cancellation without the
 		// durable cancel control; block for reconciliation instead.
-		return outcome, r.finishNonCandidate(ctx, attempt, proof, domain.TaskBlocked, "worker-cancelled-without-cancel-control")
+		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, "worker-cancelled-without-cancel-control")
 	default:
-		return outcome, r.finishNonCandidate(ctx, attempt, proof, domain.TaskBlocked, "worker-invalid-terminal-status")
+		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, "worker-invalid-terminal-status")
 	}
 }
 
 func (r *TaskRunner) verifyAndIntegrate(ctx context.Context, outcome RunOutcome, attempt domain.ExecutionAttempt, proof processctl.TerminationProof, workspace domain.Workspace) (RunOutcome, error) {
+	finalize := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.Background(), r.cfg.FinalizationTimeout)
+	}
 	if !r.proofValid(proof) {
-		return outcome, r.recoveryBlock(ctx, attempt, errors.New("worker completed candidate without valid physical termination proof"))
+		finalCtx, cancel := finalize()
+		defer cancel()
+		return outcome, r.recoveryBlock(finalCtx, attempt, errors.New("worker completed candidate without valid physical termination proof"))
 	}
 	runtime, err := r.runtime(workspace.Path, attempt.TaskID)
 	if err != nil {
-		blockErr := r.blockWhileAuthoritative(ctx, attempt)
-		confirmErr := r.service.ConfirmAttemptProcessTermination(ctx, proof, "verification-runtime-init-failed")
+		finalCtx, cancel := finalize()
+		defer cancel()
+		blockErr := r.blockWhileAuthoritative(finalCtx, attempt)
+		confirmErr := r.service.ConfirmAttemptProcessTermination(finalCtx, proof, "verification-runtime-init-failed")
 		return outcome, errors.Join(fmt.Errorf("create verification runtime: %w", err), blockErr, confirmErr)
 	}
 	verified, verifyErr := r.verifier.Verify(ctx, verification.VerifyRequest{
-		TaskID:          attempt.TaskID,
-		AttemptID:       attempt.ID,
-		RunEpoch:        attempt.RunEpoch,
-		Runtime:         runtime,
-		ResourceSummary: r.cfg.ResourceSummary,
+		TaskID:    attempt.TaskID,
+		AttemptID: attempt.ID,
+		RunEpoch:  attempt.RunEpoch,
+		Runtime:   runtime,
+		ResourceSummary: domain.ResourceSummary{
+			AgentTurns:       outcome.Agent.Turns,
+			AgentToolCalls:   outcome.Agent.ToolCalls,
+			ModelTotalTokens: outcome.Agent.Usage.TotalTokens,
+		},
 	})
 	if verifyErr != nil {
-		cancelRequested, cancelErr := r.cancelRequested(ctx, attempt.TaskID)
+		finalCtx, cancel := finalize()
+		defer cancel()
+		if errors.Is(verifyErr, processctl.ErrSandboxTerminationUnconfirmed) {
+			return outcome, r.recoveryBlock(finalCtx, attempt, verifyErr)
+		}
+		cancelRequested, cancelErr := r.cancelRequested(finalCtx, attempt.TaskID)
 		if cancelErr == nil && cancelRequested {
-			if err := r.finalizeCancellation(ctx, attempt, proof); err != nil {
+			if err := r.finalizeCancellation(finalCtx, attempt, proof); err != nil {
 				return outcome, errors.Join(verifyErr, err)
 			}
 			return outcome, nil
 		}
-		blockErr := r.blockWhileAuthoritative(ctx, attempt)
-		confirmErr := r.service.ConfirmAttemptProcessTermination(ctx, proof, "verification-error")
+		blockErr := r.blockWhileAuthoritative(finalCtx, attempt)
+		confirmErr := r.service.ConfirmAttemptProcessTermination(finalCtx, proof, "verification-error")
 		return outcome, errors.Join(verifyErr, cancelErr, blockErr, confirmErr)
 	}
 	outcome.Verification = &verified
-	if err := r.service.ConfirmAttemptProcessTermination(ctx, proof, "worker-exited-before-verification-finalization"); err != nil {
+	finalCtx, cancel := finalize()
+	defer cancel()
+	if err := r.service.ConfirmAttemptProcessTermination(finalCtx, proof, "worker-exited-before-verification-finalization"); err != nil {
 		return outcome, err
 	}
-	cancelRequested, err := r.cancelRequested(ctx, attempt.TaskID)
+	cancelRequested, err := r.cancelRequested(finalCtx, attempt.TaskID)
 	if err != nil {
 		return outcome, err
 	}
 	if cancelRequested {
-		if err := r.service.FinalizeCancellation(ctx, attempt.TaskID); err != nil {
+		if err := r.service.FinalizeCancellation(finalCtx, attempt.TaskID); err != nil {
 			return outcome, err
 		}
 		return outcome, nil

@@ -44,6 +44,35 @@ func TestHelperProcess(t *testing.T) {
 	}
 }
 
+func TestSupervisorAppliesHardCPUJobMemoryAndProcessLimits(t *testing.T) {
+	s := NewSupervisor()
+	want := Limits{CPUHardCapBasisPoints: 5_000, JobMemoryBytes: 256 << 20, MaxActiveProcesses: 4}
+	tree, err := s.Start(Spec{
+		Attempt: AttemptRef{TaskID: "task-limits", AttemptID: "attempt-limits", RunEpoch: 1},
+		Path:    os.Args[0],
+		Args:    []string{"-test.run=TestHelperProcess"},
+		Env:     append(os.Environ(), "MAR_TEST_HELPER_MODE=leaf"),
+		Limits:  want,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.CloseUnverified()
+	got, err := tree.AppliedLimits()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CPUHardCapBasisPoints != want.CPUHardCapBasisPoints || got.JobMemoryBytes != want.JobMemoryBytes || got.MaxActiveProcesses != want.MaxActiveProcesses {
+		t.Fatalf("Windows Job Object limits mismatch: got=%+v want=%+v", got, want)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proof, err := tree.TerminateAndConfirm(ctx)
+	if err != nil || !proof.Valid() {
+		t.Fatalf("limited process tree did not terminate cleanly: proof=%+v err=%v", proof, err)
+	}
+}
+
 func TestTerminateAndConfirmKillsInheritedChildTree(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	s := NewSupervisor()

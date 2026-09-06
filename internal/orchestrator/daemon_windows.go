@@ -4,11 +4,15 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/service"
 )
@@ -38,14 +42,21 @@ type integrationRecoverer interface {
 type daemonTaskService interface {
 	StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error)
 	RequirePhysicalRecovery(context.Context, string, string, int64) error
+	RecoverForReplacement(context.Context, string) error
+	ExhaustRetryBudget(context.Context, string) error
 }
 
 type DaemonConfig struct {
-	PollInterval         time.Duration
-	ControlPollInterval  time.Duration
-	MaxConcurrentWorkers int
-	MaxPreflightPerTick  int
-	ErrorSink            func(error)
+	PollInterval             time.Duration
+	ControlPollInterval      time.Duration
+	RetryDelay               time.Duration
+	MaxAttempts              int64
+	MaxConcurrentWorkers     int
+	MaxPreflightPerTick      int
+	ResourcePollInterval     time.Duration
+	ExecutionRAMReservation  uint64
+	ExecutionDiskReservation uint64
+	ErrorSink                func(error)
 }
 
 func (c DaemonConfig) withDefaults() DaemonConfig {
@@ -55,11 +66,20 @@ func (c DaemonConfig) withDefaults() DaemonConfig {
 	if c.ControlPollInterval <= 0 {
 		c.ControlPollInterval = 200 * time.Millisecond
 	}
+	if c.RetryDelay <= 0 {
+		c.RetryDelay = time.Second
+	}
+	if c.MaxAttempts <= 0 {
+		c.MaxAttempts = 3
+	}
 	if c.MaxConcurrentWorkers <= 0 {
 		c.MaxConcurrentWorkers = 2
 	}
 	if c.MaxPreflightPerTick <= 0 {
 		c.MaxPreflightPerTick = 8
+	}
+	if c.ResourcePollInterval <= 0 {
+		c.ResourcePollInterval = time.Second
 	}
 	if c.ErrorSink == nil {
 		c.ErrorSink = func(error) {}
@@ -74,6 +94,7 @@ type Daemon struct {
 	scheduler   schedulerDriver
 	runner      readyTaskRunner
 	integration integrationRecoverer
+	governor    *resourcegov.Governor
 	cfg         DaemonConfig
 
 	mu     sync.Mutex
@@ -81,9 +102,9 @@ type Daemon struct {
 	wg     sync.WaitGroup
 }
 
-func NewDaemon(store taskStateStore, taskService daemonTaskService, preflight preflightDriver, scheduler schedulerDriver, runner readyTaskRunner, integration integrationRecoverer, cfg DaemonConfig) (*Daemon, error) {
-	if store == nil || taskService == nil || preflight == nil || scheduler == nil || runner == nil || integration == nil {
-		return nil, errors.New("daemon requires store, task service, preflight, scheduler, task runner and integration recovery")
+func NewDaemon(store taskStateStore, taskService daemonTaskService, preflight preflightDriver, scheduler schedulerDriver, runner readyTaskRunner, integration integrationRecoverer, governor *resourcegov.Governor, cfg DaemonConfig) (*Daemon, error) {
+	if store == nil || taskService == nil || preflight == nil || scheduler == nil || runner == nil || integration == nil || governor == nil {
+		return nil, errors.New("daemon requires store, task service, preflight, scheduler, task runner, integration recovery and resource governor")
 	}
 	cfg = cfg.withDefaults()
 	return &Daemon{
@@ -93,6 +114,7 @@ func NewDaemon(store taskStateStore, taskService daemonTaskService, preflight pr
 		scheduler:   scheduler,
 		runner:      runner,
 		integration: integration,
+		governor:    governor,
 		cfg:         cfg,
 		active:      make(map[string]context.CancelFunc),
 	}, nil
@@ -108,6 +130,17 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err := d.reconcileUnprovenAttempts(ctx); err != nil {
 		return err
 	}
+	pressureCtx, stopPressure := context.WithCancel(ctx)
+	pressureDone := make(chan struct{})
+	go func() {
+		defer close(pressureDone)
+		d.runResourcePressureLoop(pressureCtx)
+	}()
+	defer func() {
+		stopPressure()
+		<-pressureDone
+	}()
+
 	d.step(ctx)
 	ticker := time.NewTicker(d.cfg.PollInterval)
 	defer ticker.Stop()
@@ -123,8 +156,29 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 }
 
+func (d *Daemon) runResourcePressureLoop(ctx context.Context) {
+	ticker := time.NewTicker(d.cfg.ResourcePollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := d.enforceResourcePressure(ctx); err != nil {
+				d.report(err)
+			}
+		}
+	}
+}
+
 func (d *Daemon) step(ctx context.Context) {
 	if err := d.drivePreflight(ctx); err != nil {
+		d.report(err)
+	}
+	if err := d.driveBlockedChoices(ctx); err != nil {
+		d.report(err)
+	}
+	if err := d.driveRetries(ctx); err != nil {
 		d.report(err)
 	}
 	if _, err := d.scheduler.Step(ctx); err != nil {
@@ -157,34 +211,155 @@ func (d *Daemon) drivePreflight(ctx context.Context) error {
 	return nil
 }
 
+func (d *Daemon) driveBlockedChoices(ctx context.Context) error {
+	tasks, err := d.store.ListTasksByState(ctx, domain.TaskBlocked)
+	if err != nil {
+		return err
+	}
+	for _, task := range tasks {
+		snapshot, err := d.service.StatusSnapshot(ctx, task.ID)
+		if err != nil {
+			return err
+		}
+		control := snapshot.LatestControl
+		if control == nil || control.Kind != domain.ControlSteer || !control.CreatedAt.After(task.UpdatedAt) {
+			continue
+		}
+		var payload domain.SteerPayload
+		if err := json.Unmarshal(control.Payload, &payload); err != nil {
+			return err
+		}
+		if err := payload.Validate(); err != nil {
+			return err
+		}
+		if payload.Kind != domain.SteerBlockedChoice {
+			continue
+		}
+		attempt, ok, err := d.store.CurrentAttemptByTask(ctx, task.ID)
+		if err != nil {
+			return err
+		}
+		if ok && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+			continue
+		}
+		// Recovering to WORKSPACE_READY updates task.UpdatedAt after this control,
+		// so the same blocked-choice command cannot trigger an unbounded replay if
+		// the replacement later blocks again.
+		if err := d.service.RecoverForReplacement(ctx, task.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Daemon) driveRetries(ctx context.Context) error {
+	tasks, err := d.store.ListTasksByState(ctx, domain.TaskRetryWait)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, task := range tasks {
+		attempt, ok, err := d.store.CurrentAttemptByTask(ctx, task.ID)
+		if err != nil {
+			return err
+		}
+		if ok && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+			// Never turn retry policy into a second-writer admission path. Normal
+			// TaskRunner finalization or restart reconciliation must prove physical
+			// termination first.
+			continue
+		}
+		if task.RunEpoch >= d.cfg.MaxAttempts {
+			if err := d.service.ExhaustRetryBudget(ctx, task.ID); err != nil {
+				return err
+			}
+			continue
+		}
+		if !task.UpdatedAt.IsZero() && now.Sub(task.UpdatedAt) < d.cfg.RetryDelay {
+			continue
+		}
+		if err := d.service.RecoverForReplacement(ctx, task.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (d *Daemon) launchReady(ctx context.Context) error {
 	tasks, err := d.store.ListTasksByState(ctx, domain.TaskWorkspaceReady)
 	if err != nil {
 		return err
 	}
+	pending := make([]domain.Task, 0, len(tasks))
 	for _, task := range tasks {
-		if d.activeCount() >= d.cfg.MaxConcurrentWorkers {
-			return nil
+		if !d.isActive(task.ID) {
+			pending = append(pending, task)
 		}
-		if d.isActive(task.ID) {
-			continue
+	}
+	for d.activeCount() < d.cfg.MaxConcurrentWorkers && len(pending) > 0 {
+		activeByProject := make(map[string]int)
+		for _, claim := range d.governor.Active() {
+			if claim.Heavy {
+				activeByProject[claim.ProjectID]++
+			}
 		}
-		workspace, err := d.store.GetWorkspaceByTask(ctx, task.ID)
-		if err != nil {
-			d.report(err)
-			continue
+		sort.SliceStable(pending, func(i, j int) bool {
+			a, b := pending[i], pending[j]
+			if activeByProject[a.Contract.ProjectID] != activeByProject[b.Contract.ProjectID] {
+				return activeByProject[a.Contract.ProjectID] < activeByProject[b.Contract.ProjectID]
+			}
+			if !a.UpdatedAt.Equal(b.UpdatedAt) {
+				return a.UpdatedAt.Before(b.UpdatedAt)
+			}
+			if a.Contract.ProjectID != b.Contract.ProjectID {
+				return a.Contract.ProjectID < b.Contract.ProjectID
+			}
+			return a.ID < b.ID
+		})
+
+		launched := false
+		for i, task := range pending {
+			lease, decision, acquireErr := d.governor.TryAcquire(ctx, resourcegov.Claim{
+				ID:        "execution:" + task.ID,
+				ProjectID: task.Contract.ProjectID,
+				Class:     resourcegov.WorkloadBuild,
+				RAMBytes:  d.cfg.ExecutionRAMReservation,
+				DiskBytes: d.cfg.ExecutionDiskReservation,
+				Heavy:     true,
+			})
+			if acquireErr != nil {
+				d.report(acquireErr)
+				continue
+			}
+			if !decision.Allowed {
+				continue
+			}
+			workspace, workspaceErr := d.store.GetWorkspaceByTask(ctx, task.ID)
+			if workspaceErr != nil {
+				lease.Release()
+				d.report(workspaceErr)
+				pending = append(pending[:i], pending[i+1:]...)
+				launched = true
+				break
+			}
+			d.launch(ctx, task.ID, workspace, lease)
+			pending = append(pending[:i], pending[i+1:]...)
+			launched = true
+			break
 		}
-		d.launch(ctx, task.ID, workspace)
+		if !launched {
+			break
+		}
 	}
 	return nil
 }
-
-func (d *Daemon) launch(parent context.Context, taskID string, workspace domain.Workspace) {
+func (d *Daemon) launch(parent context.Context, taskID string, workspace domain.Workspace, lease *resourcegov.Lease) {
 	taskCtx, cancel := context.WithCancel(parent)
 	d.mu.Lock()
 	if _, exists := d.active[taskID]; exists || len(d.active) >= d.cfg.MaxConcurrentWorkers {
 		d.mu.Unlock()
 		cancel()
+		lease.Release()
 		return
 	}
 	d.active[taskID] = cancel
@@ -193,6 +368,7 @@ func (d *Daemon) launch(parent context.Context, taskID string, workspace domain.
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
+		defer lease.Release()
 		defer d.removeActive(taskID)
 		monitorDone := make(chan struct{})
 		go func() {
@@ -228,6 +404,30 @@ func (d *Daemon) monitorCancellation(ctx context.Context, taskID string, cancel 
 			}
 		}
 	}
+}
+
+func (d *Daemon) enforceResourcePressure(ctx context.Context) error {
+	decision, err := d.governor.Pressure(ctx)
+	if err != nil {
+		return err
+	}
+	if !hasPressureReason(decision.Reasons, resourcegov.DenyHostDiskReserve) && !hasPressureReason(decision.Reasons, resourcegov.DenyMARDiskBudget) {
+		return nil
+	}
+	if d.activeCount() == 0 {
+		return nil
+	}
+	d.cancelAll()
+	return fmt.Errorf("active work stopped because disk pressure threatened the configured reserve: %v", decision.Reasons)
+}
+
+func hasPressureReason(reasons []resourcegov.DenialReason, want resourcegov.DenialReason) bool {
+	for _, reason := range reasons {
+		if reason == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Daemon) reconcileUnprovenAttempts(ctx context.Context) error {

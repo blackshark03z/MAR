@@ -15,6 +15,7 @@ import (
 type fakeExecutor struct {
 	level IsolationLevel
 	last  ExecSpec
+	specs []ExecSpec
 	calls int
 	resp  ExecResult
 	err   error
@@ -34,6 +35,7 @@ func (f *fakeExecutor) IsolationLevel() IsolationLevel { return f.level }
 func (f *fakeExecutor) Run(_ context.Context, _ string, spec ExecSpec) (ExecResult, error) {
 	f.calls++
 	f.last = spec
+	f.specs = append(f.specs, spec)
 	return f.resp, f.err
 }
 
@@ -149,6 +151,53 @@ func TestSharedGoModuleCacheIsUsedWithoutMakingItTaskWritable(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".mar", "go", "mod")); !os.IsNotExist(err) {
 		t.Fatalf("task-local module cache should not be created when shared cache is configured: %v", err)
+	}
+}
+
+func TestGoCommandPreseedsTelemetryOffInsideTaskProfile(t *testing.T) {
+	root := t.TempDir()
+	fakeGo := filepath.Join(t.TempDir(), "go.exe")
+	if err := os.WriteFile(fakeGo, []byte("not executed by fake executor"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executor := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{ExitCode: 0}}
+	r, err := New(Config{Root: root, TaskID: "task-go-telemetry", GitBroker: &fakeGitBroker{}}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGo, Args: []string{"test", "./..."}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGo, Args: []string{"vet", "./..."}}); err != nil {
+		t.Fatal(err)
+	}
+	if executor.calls != 2 || len(executor.specs) != 2 {
+		t.Fatalf("Go telemetry preparation launched an unexpected subprocess: calls=%d specs=%d", executor.calls, len(executor.specs))
+	}
+	if got := strings.Join(executor.specs[0].Args, " "); got != "test ./..." {
+		t.Fatalf("unexpected first user Go command: %q", got)
+	}
+	if got := strings.Join(executor.specs[1].Args, " "); got != "vet ./..." {
+		t.Fatalf("unexpected second user Go command: %q", got)
+	}
+	modePath := filepath.Join(root, ".mar", "runtime", "profile", "AppData", "Roaming", "go", "telemetry", "mode")
+	mode, err := os.ReadFile(modePath)
+	if err != nil {
+		t.Fatalf("task-scoped telemetry mode was not seeded: %v", err)
+	}
+	if strings.TrimSpace(string(mode)) != "off" {
+		t.Fatalf("unexpected task-scoped telemetry mode: %q", mode)
+	}
+	wantProfile := "USERPROFILE=" + filepath.Join(root, ".mar", "runtime", "profile")
+	foundProfile := false
+	for _, item := range executor.specs[0].Env {
+		if strings.EqualFold(item, wantProfile) {
+			foundProfile = true
+			break
+		}
+	}
+	if !foundProfile {
+		t.Fatalf("Go command did not use the task-local profile: env=%v", executor.specs[0].Env)
 	}
 }
 

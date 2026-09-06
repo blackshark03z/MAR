@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/service"
 )
@@ -53,11 +54,17 @@ func (s *fakeDaemonStore) CurrentAttemptByTask(_ context.Context, taskID string)
 type fakeDaemonService struct {
 	store         *fakeDaemonStore
 	cancel        bool
+	latestControl *domain.TaskControl
 	recoveryCalls int
+	retryCalls    int
+	exhaustCalls  int
 }
 
-func (s *fakeDaemonService) StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error) {
-	return service.TaskStatusSnapshot{CancelRequested: s.cancel}, nil
+func (s *fakeDaemonService) StatusSnapshot(_ context.Context, taskID string) (service.TaskStatusSnapshot, error) {
+	s.store.mu.Lock()
+	task := s.store.tasks[taskID]
+	s.store.mu.Unlock()
+	return service.TaskStatusSnapshot{Task: task, LatestControl: s.latestControl, CancelRequested: s.cancel}, nil
 }
 
 func (s *fakeDaemonService) RequirePhysicalRecovery(_ context.Context, taskID, attemptID string, epoch int64) error {
@@ -73,6 +80,36 @@ func (s *fakeDaemonService) RequirePhysicalRecovery(_ context.Context, taskID, a
 	}
 	attempt.AuthorityState = domain.AttemptLogicallyFenced
 	s.store.attempts[taskID] = attempt
+	return nil
+}
+
+func (s *fakeDaemonService) RecoverForReplacement(_ context.Context, taskID string) error {
+	s.retryCalls++
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	task := s.store.tasks[taskID]
+	if task.State != domain.TaskRetryWait && task.State != domain.TaskBlocked && task.State != domain.TaskRunning {
+		return errors.New("replacement recovery state mismatch")
+	}
+	if attempt, ok := s.store.attempts[taskID]; ok && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		return errors.New("retry attempted before physical termination")
+	}
+	task.State = domain.TaskWorkspaceReady
+	task.UpdatedAt = time.Now().UTC()
+	s.store.tasks[taskID] = task
+	return nil
+}
+
+func (s *fakeDaemonService) ExhaustRetryBudget(_ context.Context, taskID string) error {
+	s.exhaustCalls++
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	task := s.store.tasks[taskID]
+	if task.State != domain.TaskRetryWait {
+		return errors.New("retry exhaustion state mismatch")
+	}
+	task.State = domain.TaskBlocked
+	s.store.tasks[taskID] = task
 	return nil
 }
 
@@ -108,6 +145,59 @@ func (r *fakeIntegrationRecoverer) RecoverPending(context.Context) error {
 	return nil
 }
 
+type mutableDaemonSensor struct {
+	mu       sync.Mutex
+	snapshot resourcegov.Snapshot
+}
+
+func (s *mutableDaemonSensor) Snapshot(context.Context) (resourcegov.Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshot, nil
+}
+
+func (s *mutableDaemonSensor) set(snapshot resourcegov.Snapshot) {
+	s.mu.Lock()
+	s.snapshot = snapshot
+	s.mu.Unlock()
+}
+
+func healthyDaemonSnapshot() resourcegov.Snapshot {
+	return resourcegov.Snapshot{
+		CPUKnown:          true,
+		CPUPercent:        1,
+		MemoryLoadPercent: 10,
+		TotalRAMBytes:     16 << 30,
+		AvailableRAMBytes: 12 << 30,
+		FreeDiskBytes:     100 << 30,
+		TotalDiskBytes:    200 << 30,
+		MARDiskUsedBytes:  1 << 30,
+	}
+}
+
+func daemonGovernor(t *testing.T, sensor resourcegov.Sensor, maxHeavy, maxPerProject int) *resourcegov.Governor {
+	t.Helper()
+	governor, err := resourcegov.New(sensor, resourcegov.Config{
+		MaxCPUPercent:           100,
+		MaxMemoryLoadPercent:    100,
+		MaxIOPressurePercent:    100,
+		MinFreeRAMBytes:         1,
+		MinFreeDiskBytes:        1,
+		MaxMARDiskBytes:         1 << 40,
+		MaxHeavyJobs:            maxHeavy,
+		MaxHeavyJobsPerProject:  maxPerProject,
+		MaxHeavyJobsInteractive: maxHeavy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return governor
+}
+
+func healthyDaemonGovernor(t *testing.T) *resourcegov.Governor {
+	return daemonGovernor(t, &mutableDaemonSensor{snapshot: healthyDaemonSnapshot()}, 8, 8)
+}
+
 func TestDaemonStartupFencesUnprovenAttemptAndBlocksTask(t *testing.T) {
 	task := domain.Task{ID: "task-recovery", State: domain.TaskRunning, RunEpoch: 3}
 	attempt := domain.ExecutionAttempt{ID: "attempt-recovery", TaskID: task.ID, RunEpoch: 3, AuthorityState: domain.AttemptActive}
@@ -117,7 +207,7 @@ func TestDaemonStartupFencesUnprovenAttemptAndBlocksTask(t *testing.T) {
 		attempts:  map[string]domain.ExecutionAttempt{task.ID: attempt},
 	}
 	svc := &fakeDaemonService{store: store}
-	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}, &fakeIntegrationRecoverer{}, DaemonConfig{})
+	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +227,7 @@ func TestDaemonStartupFencesUnprovenAttemptAndBlocksTask(t *testing.T) {
 }
 
 func TestDaemonDurableCancelWatcherCancelsActiveWorkerContext(t *testing.T) {
-	task := domain.Task{ID: "task-cancel", State: domain.TaskWorkspaceReady}
+	task := domain.Task{ID: "task-cancel", State: domain.TaskWorkspaceReady, Contract: domain.GoalContract{ProjectID: "project-cancel"}}
 	workspace := domain.Workspace{ID: "workspace-cancel", TaskID: task.ID, State: domain.WorkspaceReady, Path: `D:\MAR\cancel-workspace`}
 	store := &fakeDaemonStore{
 		tasks:     map[string]domain.Task{task.ID: task},
@@ -146,7 +236,7 @@ func TestDaemonDurableCancelWatcherCancelsActiveWorkerContext(t *testing.T) {
 	}
 	svc := &fakeDaemonService{store: store, cancel: true}
 	runner := &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}
-	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 5 * time.Millisecond, MaxConcurrentWorkers: 1})
+	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 5 * time.Millisecond, MaxConcurrentWorkers: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +265,7 @@ func TestDaemonDurableCancelWatcherCancelsActiveWorkerContext(t *testing.T) {
 }
 
 func TestDaemonShutdownCancelsAndDrainsActiveWorkers(t *testing.T) {
-	task := domain.Task{ID: "task-shutdown", State: domain.TaskWorkspaceReady}
+	task := domain.Task{ID: "task-shutdown", State: domain.TaskWorkspaceReady, Contract: domain.GoalContract{ProjectID: "project-shutdown"}}
 	workspace := domain.Workspace{ID: "workspace-shutdown", TaskID: task.ID, State: domain.WorkspaceReady, Path: `D:\MAR\shutdown-workspace`}
 	store := &fakeDaemonStore{
 		tasks:     map[string]domain.Task{task.ID: task},
@@ -183,7 +273,7 @@ func TestDaemonShutdownCancelsAndDrainsActiveWorkers(t *testing.T) {
 		attempts:  map[string]domain.ExecutionAttempt{},
 	}
 	runner := &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}
-	daemon, err := NewDaemon(store, &fakeDaemonService{store: store}, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 10 * time.Millisecond, MaxConcurrentWorkers: 1})
+	daemon, err := NewDaemon(store, &fakeDaemonService{store: store}, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 10 * time.Millisecond, MaxConcurrentWorkers: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

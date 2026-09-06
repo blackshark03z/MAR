@@ -96,6 +96,34 @@ type fakeCheckpointStore struct {
 	published  []domain.SemanticCheckpointPayload
 }
 
+type fakeControlStream struct {
+	controls   []domain.TaskControl
+	enterCalls int
+	enterErr   error
+	onEnter    func(*fakeControlStream)
+}
+
+func (f *fakeControlStream) ControlsSince(_ context.Context, taskID string, afterVersion int64, limit int) ([]domain.TaskControl, error) {
+	out := make([]domain.TaskControl, 0)
+	for _, control := range f.controls {
+		if control.TaskID == taskID && control.Version > afterVersion {
+			out = append(out, control)
+			if len(out) == limit {
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeControlStream) EnterInputRequired(context.Context, string, string, int64) error {
+	f.enterCalls++
+	if f.onEnter != nil {
+		f.onEnter(f)
+	}
+	return f.enterErr
+}
+
 func (f *fakeCheckpointStore) LatestValidCheckpoint(context.Context, string) (domain.SemanticCheckpoint, bool, error) {
 	return f.latest, f.hasLatest, f.latestErr
 }
@@ -158,6 +186,62 @@ func TestLoopExecutesToolTurnsAndRequiresExplicitFinish(t *testing.T) {
 	}
 	if !strings.Contains(gateway.requests[0].Messages[0].Content, "UNTRUSTED EVIDENCE") || !strings.Contains(gateway.requests[0].Messages[1].Content, "AUTHORITATIVE_GOAL_CONTRACT_JSON") {
 		t.Fatalf("trust boundary missing from initial prompt: %+v", gateway.requests[0].Messages)
+	}
+}
+
+func TestLoopConsumesDurableSteerBeforeNextModelTurn(t *testing.T) {
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"steer consumed"}`}}}),
+	}}
+	controls := &fakeControlStream{controls: []domain.TaskControl{testTaskControl(t, 1, domain.ControlSteer, domain.SteerPayload{Kind: domain.SteerContext, Message: "failure occurs only on Windows"})}}
+	loop := newTestLoop(t, gateway, newFakeTools(true, "read_file"), testConfig()).WithControlStream(controls)
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || len(gateway.requests) != 1 {
+		t.Fatalf("steer flow did not complete: result=%+v requests=%d", result, len(gateway.requests))
+	}
+	found := false
+	for _, message := range gateway.requests[0].Messages {
+		if message.Role == model.RoleUser && strings.Contains(message.Content, "STEER/context") && strings.Contains(message.Content, "failure occurs only on Windows") {
+			found = true
+		}
+	}
+	if !found || !hasTool(gateway.requests[0].Tools, inputToolName) {
+		t.Fatalf("durable steer/request_input surface missing from model turn: %+v", gateway.requests[0])
+	}
+}
+
+func TestLoopRequestInputWaitsAndResumesSameAttempt(t *testing.T) {
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "need-input", Name: inputToolName, Arguments: `{"prompt":"Choose parser mode A or B"}`}}}),
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"owner input consumed"}`}}}),
+	}}
+	controls := &fakeControlStream{}
+	controls.onEnter = func(stream *fakeControlStream) {
+		stream.controls = append(stream.controls, testTaskControl(t, 1, domain.ControlInput, domain.InputPayload{Message: "Use mode B"}))
+	}
+	loop := newTestLoop(t, gateway, newFakeTools(true, "read_file"), testConfig()).WithControlStream(controls)
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || controls.enterCalls != 1 || len(gateway.requests) != 2 {
+		t.Fatalf("request_input did not resume same loop: result=%+v enter=%d requests=%d", result, controls.enterCalls, len(gateway.requests))
+	}
+	foundInput := false
+	foundToolObservation := false
+	for _, message := range gateway.requests[1].Messages {
+		if message.Role == model.RoleUser && strings.Contains(message.Content, "CONTROL_KIND: INPUT") && strings.Contains(message.Content, "Use mode B") {
+			foundInput = true
+		}
+		if message.Role == model.RoleTool && message.ToolCallID == "need-input" && strings.Contains(message.Content, string(domain.TaskInputRequired)) {
+			foundToolObservation = true
+		}
+	}
+	if !foundInput || !foundToolObservation {
+		t.Fatalf("durable input was not fed back into same agent conversation: %+v", gateway.requests[1].Messages)
 	}
 }
 
@@ -741,6 +825,28 @@ func testRunRequest(write bool) RunRequest {
 		},
 		ExpectedRevision: "rev-test",
 	}
+}
+
+func testTaskControl(t *testing.T, version int64, kind domain.ControlKind, payload any) domain.TaskControl {
+	t.Helper()
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := domain.TaskControl{
+		ID:             "control-test-" + string(rune('0'+version)),
+		TaskID:         "task-agent-test",
+		Version:        version,
+		IdempotencyKey: "control-key-" + string(rune('0'+version)),
+		Kind:           kind,
+		Payload:        raw,
+		CreatedAt:      time.Unix(1700000000+version, 0).UTC(),
+	}
+	control.IntegrityHash, err = control.IntegrityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return control
 }
 
 func assistantResponse(tokens int64, message model.Message) model.TurnResponse {

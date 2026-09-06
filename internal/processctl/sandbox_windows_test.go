@@ -168,6 +168,122 @@ func TestSandboxKeyedLocksAreReleasedAfterCommand(t *testing.T) {
 	}
 }
 
+func TestSandboxProfileLockSerializesAcrossProcesses(t *testing.T) {
+	profile := "MAR.Worker.CrossProcessProfileTest"
+	marker := filepath.Join(t.TempDir(), "profile-acquired.txt")
+	unlock, err := lockSandboxProfile(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSandboxProfileLockHelper$")
+	var childOutput strings.Builder
+	cmd.Stdout = &childOutput
+	cmd.Stderr = &childOutput
+	cmd.Env = append(os.Environ(),
+		"MAR_SANDBOX_PROFILE_LOCK_HELPER=1",
+		"MAR_SANDBOX_PROFILE_LOCK_NAME="+profile,
+		"MAR_SANDBOX_PROFILE_LOCK_MARKER="+marker,
+	)
+	if err := cmd.Start(); err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	time.Sleep(250 * time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		unlock()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("second process acquired sandbox profile lock before release: %v", err)
+	}
+	unlock()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("cross-process profile lock helper failed: %v output=%s", err, childOutput.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("second process did not acquire sandbox profile lock after release")
+	}
+	if got, err := os.ReadFile(marker); err != nil || string(got) != "acquired" {
+		t.Fatalf("cross-process sandbox profile lock helper did not complete: %q %v", got, err)
+	}
+}
+
+func TestSandboxProfileLockHelper(t *testing.T) {
+	if os.Getenv("MAR_SANDBOX_PROFILE_LOCK_HELPER") != "1" {
+		return
+	}
+	unlock, err := lockSandboxProfile(os.Getenv("MAR_SANDBOX_PROFILE_LOCK_NAME"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if err := os.WriteFile(os.Getenv("MAR_SANDBOX_PROFILE_LOCK_MARKER"), []byte("acquired"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSandboxPathLockSerializesAcrossProcesses(t *testing.T) {
+	path := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "acquired.txt")
+	unlock, err := lockSandboxPaths([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSandboxPathLockHelper$")
+	var childOutput strings.Builder
+	cmd.Stdout = &childOutput
+	cmd.Stderr = &childOutput
+	cmd.Env = append(os.Environ(),
+		"MAR_SANDBOX_PATH_LOCK_HELPER=1",
+		"MAR_SANDBOX_PATH_LOCK_PATH="+path,
+		"MAR_SANDBOX_PATH_LOCK_MARKER="+marker,
+	)
+	if err := cmd.Start(); err != nil {
+		unlock()
+		t.Fatal(err)
+	}
+	time.Sleep(250 * time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		unlock()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		t.Fatalf("second process acquired sandbox path lock before release: %v", err)
+	}
+	unlock()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("cross-process lock helper failed: %v output=%s", err, childOutput.String())
+		}
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("second process did not acquire sandbox path lock after release")
+	}
+	if got, err := os.ReadFile(marker); err != nil || string(got) != "acquired" {
+		t.Fatalf("cross-process sandbox path lock helper did not complete: %q %v", got, err)
+	}
+}
+
+func TestSandboxPathLockHelper(t *testing.T) {
+	if os.Getenv("MAR_SANDBOX_PATH_LOCK_HELPER") != "1" {
+		return
+	}
+	unlock, err := lockSandboxPaths([]string{os.Getenv("MAR_SANDBOX_PATH_LOCK_PATH")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	if err := os.WriteFile(os.Getenv("MAR_SANDBOX_PATH_LOCK_MARKER"), []byte("acquired"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLPACTaskCapabilityCannotReadAnotherTaskWorkspace(t *testing.T) {
 	workspaceA := t.TempDir()
 	workspaceB := t.TempDir()
@@ -345,6 +461,123 @@ func TestAppContainerSandboxAllowsExplicitReadScopeWithoutWrite(t *testing.T) {
 	}
 }
 
+func TestSandboxSharedReadPathSupportsConcurrentTasks(t *testing.T) {
+	shared := t.TempDir()
+	readPath := filepath.Join(shared, "runtime.txt")
+	if err := os.WriteFile(readPath, []byte("shared-runtime"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	type runCase struct {
+		taskID    string
+		workspace string
+		marker    string
+		release   string
+	}
+	cases := []runCase{
+		{taskID: "sandbox-concurrent-shared-a", workspace: t.TempDir()},
+		{taskID: "sandbox-concurrent-shared-b", workspace: t.TempDir()},
+	}
+	for i := range cases {
+		cases[i].marker = filepath.Join(cases[i].workspace, "entered.txt")
+		cases[i].release = filepath.Join(cases[i].workspace, "release.txt")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	type outcome struct {
+		index  int
+		result SandboxCommandResult
+		err    error
+	}
+	outcomes := make(chan outcome, len(cases))
+	for i, item := range cases {
+		probe := copySandboxProbe(t, item.workspace)
+		go func(index int, current runCase, executable string) {
+			result, err := RunSandboxedCommand(ctx, SandboxCommandSpec{
+				TaskID:         current.taskID,
+				OperationID:    "shared-read-concurrency",
+				WorkspaceRoot:  current.workspace,
+				ReadPaths:      []string{shared},
+				Path:           executable,
+				Args:           []string{"-test.run=TestSandboxProbeHelper"},
+				Dir:            current.workspace,
+				Env:            probeEnvironment("shared-read-hold", current.marker, current.release, readPath, "", ""),
+				MaxOutputBytes: 16 << 10,
+			})
+			outcomes <- outcome{index: index, result: result, err: err}
+		}(i, item, probe)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		both := true
+		for _, item := range cases {
+			if _, err := os.Stat(item.marker); err != nil {
+				both = false
+				break
+			}
+		}
+		if both {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("sandbox commands sharing a read path were serialized for their full lifetimes")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	for _, item := range cases {
+		if err := os.WriteFile(item.release, []byte("release"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range cases {
+		got := <-outcomes
+		if got.err != nil || !strings.Contains(got.result.Output, "SANDBOX_SHARED_READ_CONCURRENT_OK") {
+			t.Fatalf("concurrent sandbox %d failed: err=%v output=%s", got.index, got.err, got.result.Output)
+		}
+	}
+	for _, item := range cases {
+		sid, releaseSID, err := deriveCapabilitySID(taskCapabilityName(item.taskID), "concurrent shared-read residue test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{shared, item.workspace, item.marker} {
+			contains, checkErr := pathDACLContainsSID(path, sid)
+			if checkErr != nil || contains {
+				releaseSID()
+				t.Fatalf("task capability ACL residue on %s: contains=%v err=%v", path, contains, checkErr)
+			}
+		}
+		releaseSID()
+	}
+}
+
+func TestSandboxSuccessfulRootCancellationConfirmsDescendantTerminationBeforeReturn(t *testing.T) {
+	workspace := t.TempDir()
+	probe := copySandboxProbe(t, workspace)
+	marker := filepath.Join(workspace, "success-descendant-marker.txt")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(150*time.Millisecond, cancel)
+	result, err := RunSandboxedCommand(ctx, SandboxCommandSpec{
+		TaskID:         "sandbox-success-descendant-fence",
+		OperationID:    "success-descendant-cancel",
+		WorkspaceRoot:  workspace,
+		Path:           probe,
+		Args:           []string{"-test.run=TestSandboxProbeHelper"},
+		Dir:            workspace,
+		Env:            probeEnvironment("spawn-descendant-return", "", "", "", "", marker),
+		MaxOutputBytes: 32 << 10,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation after successful root exit, got %v output=%s", err, result.Output)
+	}
+	// The descendant tries to mutate after 650ms. Returning from the sandbox
+	// boundary is safe only if independent cleanup already proved its Job empty.
+	time.Sleep(900 * time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("successful-root descendant survived verified cleanup and mutated workspace: %v", err)
+	}
+}
+
 func TestAppContainerSandboxTimeoutKillsDescendantTree(t *testing.T) {
 	workspace := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
@@ -444,7 +677,29 @@ func TestSandboxProbeHelper(t *testing.T) {
 			t.Fatal("explicit read-only scope unexpectedly allowed write")
 		}
 		fmt.Println("SANDBOX_READ_SCOPE_OK")
-	case "spawn-descendant":
+	case "shared-read-hold":
+		readPath := os.Getenv("MAR_PROBE_SECRET")
+		marker := os.Getenv("MAR_PROBE_INSIDE")
+		release := os.Getenv("MAR_PROBE_OUTSIDE")
+		b, err := os.ReadFile(readPath)
+		if err != nil || string(b) != "shared-runtime" {
+			t.Fatalf("shared runtime read unavailable: %q %v", b, err)
+		}
+		if err := os.WriteFile(marker, []byte("entered"), 0o644); err != nil {
+			t.Fatalf("write concurrency marker: %v", err)
+		}
+		deadline := time.Now().Add(6 * time.Second)
+		for {
+			if _, err := os.Stat(release); err == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("timed out waiting for concurrent release")
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		fmt.Println("SANDBOX_SHARED_READ_CONCURRENT_OK")
+	case "spawn-descendant", "spawn-descendant-return":
 		marker := os.Getenv("MAR_PROBE_MARKER")
 		cmd := exec.Command(os.Args[0], "-test.run=TestSandboxProbeHelper")
 		cmd.Env = append(os.Environ(), "MAR_SANDBOX_PROBE=delayed-descendant", "MAR_PROBE_MARKER="+marker)
@@ -452,7 +707,9 @@ func TestSandboxProbeHelper(t *testing.T) {
 			t.Fatalf("spawn sandbox descendant: %v", err)
 		}
 		fmt.Println("SANDBOX_DESCENDANT_STARTED")
-		time.Sleep(30 * time.Second)
+		if mode == "spawn-descendant" {
+			time.Sleep(30 * time.Second)
+		}
 	case "delayed-descendant":
 		time.Sleep(650 * time.Millisecond)
 		if err := os.WriteFile(os.Getenv("MAR_PROBE_MARKER"), []byte("escaped"), 0o644); err != nil {

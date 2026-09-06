@@ -2,7 +2,10 @@ package mcpedge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -96,24 +99,70 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, map[string]any{"created": created, "control": control}, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "result", Description: "Read the latest durable revision-bound TaskResult for one MAR task."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, map[string]any, error) {
-			result, available, err := backend.Result(ctx, args.TaskID)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, map[string]any{"available": available, "result": result}, nil
-		})
-	mcp.AddTool(server, &mcp.Tool{Name: "inspect", Description: "Inspect a bounded durable task projection: task, workspace, attempt, checkpoint, result/evidence, and recent control commands."},
-		func(ctx context.Context, _ *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, map[string]any, error) {
-			inspection, err := backend.Inspect(ctx, args.TaskID)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, map[string]any{"inspection": inspection}, nil
-		})
+	addRawTaskReadTool(server, "result", "Read the latest durable revision-bound TaskResult for one MAR task.", func(ctx context.Context, taskID string) (any, error) {
+		result, available, err := backend.Result(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"available": available, "result": result}, nil
+	})
+	addRawTaskReadTool(server, "inspect", "Inspect a bounded durable task projection: task, workspace, attempt, checkpoint, result/evidence, and recent control commands.", func(ctx context.Context, taskID string) (any, error) {
+		inspection, err := backend.Inspect(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"inspection": inspection}, nil
+	})
 
 	return server, nil
+}
+
+func addRawTaskReadTool(server *mcp.Server, name, description string, read func(context.Context, string) (any, error)) {
+	inputSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"task_id"},
+		"additionalProperties": false,
+	}
+	server.AddTool(&mcp.Tool{
+		Name:         name,
+		Description:  description,
+		InputSchema:  inputSchema,
+		OutputSchema: map[string]any{"type": "object"},
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		if req == nil || req.Params == nil {
+			return rawToolError(errors.New("tool request parameters are required")), nil
+		}
+		var args taskArgs
+		if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+			return rawToolError(fmt.Errorf("decode tool arguments: %w", err)), nil
+		}
+		args.TaskID = strings.TrimSpace(args.TaskID)
+		if args.TaskID == "" {
+			return rawToolError(errors.New("task_id is required")), nil
+		}
+		value, err := read(ctx, args.TaskID)
+		if err != nil {
+			return rawToolError(err), nil
+		}
+		payload, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("marshal %s tool result: %w", name, err)
+		}
+		if !json.Valid(payload) {
+			return nil, fmt.Errorf("marshal %s tool result produced invalid JSON", name)
+		}
+		return &mcp.CallToolResult{
+			Content:           []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+			StructuredContent: json.RawMessage(payload),
+		}, nil
+	})
+}
+
+func rawToolError(err error) *mcp.CallToolResult {
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}
 }
 
 func RunStdio(ctx context.Context, backend Backend) error {

@@ -23,6 +23,8 @@ type ControlBackend interface {
 	HeartbeatAttempt(context.Context, string, string, int64, time.Duration) error
 	LatestValidCheckpoint(context.Context, string) (domain.SemanticCheckpoint, bool, error)
 	PublishCheckpoint(context.Context, string, string, int64, string, domain.SemanticCheckpointPayload) (domain.SemanticCheckpoint, error)
+	ControlsSince(context.Context, string, int64, int) ([]domain.TaskControl, error)
+	RequestInputForAttempt(context.Context, string, string, int64) error
 }
 
 type ProcessConfig struct {
@@ -31,6 +33,7 @@ type ProcessConfig struct {
 	Environment   []string
 	LeaseDuration time.Duration
 	StopTimeout   time.Duration
+	ProcessLimits processctl.Limits
 }
 
 type ProcessRunner struct {
@@ -94,6 +97,7 @@ func (r *ProcessRunner) Run(ctx context.Context, start StartRequest) (agent.Resu
 		Stdin:   childStdin,
 		Stdout:  childStdout,
 		Stderr:  stderr,
+		Limits:  r.cfg.ProcessLimits,
 	})
 	childStdin.Close()
 	childStdout.Close()
@@ -234,6 +238,25 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		}
 		checkpoint, err := r.backend.PublishCheckpoint(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.CurrentRevision, payload.Payload)
 		return respond(publishCheckpointResponse{Checkpoint: checkpoint}, err)
+	case methodControlsSince:
+		var payload controlsSinceRequest
+		if err := json.Unmarshal(request.Payload, &payload); err != nil {
+			return respond(nil, err)
+		}
+		if payload.TaskID != start.Task.ID || payload.AfterVersion < 0 || payload.Limit <= 0 || payload.Limit > 32 {
+			return respond(nil, errors.New("worker controls request escaped assigned task or exceeded bounds"))
+		}
+		controls, err := r.backend.ControlsSince(ctx, payload.TaskID, payload.AfterVersion, payload.Limit)
+		return respond(controlsSinceResponse{Controls: controls}, err)
+	case methodEnterInputRequired:
+		var payload inputRequiredRequest
+		if err := json.Unmarshal(request.Payload, &payload); err != nil {
+			return respond(nil, err)
+		}
+		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
+			return respond(nil, errors.New("worker input request escaped assigned attempt"))
+		}
+		return respond(nil, r.backend.RequestInputForAttempt(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch))
 	default:
 		return respond(nil, fmt.Errorf("unsupported worker RPC method %q", request.Method))
 	}

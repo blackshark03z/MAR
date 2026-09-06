@@ -4,14 +4,15 @@ package orchestrator
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
 	"mar/internal/aci"
 	"mar/internal/agent"
-	"mar/internal/domain"
 	"mar/internal/effects"
 	"mar/internal/integration"
 	"mar/internal/processctl"
@@ -35,8 +36,10 @@ type RuntimeConfig struct {
 	SandboxReadPaths     []string
 	WorkerPathEntries    []string
 	GoModuleCache        string
+	CommandTimeout       time.Duration
 	LeaseDuration        time.Duration
 	WorkerStopTimeout    time.Duration
+	WorkerProcessLimits  processctl.Limits
 	ResourceGovernor     resourcegov.Config
 	Scheduler            scheduler.Config
 	Daemon               DaemonConfig
@@ -53,6 +56,12 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 	}
 	if cfg.DataRoot == "" || cfg.Executable == "" {
 		return nil, errors.New("runtime requires data root and executable")
+	}
+	if cfg.CommandTimeout <= 0 {
+		// Self-hosting verification frequently starts from a task-local cold build
+		// cache. Keep individual commands bounded, but do not make the previous
+		// two-minute ACI fallback the orchestration-wide acceptance policy.
+		cfg.CommandTimeout = 5 * time.Minute
 	}
 	if cfg.LeaseDuration <= 0 {
 		cfg.LeaseDuration = time.Minute
@@ -126,18 +135,32 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	processLimits, err := defaultWorkerProcessLimits(cfg.WorkerProcessLimits, cfg.ResourceGovernor, cfg.Daemon)
+	if err != nil {
+		return nil, err
+	}
+	// JobMemoryBytes is a hard per-worker ceiling, not an estimate of normal
+	// resident usage. Reserving the entire hard cap here double-counts the OS
+	// envelope and can permanently deny launch after tiny host-RAM fluctuations.
+	// Admission uses the configured workload estimate; aggregate Job caps and
+	// the live pressure monitor remain the hard safety boundaries.
+	cfg.Daemon.ExecutionRAMReservation = executionRAMReservation(cfg.Daemon.ExecutionRAMReservation, cfg.Scheduler.WorkspaceRAMReservation)
+	if cfg.Daemon.ExecutionDiskReservation == 0 {
+		cfg.Daemon.ExecutionDiskReservation = cfg.Scheduler.WorkspaceDiskReservation
+	}
 	processRunner, err := worker.NewProcessRunner(taskService, processctl.NewSupervisor(), worker.ProcessConfig{
 		Executable:    cfg.Executable,
 		Arguments:     append([]string{}, cfg.WorkerArguments...),
 		Environment:   workerEnvironment(os.Environ(), pathEntries),
 		LeaseDuration: cfg.LeaseDuration,
 		StopTimeout:   cfg.WorkerStopTimeout,
+		ProcessLimits: processLimits,
 	})
 	if err != nil {
 		return nil, err
 	}
 	runtimeFactory := func(workspacePath, taskID string) (verification.CommandRuntime, error) {
-		executor, err := aci.NewWindowsSandboxExecutor(workspacePath, readPaths...)
+		executor, err := aci.NewWindowsSandboxExecutorWithLimits(workspacePath, processLimits, readPaths...)
 		if err != nil {
 			return nil, err
 		}
@@ -145,33 +168,83 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		if err != nil {
 			return nil, err
 		}
-		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GoModuleCache: goModuleCache}, executor)
+		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GoModuleCache: goModuleCache, CommandTimeout: cfg.CommandTimeout}, executor)
 	}
 	taskRunner, err := NewTaskRunner(taskService, processRunner, verifier, integrationManager, runtimeFactory, TaskRunnerConfig{
-		WorkerID:         "mar-worker",
-		SupervisorID:     "mar-daemon",
-		LeaseDuration:    cfg.LeaseDuration,
-		Provider:         cfg.Provider,
-		AgentProfile:     cfg.AgentProfile,
-		AgentConfig:      cfg.AgentConfig,
-		ResourceSummary:  domainResourceSummaryZero(),
-		SandboxReadPaths: append([]string{}, readPaths...),
-		GoModuleCache:    goModuleCache,
+		WorkerID:              "mar-worker",
+		SupervisorID:          "mar-daemon",
+		LeaseDuration:         cfg.LeaseDuration,
+		Provider:              cfg.Provider,
+		AgentProfile:          cfg.AgentProfile,
+		AgentConfig:           cfg.AgentConfig,
+		SandboxReadPaths:      append([]string{}, readPaths...),
+		GoModuleCache:         goModuleCache,
+		CommandTimeout:        cfg.CommandTimeout,
+		FinalizationTimeout:   cfg.WorkerStopTimeout,
+		MemoryPressurePercent: cfg.ResourceGovernor.MaxMemoryLoadPercent,
 	})
 	if err != nil {
 		return nil, err
 	}
-	daemon, err := NewDaemon(s, taskService, preflight, schedulerEngine, taskRunner, integrationManager, cfg.Daemon)
+	daemon, err := NewDaemon(s, taskService, preflight, schedulerEngine, taskRunner, integrationManager, governor, cfg.Daemon)
 	if err != nil {
 		return nil, err
 	}
 	return &Runtime{Service: taskService, Daemon: daemon}, nil
 }
 
-// Resource accounting becomes authoritative as worker-level reservations are
-// wired in the next Slice 016 substep. Keeping an explicit zero summary is safer
-// than inventing measurements before that instrumentation exists.
-func domainResourceSummaryZero() (out domain.ResourceSummary) { return out }
+func executionRAMReservation(explicit, configuredEstimate uint64) uint64 {
+	if explicit != 0 {
+		return explicit
+	}
+	return configuredEstimate
+}
+
+func defaultWorkerProcessLimits(explicit processctl.Limits, governor resourcegov.Config, daemon DaemonConfig) (processctl.Limits, error) {
+	limits := explicit
+	workers := daemon.withDefaults().MaxConcurrentWorkers
+	if limits.CPUHardCapBasisPoints == 0 {
+		globalBasisPoints := uint32(governor.MaxCPUPercent * 100)
+		if globalBasisPoints == 0 {
+			globalBasisPoints = 1
+		}
+		if globalBasisPoints > 10_000 {
+			globalBasisPoints = 10_000
+		}
+		basisPoints := globalBasisPoints / uint32(workers)
+		if basisPoints == 0 {
+			basisPoints = 1
+		}
+		limits.CPUHardCapBasisPoints = basisPoints
+	}
+	if limits.JobMemoryBytes == 0 {
+		_, available, err := resourcegov.WindowsPhysicalMemoryBytes()
+		if err != nil {
+			return processctl.Limits{}, fmt.Errorf("derive worker memory envelope: %w", err)
+		}
+		if available <= governor.MinFreeRAMBytes {
+			return processctl.Limits{}, errors.New("available host RAM does not exceed configured MAR reserve")
+		}
+		limits.JobMemoryBytes = (available - governor.MinFreeRAMBytes) / uint64(workers)
+		if limits.JobMemoryBytes == 0 {
+			return processctl.Limits{}, errors.New("derived worker memory envelope is zero")
+		}
+	}
+	if limits.MaxActiveProcesses == 0 {
+		// Go builds legitimately fan out compiler/linker subprocesses. Scale the
+		// containment ceiling with host parallelism rather than freezing a machine-
+		// independent process count; the benchmark can tune this baseline later.
+		count := goruntime.NumCPU() * 4
+		if count < 16 {
+			count = 16
+		}
+		limits.MaxActiveProcesses = uint32(count)
+	}
+	if err := limits.Validate(); err != nil {
+		return processctl.Limits{}, err
+	}
+	return limits, nil
+}
 
 func normalizeExistingDirs(paths []string) ([]string, error) {
 	out := make([]string, 0, len(paths))

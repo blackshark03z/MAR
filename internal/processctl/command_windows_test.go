@@ -114,21 +114,36 @@ func TestRunContainedCommandParentExitThenTimeoutKillsRemainingChild(t *testing.
 
 func TestRunContainedCommandCancellationKillsDescendant(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, err := RunContainedCommand(ctx, CommandSpec{
-		TaskID:      "task-control",
-		OperationID: "cancel-tree",
-		Path:        os.Args[0],
-		Args:        []string{"-test.run=TestRunContainedHelper"},
-		Env: append(os.Environ(),
-			"MAR_CONTAINED_COMMAND_HELPER=tree",
-			"MAR_CONTAINED_CHILD_PID_FILE="+pidFile,
-		),
-	})
-	if err == nil {
-		t.Fatal("expected context cancellation")
-	}
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := RunContainedCommand(ctx, CommandSpec{
+			TaskID:      "task-control",
+			OperationID: "cancel-tree",
+			Path:        os.Args[0],
+			Args:        []string{"-test.run=TestRunContainedHelper"},
+			Env: append(os.Environ(),
+				"MAR_CONTAINED_COMMAND_HELPER=tree",
+				"MAR_CONTAINED_CHILD_PID_FILE="+pidFile,
+			),
+		})
+		result <- err
+	}()
+
+	// Cancel only after the descendant exists. A fixed startup timeout makes
+	// this test race Windows process startup and can pass without exercising
+	// descendant termination at all.
 	pid := waitForPIDFile(t, pidFile)
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("expected context cancellation")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("contained command did not return after cancellation")
+	}
 	assertProcessNotActive(t, pid)
 }

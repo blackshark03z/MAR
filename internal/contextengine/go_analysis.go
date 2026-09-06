@@ -65,6 +65,15 @@ func (c *analysisCache) size() int {
 	return len(c.values)
 }
 
+func (c *analysisCache) clear() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := len(c.values)
+	c.values = make(map[string]goFileAnalysis)
+	c.order = nil
+	return removed
+}
+
 func analyzeGoFile(path string, source []byte) goFileAnalysis {
 	if !strings.EqualFold(filepath.Ext(path), ".go") {
 		return goFileAnalysis{}

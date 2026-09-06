@@ -62,6 +62,10 @@ type Sensor interface {
 	Snapshot(context.Context) (Snapshot, error)
 }
 
+type pressureSensor interface {
+	PressureSnapshot(context.Context) (Snapshot, error)
+}
+
 type Config struct {
 	MaxCPUPercent           float64
 	MaxMemoryLoadPercent    float64
@@ -171,6 +175,55 @@ func (g *Governor) Evaluate(ctx context.Context, claim Claim) (Decision, error) 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.evaluateLocked(snapshot, claim), nil
+}
+
+// Pressure reports whether the host has crossed configured live-resource
+// boundaries while work is already active. Capacity-only reasons are omitted:
+// they govern new admission, not emergency termination of admitted work.
+func (g *Governor) Pressure(ctx context.Context) (Decision, error) {
+	var snapshot Snapshot
+	var err error
+	if sensor, ok := g.sensor.(pressureSensor); ok {
+		snapshot, err = sensor.PressureSnapshot(ctx)
+	} else {
+		snapshot, err = g.sensor.Snapshot(ctx)
+	}
+	if err != nil {
+		return Decision{}, fmt.Errorf("resource snapshot: %w", err)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	decision := Decision{Allowed: true, Snapshot: snapshot, ActiveClaims: len(g.active)}
+	for _, active := range g.active {
+		decision.ReservedRAMBytes += active.RAMBytes
+		decision.ReservedDiskBytes += active.DiskBytes
+		if active.Heavy {
+			decision.ActiveHeavyJobs++
+		}
+	}
+	if snapshot.CPUKnown && snapshot.CPUPercent >= g.cfg.MaxCPUPercent {
+		decision.Reasons = append(decision.Reasons, DenyCPUPressure)
+	}
+	if snapshot.MemoryLoadPercent >= g.cfg.MaxMemoryLoadPercent {
+		decision.Reasons = append(decision.Reasons, DenyMemoryPressure)
+	}
+	requiredRAM := saturatingAdd(g.cfg.MinFreeRAMBytes, decision.ReservedRAMBytes)
+	if snapshot.AvailableRAMBytes < requiredRAM {
+		decision.Reasons = append(decision.Reasons, DenyMemoryReserve)
+	}
+	if snapshot.IOPressureKnown && g.cfg.MaxIOPressurePercent > 0 && snapshot.IOPressurePercent >= g.cfg.MaxIOPressurePercent {
+		decision.Reasons = append(decision.Reasons, DenyIOPressure)
+	}
+	requiredDisk := saturatingAdd(g.cfg.MinFreeDiskBytes, decision.ReservedDiskBytes)
+	if snapshot.FreeDiskBytes < requiredDisk {
+		decision.Reasons = append(decision.Reasons, DenyHostDiskReserve)
+	}
+	if g.cfg.MaxMARDiskBytes > 0 && snapshot.MARDiskUsedBytes >= g.cfg.MaxMARDiskBytes {
+		decision.Reasons = append(decision.Reasons, DenyMARDiskBudget)
+	}
+	decision.Allowed = len(decision.Reasons) == 0
+	return decision, nil
 }
 
 func (g *Governor) evaluateLocked(snapshot Snapshot, claim Claim) Decision {

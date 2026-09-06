@@ -2,8 +2,10 @@ package mcpedge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,6 +42,28 @@ func (f *fakeBackend) Result(context.Context, string) (domain.TaskResult, bool, 
 }
 func (f *fakeBackend) Inspect(_ context.Context, taskID string) (service.TaskInspection, error) {
 	return service.TaskInspection{Task: domain.Task{ID: taskID}, Controls: []domain.TaskControl{}}, nil
+}
+
+type largeReadBackend struct{ fakeBackend }
+
+func (b *largeReadBackend) Result(_ context.Context, taskID string) (domain.TaskResult, bool, error) {
+	return domain.TaskResult{
+		ID:                   "result-large",
+		TaskID:               taskID,
+		Version:              2,
+		ChangedAreas:         []string{"api.go", "domain.go", "transform.go"},
+		EvidenceID:           "evidence-large",
+		VerificationExecuted: []string{"go test ./...", "go vet ./...", "go build ./..."},
+		PassFailEvidence:     []string{strings.Repeat("large-evidence-", 12<<10)},
+		UnresolvedRisks:      []string{},
+		ResourceSummary:      domain.ResourceSummary{AgentTurns: 5, AgentToolCalls: 5, ModelTotalTokens: 550},
+		CreatedAt:            time.Unix(2, 0).UTC(),
+	}, true, nil
+}
+
+func (b *largeReadBackend) Inspect(ctx context.Context, taskID string) (service.TaskInspection, error) {
+	result, _, _ := b.Result(ctx, taskID)
+	return service.TaskInspection{Task: domain.Task{ID: taskID}, Result: &result, Controls: []domain.TaskControl{}}, nil
 }
 
 func connectTestMCP(t *testing.T, backend Backend) *mcp.ClientSession {
@@ -109,6 +133,29 @@ func TestSteerToolMapsTypedArgumentsToDurableBackendCommand(t *testing.T) {
 	}
 	if result.StructuredContent == nil {
 		t.Fatal("typed MCP tool did not return structured content")
+	}
+}
+
+func TestLargeResultAndInspectRemainValidStructuredJSON(t *testing.T) {
+	session := connectTestMCP(t, &largeReadBackend{})
+	for _, name := range []string{"result", "inspect"} {
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{"task_id": "task-large"}})
+		if err != nil {
+			t.Fatalf("%s large payload escaped as protocol error: %v", name, err)
+		}
+		if result.IsError || result.StructuredContent == nil {
+			t.Fatalf("%s large payload lost structured content: %+v", name, result)
+		}
+		raw, err := json.Marshal(result.StructuredContent)
+		if err != nil || !json.Valid(raw) {
+			t.Fatalf("%s structured payload is invalid JSON: len=%d err=%v", name, len(raw), err)
+		}
+		if len(raw) < 100<<10 {
+			t.Fatalf("%s regression payload was not large enough: %d bytes", name, len(raw))
+		}
+		if len(result.Content) == 0 {
+			t.Fatalf("%s omitted MCP text fallback", name)
+		}
 	}
 }
 

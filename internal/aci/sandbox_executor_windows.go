@@ -17,15 +17,23 @@ import (
 type WindowsSandboxExecutor struct {
 	root      string
 	readPaths []string
+	limits    processctl.Limits
 	readyErr  error
 }
 
 func NewWindowsSandboxExecutor(root string, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	return NewWindowsSandboxExecutorWithLimits(root, processctl.Limits{}, readPaths...)
+}
+
+func NewWindowsSandboxExecutorWithLimits(root string, limits processctl.Limits, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	if err := limits.Validate(); err != nil {
+		return nil, err
+	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
-	executor := &WindowsSandboxExecutor{root: filepath.Clean(abs), readPaths: append([]string(nil), readPaths...)}
+	executor := &WindowsSandboxExecutor{root: filepath.Clean(abs), readPaths: append([]string(nil), readPaths...), limits: limits}
 	executor.readyErr = processctl.CheckSandboxHostReady(context.Background(), executor.root)
 	return executor, nil
 }
@@ -56,6 +64,7 @@ func (e *WindowsSandboxExecutor) Run(ctx context.Context, taskID string, spec Ex
 		Dir:            spec.Dir,
 		Env:            spec.Env,
 		MaxOutputBytes: spec.MaxOutputBytes,
+		Limits:         e.limits,
 	})
 	return ExecResult{Output: result.Output, ExitCode: result.ExitCode}, err
 }

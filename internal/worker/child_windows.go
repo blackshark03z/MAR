@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"mar/internal/aci"
 	"mar/internal/agent"
@@ -16,7 +17,42 @@ import (
 	"mar/internal/domain"
 	"mar/internal/model"
 	"mar/internal/model/openaichat"
+	"mar/internal/resourcegov"
 )
+
+type pressureAwareContextBuilder struct {
+	inner      agent.ContextBuilder
+	evict      func() int
+	memoryLoad func() (float64, error)
+	threshold  float64
+}
+
+func (b *pressureAwareContextBuilder) Build(ctx context.Context, req contextengine.Request) (contextengine.Pack, error) {
+	if b.threshold > 0 && b.memoryLoad != nil {
+		if load, err := b.memoryLoad(); err == nil && load >= b.threshold && b.evict != nil {
+			b.evict()
+		}
+	}
+	return b.inner.Build(ctx, req)
+}
+
+func monitorMemoryPressure(ctx context.Context, interval time.Duration, threshold float64, memoryLoad func() (float64, error), evict func() int) {
+	if interval <= 0 || threshold <= 0 || memoryLoad == nil || evict == nil {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if load, err := memoryLoad(); err == nil && load >= threshold {
+				evict()
+			}
+		}
+	}
+}
 
 type rpcClient struct {
 	decoder *json.Decoder
@@ -53,6 +89,22 @@ type publishCheckpointRequest struct {
 
 type publishCheckpointResponse struct {
 	Checkpoint domain.SemanticCheckpoint `json:"checkpoint"`
+}
+
+type controlsSinceRequest struct {
+	TaskID       string `json:"task_id"`
+	AfterVersion int64  `json:"after_version"`
+	Limit        int    `json:"limit"`
+}
+
+type controlsSinceResponse struct {
+	Controls []domain.TaskControl `json:"controls"`
+}
+
+type inputRequiredRequest struct {
+	TaskID    string `json:"task_id"`
+	AttemptID string `json:"attempt_id"`
+	RunEpoch  int64  `json:"run_epoch"`
 }
 
 func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
@@ -93,6 +145,25 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
+	var agentContext agent.ContextBuilder = contextBuilder
+	if start.MemoryPressurePercent > 0 {
+		agentContext = &pressureAwareContextBuilder{
+			inner:      contextBuilder,
+			evict:      contextBuilder.EvictOptionalCaches,
+			memoryLoad: resourcegov.WindowsMemoryLoadPercent,
+			threshold:  start.MemoryPressurePercent,
+		}
+		pressureCtx, stopPressure := context.WithCancel(ctx)
+		pressureDone := make(chan struct{})
+		go func() {
+			defer close(pressureDone)
+			monitorMemoryPressure(pressureCtx, time.Second, start.MemoryPressurePercent, resourcegov.WindowsMemoryLoadPercent, contextBuilder.EvictOptionalCaches)
+		}()
+		defer func() {
+			stopPressure()
+			<-pressureDone
+		}()
+	}
 	executor, err := aci.NewWindowsSandboxExecutor(start.WorkspacePath, start.SandboxReadPaths...)
 	if err != nil {
 		_ = sendChildError(encoder, err)
@@ -104,10 +175,11 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		return err
 	}
 	codingRuntime, err := aci.New(aci.Config{
-		Root:          start.WorkspacePath,
-		TaskID:        start.Task.ID,
-		GitBroker:     gitBroker,
-		GoModuleCache: start.GoModuleCache,
+		Root:           start.WorkspacePath,
+		TaskID:         start.Task.ID,
+		GitBroker:      gitBroker,
+		GoModuleCache:  start.GoModuleCache,
+		CommandTimeout: start.CommandTimeout,
 	}, executor)
 	if err != nil {
 		_ = sendChildError(encoder, err)
@@ -127,11 +199,12 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	loop, err := agent.New(gateway, codingRuntime, contextBuilder, rpc, rpc, start.AgentProfile, start.AgentConfig)
+	loop, err := agent.New(gateway, codingRuntime, agentContext, rpc, rpc, start.AgentProfile, start.AgentConfig)
 	if err != nil {
 		_ = sendChildError(encoder, err)
 		return err
 	}
+	loop.WithControlStream(rpc)
 	result, err := loop.Run(ctx, agent.RunRequest{
 		TaskID:           start.Task.ID,
 		AttemptID:        start.Attempt.ID,
@@ -177,6 +250,19 @@ func (c *rpcClient) PublishCheckpoint(ctx context.Context, taskID, attemptID str
 		return domain.SemanticCheckpoint{}, err
 	}
 	return response.Checkpoint, nil
+}
+
+func (c *rpcClient) ControlsSince(ctx context.Context, taskID string, afterVersion int64, limit int) ([]domain.TaskControl, error) {
+	var response controlsSinceResponse
+	request := controlsSinceRequest{TaskID: taskID, AfterVersion: afterVersion, Limit: limit}
+	if err := c.call(ctx, methodControlsSince, request, &response); err != nil {
+		return nil, err
+	}
+	return response.Controls, nil
+}
+
+func (c *rpcClient) EnterInputRequired(ctx context.Context, taskID, attemptID string, epoch int64) error {
+	return c.call(ctx, methodEnterInputRequired, inputRequiredRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch}, nil)
 }
 
 func (c *rpcClient) call(ctx context.Context, method string, request any, response any) error {

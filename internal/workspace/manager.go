@@ -75,7 +75,7 @@ func (m *Manager) EnsureMutable(ctx context.Context, taskID string) (domain.Work
 		ID:           deterministicID("workspace", task.ID),
 		TaskID:       task.ID,
 		ProjectID:    project.ID,
-		Path:         m.workspacePath(project.ID, task.ID),
+		Path:         m.workspacePath(task.ID),
 		BaseRevision: resolvedBase,
 		State:        domain.WorkspacePreparing,
 		CreatedAt:    m.now().UTC(),
@@ -265,8 +265,13 @@ func (m *Manager) git(ctx context.Context, taskID, repoRoot string, args ...stri
 	})
 }
 
-func (m *Manager) workspacePath(projectID, taskID string) string {
-	return filepath.Join(m.dataRoot, "workspaces", shortHash(projectID), taskID)
+func (m *Manager) workspacePath(taskID string) string {
+	return filepath.Join(m.dataRoot, "w", workspacePathKey(taskID))
+}
+
+func workspacePathKey(taskID string) string {
+	sum := sha256.Sum256([]byte(taskID))
+	return hex.EncodeToString(sum[:16])
 }
 
 func (m *Manager) ensureManagedPath(path string) error {

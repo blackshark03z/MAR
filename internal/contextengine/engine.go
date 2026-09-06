@@ -79,6 +79,15 @@ type Engine struct {
 	cache      *analysisCache
 }
 
+// EvictOptionalCaches drops reconstructable analysis state under host memory
+// pressure. Repository truth and durable task state are unaffected.
+func (e *Engine) EvictOptionalCaches() int {
+	if e == nil || e.cache == nil {
+		return 0
+	}
+	return e.cache.clear()
+}
+
 type weightedTerm struct {
 	Term   string
 	Weight int

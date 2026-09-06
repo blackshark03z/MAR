@@ -20,14 +20,16 @@ type ProviderConfig struct {
 }
 
 type StartRequest struct {
-	Task             domain.Task             `json:"task"`
-	Attempt          domain.ExecutionAttempt `json:"attempt"`
-	WorkspacePath    string                  `json:"workspace_path"`
-	Provider         ProviderConfig          `json:"provider"`
-	AgentProfile     agent.Profile           `json:"agent_profile"`
-	AgentConfig      agent.Config            `json:"agent_config"`
-	SandboxReadPaths []string                `json:"sandbox_read_paths,omitempty"`
-	GoModuleCache    string                  `json:"go_module_cache,omitempty"`
+	Task                  domain.Task             `json:"task"`
+	Attempt               domain.ExecutionAttempt `json:"attempt"`
+	WorkspacePath         string                  `json:"workspace_path"`
+	Provider              ProviderConfig          `json:"provider"`
+	AgentProfile          agent.Profile           `json:"agent_profile"`
+	AgentConfig           agent.Config            `json:"agent_config"`
+	SandboxReadPaths      []string                `json:"sandbox_read_paths,omitempty"`
+	GoModuleCache         string                  `json:"go_module_cache,omitempty"`
+	CommandTimeout        time.Duration           `json:"command_timeout,omitempty"`
+	MemoryPressurePercent float64                 `json:"memory_pressure_percent,omitempty"`
 }
 
 func (r StartRequest) Validate() error {
@@ -54,6 +56,9 @@ func (r StartRequest) Validate() error {
 		if readPath == "" || !filepath.IsAbs(readPath) {
 			return errors.New("worker sandbox read paths must be explicit absolute paths")
 		}
+	}
+	if r.MemoryPressurePercent < 0 || r.MemoryPressurePercent > 100 {
+		return errors.New("worker memory pressure percent must be in [0,100]")
 	}
 	if strings.TrimSpace(r.GoModuleCache) != "" {
 		if !filepath.IsAbs(r.GoModuleCache) {
@@ -104,6 +109,8 @@ const (
 	methodAttemptAuthoritative = "attempt_authoritative"
 	methodLatestCheckpoint     = "latest_checkpoint"
 	methodPublishCheckpoint    = "publish_checkpoint"
+	methodControlsSince        = "controls_since"
+	methodEnterInputRequired   = "enter_input_required"
 )
 
 func marshalFrame(kind string, id uint64, method string, payload any, errText string) (frame, error) {
@@ -113,7 +120,11 @@ func marshalFrame(kind string, id uint64, method string, payload any, errText st
 		if err != nil {
 			return frame{}, err
 		}
-		raw = encoded
+		// Own the raw frame payload independently of encoding/json's internal
+		// marshal buffer. Go 1.27 validates RawMessage again when the outer frame
+		// is encoded; keeping an explicit copy prevents pooled-buffer reuse from
+		// surfacing as corrupt/NUL-prefixed JSON on a later frame encode.
+		raw = append(json.RawMessage(nil), encoded...)
 	}
 	return frame{Version: protocolVersion, Type: kind, ID: id, Method: method, Payload: raw, Error: errText}, nil
 }

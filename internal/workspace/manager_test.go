@@ -90,6 +90,38 @@ func TestEnsureMutableIsIdempotentAndConcurrent(t *testing.T) {
 	}
 }
 
+func TestWorkspacePathUsesCompactDeterministicKey(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := service.NewTaskService(db)
+	dataRoot := filepath.Join(t.TempDir(), strings.Repeat("long-parent-", 4), "mar-data")
+	manager, err := workspace.NewManager(db, dataRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := waitingTask(t, svc, "workspace-compact-path", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rel, err := filepath.Rel(dataRoot, ws.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(filepath.Clean(rel), string(os.PathSeparator))
+	if len(parts) != 2 || parts[0] != "w" || len(parts[1]) != 32 {
+		t.Fatalf("workspace path is not compact/deterministic: rel=%q path=%q", rel, ws.Path)
+	}
+	if strings.Contains(strings.ToLower(rel), strings.ToLower(task.ID)) {
+		t.Fatalf("workspace path leaked full task id and widened the Windows path budget: %q", rel)
+	}
+}
+
 func TestDifferentTasksReceiveDifferentWorktrees(t *testing.T) {
 	ctx := context.Background()
 	repo, base := makeRepo(t)
@@ -111,6 +143,81 @@ func TestDifferentTasksReceiveDifferentWorktrees(t *testing.T) {
 	if got := countWorktrees(t, repo); got != 3 {
 		t.Fatalf("expected main + 2 task worktrees, got %d", got)
 	}
+}
+
+func TestAcceptanceT5FiveParallelTasksReceiveDistinctWorktreesAndMeasureDiskAmplification(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	const n = 5
+	tasks := make([]domain.Task, 0, n)
+	for i := 0; i < n; i++ {
+		tasks = append(tasks, waitingTaskForProject(t, svc, fmt.Sprintf("t5-task-%d", i+1), "t5-shared-project", repo, base))
+	}
+	var wg sync.WaitGroup
+	wg.Add(n)
+	paths := make(chan string, n)
+	errs := make(chan error, n)
+	for _, task := range tasks {
+		task := task
+		go func() {
+			defer wg.Done()
+			ws, err := manager.EnsureMutable(ctx, task.ID)
+			if err != nil {
+				errs <- err
+				return
+			}
+			paths <- ws.Path
+		}()
+	}
+	wg.Wait()
+	close(paths)
+	close(errs)
+	for err := range errs {
+		t.Fatalf("parallel workspace creation failed: %v", err)
+	}
+	unique := map[string]struct{}{}
+	var workspaceBytes int64
+	for path := range paths {
+		key := strings.ToLower(filepath.Clean(path))
+		if _, duplicate := unique[key]; duplicate {
+			t.Fatalf("T5 tasks shared mutable workspace %q", path)
+		}
+		unique[key] = struct{}{}
+		workspaceBytes += treeBytes(t, path)
+	}
+	if len(unique) != n || countWorktrees(t, repo) != n+1 {
+		t.Fatalf("T5 isolation mismatch: unique=%d worktrees=%d", len(unique), countWorktrees(t, repo))
+	}
+	baseBytes := treeBytes(t, repo)
+	ratio := float64(workspaceBytes) / float64(maxInt64(baseBytes, 1))
+	t.Logf("T5 disk amplification baseline_bytes=%d task_worktree_bytes=%d ratio=%.3f worktrees=%d", baseBytes, workspaceBytes, ratio, n)
+}
+
+func treeBytes(t *testing.T, root string) int64 {
+	t.Helper()
+	var total int64
+	if err := filepath.Walk(root, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return total
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func TestCancelledPreAttemptWorkspaceCanBeRemoved(t *testing.T) {
@@ -180,8 +287,8 @@ func TestPreparingWorkspaceReconcilesObservableGitSideEffect(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := waitingTask(t, svc, "workspace-reconcile", repo, base)
-	projectHash := sha256.Sum256([]byte(task.Contract.ProjectID))
-	path := filepath.Join(dataRoot, "workspaces", hex.EncodeToString(projectHash[:8]), task.ID)
+	taskHash := sha256.Sum256([]byte(task.ID))
+	path := filepath.Join(dataRoot, "w", hex.EncodeToString(taskHash[:16]))
 	now := time.Now().UTC()
 	intent := domain.Workspace{
 		ID:           "workspace-crash-window",
@@ -229,8 +336,8 @@ func TestUnregisteredPreexistingWorkspacePathIsNotOverwritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	task := waitingTask(t, svc, "workspace-preexisting", repo, base)
-	projectHash := sha256.Sum256([]byte(task.Contract.ProjectID))
-	path := filepath.Join(dataRoot, "workspaces", hex.EncodeToString(projectHash[:8]), task.ID)
+	taskHash := sha256.Sum256([]byte(task.ID))
+	path := filepath.Join(dataRoot, "w", hex.EncodeToString(taskHash[:16]))
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
 	}

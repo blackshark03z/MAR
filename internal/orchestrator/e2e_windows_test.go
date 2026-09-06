@@ -60,6 +60,10 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	t.Setenv(apiKeyEnv, "e2e-key")
 	t.Setenv("MAR_RUNTIME_E2E_WORKER", "1")
 	var modelCalls atomic.Int32
+	var observedSteer atomic.Bool
+	var observedInput atomic.Bool
+	firstProviderEntered := make(chan struct{})
+	releaseFirstProvider := make(chan struct{})
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			http.Error(w, "unexpected path", http.StatusNotFound)
@@ -69,12 +73,26 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 			http.Error(w, "bad auth", http.StatusUnauthorized)
 			return
 		}
-		_, _ = io.Copy(io.Discard, r.Body)
+		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		call := modelCalls.Add(1)
 		var toolName, arguments, callID string
 		switch call {
 		case 1:
+			close(firstProviderEntered)
+			select {
+			case <-releaseFirstProvider:
+			case <-r.Context().Done():
+				return
+			}
+			callID = "call-input"
+			toolName = "request_input"
+			encoded, _ := json.Marshal(map[string]any{"prompt": "Confirm the exact requested marker content before mutation."})
+			arguments = string(encoded)
+		case 2:
+			wire := string(body)
+			observedSteer.Store(strings.Contains(wire, "STEER/context") && strings.Contains(wire, "Keep the marker content exactly MAR E2E OK"))
+			observedInput.Store(strings.Contains(wire, "CONTROL_KIND: INPUT") && strings.Contains(wire, "Proceed with the exact requested marker content"))
 			callID = "call-write"
 			toolName = "write_file"
 			encoded, _ := json.Marshal(map[string]any{"path": "marker.txt", "expected_sha256": "ABSENT", "content": "MAR E2E OK\n"})
@@ -238,6 +256,52 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		t.Fatalf("unexpected MCP submit result: %s", raw)
 	}
 
+	select {
+	case <-firstProviderEntered:
+	case <-ctx.Done():
+		t.Fatal("worker never reached first model turn")
+	}
+	steerResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "steer", Arguments: map[string]any{
+		"task_id": submitted.Task.ID, "idempotency_key": "e2e-steer-1", "kind": "context", "message": "Keep the marker content exactly MAR E2E OK",
+	}})
+	if err != nil || steerResult.IsError {
+		t.Fatalf("MCP steer failed: err=%v result=%+v", err, steerResult)
+	}
+	close(releaseFirstProvider)
+
+	for {
+		statusResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{"task_id": submitted.Task.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status struct {
+			Status struct {
+				Task domain.Task `json:"task"`
+			} `json:"status"`
+		}
+		rawStatus, _ := json.Marshal(statusResult.StructuredContent)
+		if err := json.Unmarshal(rawStatus, &status); err != nil {
+			t.Fatal(err)
+		}
+		if status.Status.Task.State == domain.TaskInputRequired {
+			break
+		}
+		if status.Status.Task.State == domain.TaskBlocked || status.Status.Task.State == domain.TaskFailed || status.Status.Task.State == domain.TaskCancelled || status.Status.Task.State == domain.TaskComplete {
+			t.Fatalf("task reached %s before INPUT_REQUIRED", status.Status.Task.State)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for INPUT_REQUIRED; last state=%s", status.Status.Task.State)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+	inputResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "input", Arguments: map[string]any{
+		"task_id": submitted.Task.ID, "idempotency_key": "e2e-input-1", "message": "Proceed with the exact requested marker content",
+	}})
+	if err != nil || inputResult.IsError {
+		t.Fatalf("MCP input failed: err=%v result=%+v", err, inputResult)
+	}
+
 	var final domain.Task
 	for {
 		statusResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{"task_id": submitted.Task.ID}})
@@ -295,8 +359,22 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	if len(resultPayload.Result.ChangedAreas) != 1 || resultPayload.Result.ChangedAreas[0] != "marker.txt" {
 		t.Fatalf("E2E candidate widened beyond requested marker: changed=%v", resultPayload.Result.ChangedAreas)
 	}
-	if modelCalls.Load() < 2 {
-		t.Fatalf("worker did not complete expected model/tool loop: calls=%d", modelCalls.Load())
+	resources := resultPayload.Result.ResourceSummary
+	if resources.AgentTurns != 3 || resources.AgentToolCalls != 3 || resources.ModelTotalTokens != 330 {
+		t.Fatalf("E2E result lost agent resource accounting: %+v", resources)
+	}
+	inspection, err := runtime.Service.Inspect(context.Background(), submitted.Task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Attempt == nil || inspection.Attempt.RunEpoch != 1 || inspection.Task.RunEpoch != 1 {
+		t.Fatalf("owner input restarted the execution attempt instead of resuming it: task_epoch=%d attempt=%+v", inspection.Task.RunEpoch, inspection.Attempt)
+	}
+	if !observedSteer.Load() || !observedInput.Load() {
+		t.Fatalf("active worker did not consume durable steer/input controls: steer=%v input=%v", observedSteer.Load(), observedInput.Load())
+	}
+	if modelCalls.Load() < 3 {
+		t.Fatalf("worker did not complete expected input/write/finish model loop: calls=%d", modelCalls.Load())
 	}
 }
 

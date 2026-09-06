@@ -54,6 +54,33 @@ func claim(id, project string, heavy bool) Claim {
 	return Claim{ID: id, ProjectID: project, Class: class, Heavy: heavy}
 }
 
+func TestPressureReportsLiveMemoryAndDiskThreats(t *testing.T) {
+	s := &fakeSensor{snapshot: healthySnapshot()}
+	g, err := New(s, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := claim("active", "p", true)
+	active.RAMBytes = 200
+	active.DiskBytes = 400
+	lease, decision, err := g.TryAcquire(context.Background(), active)
+	if err != nil || !decision.Allowed || lease == nil {
+		t.Fatalf("active claim admission failed: lease=%v decision=%+v err=%v", lease, decision, err)
+	}
+	defer lease.Release()
+	s.mu.Lock()
+	s.snapshot.MemoryLoadPercent = 95
+	s.snapshot.FreeDiskBytes = 1200 // below min reserve 1000 + active reservation 400
+	s.mu.Unlock()
+	pressure, err := g.Pressure(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pressure.Allowed || !hasReason(pressure, DenyMemoryPressure) || !hasReason(pressure, DenyHostDiskReserve) {
+		t.Fatalf("live pressure not surfaced: %+v", pressure)
+	}
+}
+
 func TestDiskReserveDeniesBeforeHostExhaustion(t *testing.T) {
 	s := &fakeSensor{snapshot: healthySnapshot()}
 	s.snapshot.FreeDiskBytes = 1500

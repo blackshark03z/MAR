@@ -28,6 +28,8 @@ const (
 	processCreationAllApplicationPackagesOptOut = uint32(1)
 )
 
+var ErrSandboxTerminationUnconfirmed = errors.New("sandbox process-tree termination is unconfirmed")
+
 type SandboxCommandSpec struct {
 	TaskID         string
 	OperationID    string
@@ -38,6 +40,7 @@ type SandboxCommandSpec struct {
 	Dir            string
 	Env            []string
 	MaxOutputBytes int
+	Limits         Limits
 }
 
 type SandboxCommandResult struct {
@@ -130,6 +133,9 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 	if strings.TrimSpace(spec.Path) == "" || strings.TrimSpace(spec.WorkspaceRoot) == "" {
 		return SandboxCommandResult{ExitCode: -1}, errors.New("command path and workspace root are required")
 	}
+	if err := spec.Limits.Validate(); err != nil {
+		return SandboxCommandResult{ExitCode: -1}, err
+	}
 	workspace, err := filepath.Abs(spec.WorkspaceRoot)
 	if err != nil {
 		return SandboxCommandResult{ExitCode: -1}, err
@@ -155,8 +161,11 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 	}
 
 	profileName := sandboxProfileName(spec.TaskID)
-	unlock := lockSandboxProfile(profileName)
-	defer unlock()
+	unlockProfile, err := lockSandboxProfile(profileName)
+	if err != nil {
+		return SandboxCommandResult{ExitCode: -1}, err
+	}
+	defer unlockProfile()
 
 	sid, err := ensureAppContainerProfile(profileName)
 	if err != nil {
@@ -203,8 +212,6 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	unlockPaths := lockSandboxPaths(paths)
-	defer unlockPaths()
 
 	restores := make([]func() error, 0, len(paths))
 	defer func() {
@@ -228,7 +235,7 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 		}
 	}()
 	for _, path := range paths {
-		restore, err := grantSandboxAccess(path, capabilitySID, grants[path])
+		restore, err := grantSandboxAccessCoordinated(path, capabilitySID, grants[path])
 		if err != nil {
 			return SandboxCommandResult{ExitCode: -1}, fmt.Errorf("grant sandbox access %q: %w", path, err)
 		}
@@ -332,7 +339,7 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 		return SandboxCommandResult{ExitCode: -1}, err
 	}
 
-	job, err := winjob.Create("", winjob.LimitKillOnJobClose)
+	job, err := winjob.Create("", windowsJobLimits(spec.Limits)...)
 	if err != nil {
 		return SandboxCommandResult{ExitCode: -1}, fmt.Errorf("create sandbox Job Object: %w", err)
 	}
@@ -392,7 +399,7 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 	if waitErr != nil {
 		_ = job.Terminate()
 		if err := waitForNoActive(cleanupCtx, job); err != nil {
-			return SandboxCommandResult{Output: output.String(), ExitCode: -1}, fmt.Errorf("%s; sandbox termination unconfirmed: %v", waitErr, err)
+			return SandboxCommandResult{Output: output.String(), ExitCode: -1}, fmt.Errorf("%w: wait=%v cleanup=%v", ErrSandboxTerminationUnconfirmed, waitErr, err)
 		}
 		select {
 		case <-outputDone:
@@ -400,8 +407,40 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 		}
 		return SandboxCommandResult{Output: output.String(), ExitCode: -1}, waitErr
 	}
+	if exitCode != 0 {
+		// Once the root command has failed, descendants have no authority to
+		// continue independently. Terminate and confirm the entire inner Job
+		// before returning the command failure so a failing test/build cannot
+		// strand a child process and stall the agent repair loop.
+		if err := job.Terminate(); err != nil {
+			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: sandbox command exited with code %d; terminate failed: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
+		}
+		if err := waitForNoActive(cleanupCtx, job); err != nil {
+			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: sandbox command exited with code %d; descendant cleanup: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
+		}
+		select {
+		case <-outputDone:
+		case <-cleanupCtx.Done():
+			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("sandbox command exited with code %d; output drain unconfirmed: %w", exitCode, cleanupCtx.Err())
+		}
+		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, SandboxExitError{Code: exitCode}
+	}
 	if err := waitForNoActive(ctx, job); err != nil {
-		_ = job.Terminate()
+		// The root exited successfully but a descendant may still be alive. If
+		// the execution context ends here, termination is not enough: confirm the
+		// inner verification Job is empty using an independent bounded cleanup
+		// context before returning. Otherwise TaskRunner could persist the earlier
+		// worker proof while a verification descendant remains mutation-capable.
+		terminateErr := job.Terminate()
+		confirmErr := waitForNoActive(cleanupCtx, job)
+		if terminateErr != nil || confirmErr != nil {
+			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: successful-root cleanup wait=%v terminate=%v confirm=%v", ErrSandboxTerminationUnconfirmed, err, terminateErr, confirmErr)
+		}
+		select {
+		case <-outputDone:
+		case <-cleanupCtx.Done():
+			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("sandbox output drain unconfirmed after descendant cleanup: %w", cleanupCtx.Err())
+		}
 		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, err
 	}
 	select {
@@ -409,11 +448,7 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 	case <-ctx.Done():
 		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, ctx.Err()
 	}
-	result := SandboxCommandResult{Output: output.String(), ExitCode: exitCode}
-	if exitCode != 0 {
-		return result, SandboxExitError{Code: exitCode}
-	}
-	return result, nil
+	return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, nil
 }
 
 type SandboxExitError struct{ Code int }
@@ -548,16 +583,119 @@ func deriveCapabilitySID(name, label string) (*windows.SID, func(), error) {
 	return capabilities[0], cleanup, nil
 }
 
-func lockSandboxProfile(name string) func() {
-	return sandboxProfileLocks.lock(name)
+func lockSandboxProfile(name string) (func(), error) {
+	key := strings.ToLower(strings.TrimSpace(name))
+	unlockLocal := sandboxProfileLocks.lock(key)
+	// AppContainer profiles are machine-visible named objects. Different MAR
+	// processes can otherwise create/delete the same deterministic profile at
+	// the same time (notably the fixed host-readiness profile). Windows mutex
+	// ownership is thread-bound, so pin until the profile lifecycle is complete.
+	runtime.LockOSThread()
+	handle, err := lockSandboxProfileAcrossProcesses(key)
+	if err != nil {
+		runtime.UnlockOSThread()
+		unlockLocal()
+		return nil, err
+	}
+	return func() {
+		_ = windows.ReleaseMutex(handle)
+		_ = windows.CloseHandle(handle)
+		runtime.UnlockOSThread()
+		unlockLocal()
+	}, nil
 }
 
-func lockSandboxPaths(paths []string) func() {
+func lockSandboxProfileAcrossProcesses(key string) (windows.Handle, error) {
+	sum := sha256.Sum256([]byte(key))
+	name := `Local\MAR.SandboxProfile.` + hex.EncodeToString(sum[:16])
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, err
+	}
+	handle, err := windows.CreateMutex(nil, false, namePtr)
+	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		return 0, fmt.Errorf("create sandbox profile mutex: %w", err)
+	}
+	if handle == 0 {
+		return 0, errors.New("create sandbox profile mutex returned an invalid handle")
+	}
+	status, waitErr := windows.WaitForSingleObject(handle, windows.INFINITE)
+	if waitErr != nil {
+		_ = windows.CloseHandle(handle)
+		return 0, fmt.Errorf("wait sandbox profile mutex: %w", waitErr)
+	}
+	if status != windows.WAIT_OBJECT_0 && status != windows.WAIT_ABANDONED {
+		_ = windows.CloseHandle(handle)
+		return 0, fmt.Errorf("wait sandbox profile mutex returned status %d", status)
+	}
+	return handle, nil
+}
+
+func lockSandboxPaths(paths []string) (func(), error) {
+	unique := make(map[string]struct{}, len(paths))
 	keys := make([]string, 0, len(paths))
 	for _, path := range paths {
-		keys = append(keys, strings.ToLower(filepath.Clean(path)))
+		key := strings.ToLower(filepath.Clean(path))
+		if _, exists := unique[key]; exists {
+			continue
+		}
+		unique[key] = struct{}{}
+		keys = append(keys, key)
 	}
-	return sandboxPathLocks.lock(keys...)
+	sort.Strings(keys)
+	unlockLocal := sandboxPathLocks.lock(keys...)
+	// Windows mutex ownership is tied to the calling OS thread. Pin this
+	// goroutine until every named mutex is released so Go cannot migrate the
+	// owner between acquisition and ACL restoration.
+	runtime.LockOSThread()
+	handles := make([]windows.Handle, 0, len(keys))
+	for _, key := range keys {
+		handle, err := lockSandboxPathAcrossProcesses(key)
+		if err != nil {
+			for i := len(handles) - 1; i >= 0; i-- {
+				_ = windows.ReleaseMutex(handles[i])
+				_ = windows.CloseHandle(handles[i])
+			}
+			runtime.UnlockOSThread()
+			unlockLocal()
+			return nil, err
+		}
+		handles = append(handles, handle)
+	}
+	return func() {
+		for i := len(handles) - 1; i >= 0; i-- {
+			_ = windows.ReleaseMutex(handles[i])
+			_ = windows.CloseHandle(handles[i])
+		}
+		runtime.UnlockOSThread()
+		unlockLocal()
+	}, nil
+}
+
+func lockSandboxPathAcrossProcesses(key string) (windows.Handle, error) {
+	sum := sha256.Sum256([]byte(key))
+	name := `Local\MAR.SandboxPath.` + hex.EncodeToString(sum[:16])
+	namePtr, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, err
+	}
+	handle, err := windows.CreateMutex(nil, false, namePtr)
+	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		return 0, fmt.Errorf("create sandbox path mutex: %w", err)
+	}
+	if handle == 0 {
+		return 0, errors.New("create sandbox path mutex returned an invalid handle")
+	}
+	status, waitErr := windows.WaitForSingleObject(handle, windows.INFINITE)
+	if waitErr != nil {
+		_ = windows.CloseHandle(handle)
+		return 0, fmt.Errorf("wait sandbox path mutex: %w", waitErr)
+	}
+	if status != windows.WAIT_OBJECT_0 && status != windows.WAIT_ABANDONED {
+		_ = windows.CloseHandle(handle)
+		return 0, fmt.Errorf("wait sandbox path mutex returned status %d", status)
+	}
+	return handle, nil
 }
 
 func grantSandboxAccess(path string, sid *windows.SID, writable bool) (func() error, error) {
@@ -573,24 +711,7 @@ func grantSandboxAccess(path string, sid *windows.SID, writable bool) (func() er
 	if err != nil {
 		return nil, err
 	}
-	permissions := windows.ACCESS_MASK(windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE)
-	if writable {
-		permissions |= windows.ACCESS_MASK(windows.FILE_GENERIC_WRITE | windows.DELETE)
-	}
-	inheritance := uint32(0)
-	if info.IsDir() {
-		inheritance = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
-	}
-	entry := windows.EXPLICIT_ACCESS{
-		AccessPermissions: permissions,
-		AccessMode:        windows.SET_ACCESS,
-		Inheritance:       inheritance,
-		Trustee: windows.TRUSTEE{
-			TrusteeForm:  windows.TRUSTEE_IS_SID,
-			TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
-			TrusteeValue: windows.TrusteeValueFromSID(sid),
-		},
-	}
+	entry := sandboxAccessEntry(sid, writable, info.IsDir(), windows.SET_ACCESS)
 	newACL, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry}, dacl)
 	if err != nil {
 		return nil, err
@@ -603,6 +724,92 @@ func grantSandboxAccess(path string, sid *windows.SID, writable bool) (func() er
 		_ = sd
 		return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, dacl, nil)
 	}, nil
+}
+
+// grantSandboxAccessCoordinated serializes only the DACL mutation, not the
+// sandboxed command lifetime. Distinct task capability SIDs can therefore
+// coexist on shared read-only toolchain/cache paths while workers execute in
+// parallel. Cleanup revokes only this task's SID, preserving every other
+// active task grant instead of restoring a stale whole-DACL snapshot.
+func grantSandboxAccessCoordinated(path string, sid *windows.SID, writable bool) (func() error, error) {
+	unlock, err := lockSandboxPaths([]string{path})
+	if err != nil {
+		return nil, err
+	}
+	if err := addSandboxAccess(path, sid, writable); err != nil {
+		unlock()
+		return nil, err
+	}
+	unlock()
+	return func() error {
+		unlock, err := lockSandboxPaths([]string{path})
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		return revokeSandboxAccess(path, sid)
+	}, nil
+}
+
+func addSandboxAccess(path string, sid *windows.SID, writable bool) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	entry := sandboxAccessEntry(sid, writable, info.IsDir(), windows.GRANT_ACCESS)
+	newACL, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry}, dacl)
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, newACL, nil)
+}
+
+func revokeSandboxAccess(path string, sid *windows.SID) error {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	entry := sandboxAccessEntry(sid, false, false, windows.REVOKE_ACCESS)
+	entry.AccessPermissions = 0
+	entry.Inheritance = windows.NO_INHERITANCE
+	newACL, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry}, dacl)
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, newACL, nil)
+}
+
+func sandboxAccessEntry(sid *windows.SID, writable, directory bool, mode windows.ACCESS_MODE) windows.EXPLICIT_ACCESS {
+	permissions := windows.ACCESS_MASK(windows.FILE_GENERIC_READ | windows.FILE_GENERIC_EXECUTE)
+	if writable {
+		permissions |= windows.ACCESS_MASK(windows.FILE_GENERIC_WRITE | windows.DELETE)
+	}
+	inheritance := uint32(windows.NO_INHERITANCE)
+	if directory {
+		inheritance = windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT
+	}
+	return windows.EXPLICIT_ACCESS{
+		AccessPermissions: permissions,
+		AccessMode:        mode,
+		Inheritance:       inheritance,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+			TrusteeValue: windows.TrusteeValueFromSID(sid),
+		},
+	}
 }
 
 func windowsEnvironmentBlock(env []string) ([]uint16, error) {

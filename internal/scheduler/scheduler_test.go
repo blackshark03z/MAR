@@ -164,6 +164,36 @@ func TestSchedulerPersistsProjectFairnessAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestAcceptanceT6ThreeProjectsAreFairAndLazilyProvisioned(t *testing.T) {
+	s, svc, sch, workspace := schedulerHarness(t, healthyHost())
+	defer s.Close()
+	want := map[string]bool{
+		queueTask(t, svc, "t6-project-a", "t6-a", "P2").ID: true,
+		queueTask(t, svc, "t6-project-b", "t6-b", "P2").ID: true,
+		queueTask(t, svc, "t6-project-c", "t6-c", "P2").ID: true,
+	}
+	seen := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		result, err := sch.Step(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Action != ActionWorkspaceReady || !want[result.TaskID] || seen[result.TaskID] {
+			t.Fatalf("three-project fairness mismatch at step %d: %+v seen=%v", i+1, result, seen)
+		}
+		seen[result.TaskID] = true
+		workspace.mu.Lock()
+		calls := len(workspace.calls)
+		workspace.mu.Unlock()
+		if calls != i+1 {
+			t.Fatalf("scheduler eagerly provisioned unrelated projects: step=%d workspace_calls=%d", i+1, calls)
+		}
+	}
+	if len(seen) != 3 {
+		t.Fatalf("not all projects received a dispatch opportunity: %v", seen)
+	}
+}
+
 func TestResourceDenialLeavesTaskWaiting(t *testing.T) {
 	host := healthyHost()
 	host.FreeDiskBytes = 1050

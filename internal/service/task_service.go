@@ -182,6 +182,21 @@ func (s *TaskService) RecoverForReplacement(ctx context.Context, taskID string) 
 	}
 }
 
+// ExhaustRetryBudget converts a safely terminated RETRY_WAIT task into BLOCKED.
+// It is deliberately an orchestrator transition, so a mutation-capable prior
+// attempt prevents the transition rather than allowing retry policy to hide an
+// unresolved physical-fencing problem.
+func (s *TaskService) ExhaustRetryBudget(ctx context.Context, taskID string) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.State != domain.TaskRetryWait {
+		return store.ErrStateConflict
+	}
+	return s.store.OrchestratorTransition(ctx, taskID, domain.TaskRetryWait, domain.TaskBlocked, s.now().UTC())
+}
+
 func (s *TaskService) TransitionForAttempt(ctx context.Context, taskID, attemptID string, epoch int64, to domain.TaskState) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {
@@ -191,6 +206,12 @@ func (s *TaskService) TransitionForAttempt(ctx context.Context, taskID, attemptI
 		return store.ErrStateConflict
 	}
 	return s.store.TransitionTaskForAttempt(ctx, taskID, attemptID, epoch, task.State, to, s.now().UTC())
+}
+
+// RequestInputForAttempt is the worker's narrow lifecycle capability for
+// pausing the current ACTIVE attempt while preserving the immutable Goal.
+func (s *TaskService) RequestInputForAttempt(ctx context.Context, taskID, attemptID string, epoch int64) error {
+	return s.TransitionForAttempt(ctx, taskID, attemptID, epoch, domain.TaskInputRequired)
 }
 
 func allowedPreExecutionTransition(from, to domain.TaskState) bool {
