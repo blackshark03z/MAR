@@ -107,6 +107,31 @@ type inputRequiredRequest struct {
 	RunEpoch  int64  `json:"run_epoch"`
 }
 
+type webTurnRequest struct {
+	TaskID    string            `json:"task_id"`
+	AttemptID string            `json:"attempt_id"`
+	RunEpoch  int64             `json:"run_epoch"`
+	Request   model.TurnRequest `json:"request"`
+}
+
+type webTurnResponse struct {
+	Response model.TurnResponse `json:"response"`
+}
+
+type webBrainProvider struct {
+	rpc       *rpcClient
+	taskID    string
+	attemptID string
+	runEpoch  int64
+}
+
+func (p *webBrainProvider) Turn(ctx context.Context, req model.TurnRequest) (model.TurnResponse, error) {
+	if p == nil || p.rpc == nil {
+		return model.TurnResponse{}, errors.New("web brain provider is unavailable")
+	}
+	return p.rpc.WebTurn(ctx, p.taskID, p.attemptID, p.runEpoch, req)
+}
+
 func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 	if input == nil || output == nil {
 		return errors.New("worker child requires protocol input/output")
@@ -185,14 +210,22 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	provider, err := openaichat.New(openaichat.Config{
-		BaseURL:        start.Provider.BaseURL,
-		APIKeyEnv:      start.Provider.APIKeyEnv,
-		RequestTimeout: start.Provider.RequestTimeout,
-	})
-	if err != nil {
-		_ = sendChildError(encoder, err)
-		return err
+	var provider model.Provider
+	switch start.Provider.Mode() {
+	case BrainWeb:
+		provider = &webBrainProvider{rpc: rpc, taskID: start.Task.ID, attemptID: start.Attempt.ID, runEpoch: start.Attempt.RunEpoch}
+	case BrainProvider:
+		provider, err = openaichat.New(openaichat.Config{
+			BaseURL:        start.Provider.BaseURL,
+			APIKeyEnv:      start.Provider.APIKeyEnv,
+			RequestTimeout: start.Provider.RequestTimeout,
+		})
+		if err != nil {
+			_ = sendChildError(encoder, err)
+			return err
+		}
+	default:
+		return errors.New("unsupported worker brain mode")
 	}
 	gateway, err := model.NewGateway(provider)
 	if err != nil {
@@ -263,6 +296,15 @@ func (c *rpcClient) ControlsSince(ctx context.Context, taskID string, afterVersi
 
 func (c *rpcClient) EnterInputRequired(ctx context.Context, taskID, attemptID string, epoch int64) error {
 	return c.call(ctx, methodEnterInputRequired, inputRequiredRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch}, nil)
+}
+
+func (c *rpcClient) WebTurn(ctx context.Context, taskID, attemptID string, epoch int64, req model.TurnRequest) (model.TurnResponse, error) {
+	var response webTurnResponse
+	request := webTurnRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch, Request: req}
+	if err := c.call(ctx, methodWebTurn, request, &response); err != nil {
+		return model.TurnResponse{}, err
+	}
+	return response.Response, nil
 }
 
 func (c *rpcClient) call(ctx context.Context, method string, request any, response any) error {

@@ -13,10 +13,25 @@ import (
 
 const protocolVersion = 1
 
+type BrainMode string
+
+const (
+	BrainProvider BrainMode = "provider"
+	BrainWeb      BrainMode = "web"
+)
+
 type ProviderConfig struct {
+	BrainMode      BrainMode     `json:"brain_mode,omitempty"`
 	BaseURL        string        `json:"base_url"`
 	APIKeyEnv      string        `json:"api_key_env"`
 	RequestTimeout time.Duration `json:"request_timeout"`
+}
+
+func (c ProviderConfig) Mode() BrainMode {
+	if c.BrainMode == "" {
+		return BrainProvider
+	}
+	return c.BrainMode
 }
 
 type StartRequest struct {
@@ -45,8 +60,14 @@ func (r StartRequest) Validate() error {
 	if strings.TrimSpace(r.WorkspacePath) == "" {
 		return errors.New("worker start requires workspace path")
 	}
-	if strings.TrimSpace(r.Provider.BaseURL) == "" || strings.TrimSpace(r.Provider.APIKeyEnv) == "" {
-		return errors.New("worker start requires model provider base URL and API key environment name")
+	switch r.Provider.Mode() {
+	case BrainProvider:
+		if strings.TrimSpace(r.Provider.BaseURL) == "" || strings.TrimSpace(r.Provider.APIKeyEnv) == "" {
+			return errors.New("provider brain mode requires model provider base URL and API key environment name")
+		}
+	case BrainWeb:
+	default:
+		return errors.New("worker brain mode must be provider or web")
 	}
 	if strings.TrimSpace(r.AgentProfile.Model) == "" || strings.TrimSpace(r.AgentProfile.BaseInstructions) == "" {
 		return errors.New("worker start requires agent model profile")
@@ -111,6 +132,7 @@ const (
 	methodPublishCheckpoint    = "publish_checkpoint"
 	methodControlsSince        = "controls_since"
 	methodEnterInputRequired   = "enter_input_required"
+	methodWebTurn              = "web_turn"
 )
 
 func marshalFrame(kind string, id uint64, method string, payload any, errText string) (frame, error) {

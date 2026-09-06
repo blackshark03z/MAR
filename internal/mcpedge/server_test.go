@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/service"
 )
 
@@ -42,6 +43,12 @@ func (f *fakeBackend) Result(context.Context, string) (domain.TaskResult, bool, 
 }
 func (f *fakeBackend) Inspect(_ context.Context, taskID string) (service.TaskInspection, error) {
 	return service.TaskInspection{Task: domain.Task{ID: taskID}, Controls: []domain.TaskControl{}}, nil
+}
+func (f *fakeBackend) PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error) {
+	return domain.WebTurn{}, false, nil
+}
+func (f *fakeBackend) RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error) {
+	return domain.WebTurn{}, true, nil
 }
 
 type largeReadBackend struct{ fakeBackend }
@@ -87,7 +94,7 @@ func connectTestMCP(t *testing.T, backend Backend) *mcp.ClientSession {
 	return clientSession
 }
 
-func TestPublicMCPSurfaceIsExactlySevenTaskOrientedTools(t *testing.T) {
+func TestPublicMCPSurfaceIsExactlyNineTaskOrientedTools(t *testing.T) {
 	session := connectTestMCP(t, &fakeBackend{})
 	listed, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 	if err != nil {
@@ -98,7 +105,7 @@ func TestPublicMCPSurfaceIsExactlySevenTaskOrientedTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"cancel", "input", "inspect", "result", "status", "steer", "submit"}
+	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "result", "status", "steer", "submit"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected public tool count: got=%v want=%v", names, want)
 	}

@@ -24,9 +24,12 @@ var steerableStates = []domain.TaskState{
 }
 
 type TaskStatusSnapshot struct {
-	Task            domain.Task         `json:"task"`
-	LatestControl   *domain.TaskControl `json:"latest_control,omitempty"`
-	CancelRequested bool                `json:"cancel_requested"`
+	Task               domain.Task         `json:"task"`
+	LatestControl      *domain.TaskControl `json:"latest_control,omitempty"`
+	CancelRequested    bool                `json:"cancel_requested"`
+	BrainTurnAvailable bool                `json:"brain_turn_available,omitempty"`
+	Detail             string              `json:"detail,omitempty"`
+	NextAction         string              `json:"next_action,omitempty"`
 }
 
 type TaskInspection struct {
@@ -34,6 +37,7 @@ type TaskInspection struct {
 	Workspace  *domain.Workspace            `json:"workspace,omitempty"`
 	Attempt    *domain.ExecutionAttempt     `json:"attempt,omitempty"`
 	Checkpoint *domain.SemanticCheckpoint   `json:"checkpoint,omitempty"`
+	BrainTurn  *domain.WebTurn              `json:"brain_turn,omitempty"`
 	Result     *domain.TaskResult           `json:"result,omitempty"`
 	Evidence   *domain.VerificationEvidence `json:"verification_evidence,omitempty"`
 	Controls   []domain.TaskControl         `json:"controls"`
@@ -55,6 +59,42 @@ func (s *TaskService) StatusSnapshot(ctx context.Context, taskID string) (TaskSt
 	_, snapshot.CancelRequested, err = s.store.LatestTaskControlByKind(ctx, taskID, domain.ControlCancel)
 	if err != nil {
 		return TaskStatusSnapshot{}, err
+	}
+	if turn, ok, err := s.store.PendingWebTurn(ctx, taskID); err != nil {
+		return TaskStatusSnapshot{}, err
+	} else if ok {
+		snapshot.BrainTurnAvailable = true
+		snapshot.Detail = "GPT Web reasoning is required for the current worker turn."
+		snapshot.NextAction = "Call brain_turn for this task, reason over the exact offered messages/tools, then call brain_respond for that turn_id."
+		_ = turn
+		return snapshot, nil
+	}
+	if attempt, ok, err := s.store.CurrentAttemptByTask(ctx, taskID); err != nil {
+		return TaskStatusSnapshot{}, err
+	} else if ok && strings.TrimSpace(attempt.TerminalStatus) != "" {
+		snapshot.Detail = attempt.TerminalStatus
+	}
+	switch snapshot.Task.State {
+	case domain.TaskSubmitted, domain.TaskPreflight:
+		snapshot.NextAction = "No user action is normally required; MAR is validating the Goal Contract and project state."
+	case domain.TaskWaitingResource:
+		snapshot.Detail = "The task is waiting for the configured host resource envelope."
+		snapshot.NextAction = "No user action is normally required; MAR will admit the task when resources are safe."
+	case domain.TaskWorkspaceReady, domain.TaskRunning, domain.TaskVerifying, domain.TaskReviewing, domain.TaskReadyToIntegrate, domain.TaskIntegrating, domain.TaskVerified:
+		snapshot.NextAction = "No user action is normally required; use inspect only when detailed evidence is needed."
+	case domain.TaskInputRequired:
+		snapshot.Detail = "The active worker is waiting for bounded owner input."
+		snapshot.NextAction = "Use inspect to read the current prompt/context, then call input with the requested bounded answer."
+	case domain.TaskBlocked:
+		snapshot.NextAction = "Call inspect to review the blocker. If a bounded owner choice resolves it, send steer with kind=blocked_choice; otherwise resolve the external prerequisite before retrying."
+	case domain.TaskRetryWait:
+		snapshot.NextAction = "No user action is normally required; MAR will retry within its bounded retry policy after physical termination is confirmed."
+	case domain.TaskComplete:
+		snapshot.NextAction = "Call result for the verified/integration outcome and inspect when detailed evidence is needed."
+	case domain.TaskFailed:
+		snapshot.NextAction = "Call inspect for failure evidence before deciding whether to submit a repaired Goal."
+	case domain.TaskCancelled:
+		snapshot.NextAction = "No further action is required unless the Goal should be submitted again."
 	}
 	return snapshot, nil
 }
@@ -139,6 +179,11 @@ func (s *TaskService) Inspect(ctx context.Context, taskID string) (TaskInspectio
 		return TaskInspection{}, err
 	} else if ok {
 		inspection.Checkpoint = &checkpoint
+	}
+	if turn, ok, err := s.store.PendingWebTurn(ctx, taskID); err != nil {
+		return TaskInspection{}, err
+	} else if ok {
+		inspection.BrainTurn = &turn
 	}
 	if result, ok, err := s.store.LatestTaskResult(ctx, taskID); err != nil {
 		return TaskInspection{}, err

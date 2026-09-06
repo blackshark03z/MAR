@@ -64,8 +64,14 @@ func (c TaskRunnerConfig) validate() error {
 	if c.LeaseDuration <= 0 {
 		return errors.New("task runner lease duration must be positive")
 	}
-	if strings.TrimSpace(c.Provider.BaseURL) == "" || strings.TrimSpace(c.Provider.APIKeyEnv) == "" {
-		return errors.New("task runner requires model provider configuration")
+	switch c.Provider.Mode() {
+	case worker.BrainProvider:
+		if strings.TrimSpace(c.Provider.BaseURL) == "" || strings.TrimSpace(c.Provider.APIKeyEnv) == "" {
+			return errors.New("provider brain mode requires model provider configuration")
+		}
+	case worker.BrainWeb:
+	default:
+		return errors.New("task runner brain mode must be provider or web")
 	}
 	if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
 		return errors.New("task runner requires agent profile")

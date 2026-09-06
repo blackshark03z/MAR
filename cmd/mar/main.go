@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"mar/internal/agent"
@@ -125,9 +126,10 @@ func run(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("mcp-stdio", flag.ContinueOnError)
 		dbPath := fs.String("db", defaultDB, "SQLite database path")
 		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
-		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL")
-		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key")
-		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name")
+		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainProvider)), "coding brain mode: provider or web")
+		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
+		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
+		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
 		reasoning := fs.String("reasoning", envOrDefault("MAR_REASONING_EFFORT", "high"), "agent reasoning effort")
 		goPath := fs.String("go", defaultGoExecutable(), "Go executable used by the built-in go-standard verification profile")
 		maxWorkers := fs.Int("max-workers", 2, "maximum concurrent MAR worker processes")
@@ -137,6 +139,7 @@ func run(ctx context.Context, args []string) error {
 		return runMCPRuntime(ctx, mcpRuntimeOptions{
 			DBPath:          *dbPath,
 			DataRoot:        *dataRoot,
+			BrainMode:       *brainMode,
 			ProviderBaseURL: *providerBaseURL,
 			APIKeyEnv:       *apiKeyEnv,
 			Model:           *modelName,
@@ -181,6 +184,7 @@ func run(ctx context.Context, args []string) error {
 type mcpRuntimeOptions struct {
 	DBPath          string
 	DataRoot        string
+	BrainMode       string
 	ProviderBaseURL string
 	APIKeyEnv       string
 	Model           string
@@ -194,6 +198,22 @@ const defaultWorkerInstructions = `You are the bounded MAR coding worker for one
 func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	if opts.MaxWorkers <= 0 {
 		return errors.New("max-workers must be positive")
+	}
+	brainMode := worker.BrainMode(strings.ToLower(strings.TrimSpace(opts.BrainMode)))
+	if brainMode == "" {
+		brainMode = worker.BrainProvider
+	}
+	switch brainMode {
+	case worker.BrainProvider:
+		if strings.TrimSpace(opts.ProviderBaseURL) == "" || strings.TrimSpace(opts.APIKeyEnv) == "" || strings.TrimSpace(opts.Model) == "" {
+			return errors.New("provider brain mode requires provider-base-url, api-key-env and model")
+		}
+	case worker.BrainWeb:
+		if strings.TrimSpace(opts.Model) == "" {
+			opts.Model = "gpt-5.6-sol"
+		}
+	default:
+		return errors.New("brain mode must be provider or web")
 	}
 	dataRoot, err := filepath.Abs(opts.DataRoot)
 	if err != nil {
@@ -222,6 +242,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		DataRoot:   dataRoot,
 		Executable: executable,
 		Provider: worker.ProviderConfig{
+			BrainMode:      brainMode,
 			BaseURL:        opts.ProviderBaseURL,
 			APIKeyEnv:      opts.APIKeyEnv,
 			RequestTimeout: 2 * time.Minute,
@@ -278,7 +299,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	defer cancelRuntime()
 	daemonDone := make(chan error, 1)
 	go func() {
-		err := runtime.Daemon.Run(runtimeCtx)
+		err := runDaemonAuthority(runtimeCtx, opts.DBPath, runtime.Daemon)
 		daemonDone <- err
 		if err != nil && !errors.Is(err, context.Canceled) {
 			cancelRuntime()
@@ -304,6 +325,40 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		return daemonErr
 	}
 	return nil
+}
+
+type daemonAuthorityRunner interface {
+	Run(context.Context) error
+}
+
+func runDaemonAuthority(ctx context.Context, dbPath string, daemon daemonAuthorityRunner) error {
+	if daemon == nil {
+		return errors.New("daemon authority requires a daemon")
+	}
+	if strings.TrimSpace(dbPath) == "" {
+		return errors.New("daemon authority requires a database path")
+	}
+	lockPath, err := filepath.Abs(dbPath + ".daemon.lock")
+	if err != nil {
+		return err
+	}
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		lease, acquired, err := processctl.TryAcquireExclusiveFileLease(lockPath)
+		if err != nil {
+			return err
+		}
+		if acquired {
+			defer lease.Close()
+			return daemon.Run(ctx)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func waitForActiveWorkers(ctx context.Context, daemon *orchestrator.Daemon) error {

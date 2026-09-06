@@ -162,6 +162,22 @@ func testRunner(t *testing.T, svc *fakeTaskService, workerProcess *fakeWorkerPro
 	return runner
 }
 
+func TestTaskRunnerConfigAllowsWebBrainWithoutProviderCredentials(t *testing.T) {
+	cfg := TaskRunnerConfig{
+		WorkerID: "worker-runtime", SupervisorID: "supervisor-runtime", LeaseDuration: time.Minute,
+		FinalizationTimeout: 5 * time.Second,
+		Provider:            worker.ProviderConfig{BrainMode: worker.BrainWeb},
+		AgentProfile:        agent.Profile{Model: "gpt-5.6-sol", BaseInstructions: "bounded coding worker"},
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("web brain config should not require provider credentials: %v", err)
+	}
+	cfg.Provider = worker.ProviderConfig{BrainMode: worker.BrainProvider}
+	if err := cfg.validate(); err == nil {
+		t.Fatal("provider brain config must still require provider URL/API key env")
+	}
+}
+
 func readyTaskAndWorkspace() (domain.Task, domain.Workspace) {
 	task := domain.Task{ID: "task-1", State: domain.TaskWorkspaceReady, RunEpoch: 0}
 	workspace := domain.Workspace{ID: "workspace-1", TaskID: task.ID, State: domain.WorkspaceReady, Path: `D:\MAR\test-workspace`}

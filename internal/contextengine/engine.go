@@ -230,7 +230,7 @@ func (e *Engine) Build(ctx context.Context, req Request) (Pack, error) {
 		hashBytes := sha256.Sum256(source)
 		hash := hex.EncodeToString(hashBytes[:])
 		analysis := e.cache.getOrCompute(hash, func() goFileAnalysis {
-			return analyzeGoFile(file.Path, source)
+			return analyzeCodeFile(file.Path, source)
 		})
 		c := &candidate{
 			file:       file,
@@ -253,7 +253,7 @@ func (e *Engine) Build(ctx context.Context, req Request) (Pack, error) {
 		candidates[file.Path] = c
 	}
 
-	applyDependencyBoosts(candidates, modulePath)
+	rankCandidates(candidates, terms, modulePath)
 	ranked := make([]*candidate, 0, len(candidates))
 	for _, c := range candidates {
 		if c.score > 0 {
@@ -286,7 +286,7 @@ func (e *Engine) Build(ctx context.Context, req Request) (Pack, error) {
 			Score:     c.score,
 			StartLine: start,
 			EndLine:   end,
-			Reasons:   sortedReasons(c.reasons),
+			Reasons:   boundedReasons(sortedReasons(c.reasons), 8),
 			Text:      text,
 			Truncated: truncated,
 		})
@@ -481,15 +481,15 @@ func tokenize(text string) []string {
 	overflow := false
 	flush := func() {
 		if len(current) > 0 && !overflow {
-			terms = append(terms, strings.ToLower(string(current)))
+			terms = append(terms, identifierForms(string(current))...)
 		}
 		current = current[:0]
 		overflow = false
 	}
 	for _, r := range text {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '$' {
 			if len(current) < maxContextTermRunes {
-				current = append(current, unicode.ToLower(r))
+				current = append(current, r)
 			} else {
 				overflow = true
 			}
@@ -685,8 +685,30 @@ func sortedReasons(reasons map[string]struct{}) []string {
 	for reason := range reasons {
 		out = append(out, reason)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		pi, pj := contextReasonPriority(out[i]), contextReasonPriority(out[j])
+		if pi != pj {
+			return pi < pj
+		}
+		return out[i] < out[j]
+	})
 	return out
+}
+
+func contextReasonPriority(reason string) int {
+	for priority, prefix := range []string{"symbol-exact:", "symbol:", "dependency:", "path-exact:", "path:", "git:", "structural:", "rank:", "lexical:"} {
+		if strings.HasPrefix(reason, prefix) {
+			return priority
+		}
+	}
+	return 99
+}
+
+func boundedReasons(reasons []string, maxReasons int) []string {
+	if maxReasons <= 0 || len(reasons) <= maxReasons {
+		return reasons
+	}
+	return append([]string(nil), reasons[:maxReasons]...)
 }
 
 func fitPack(pack *Pack, maxBytes int) {

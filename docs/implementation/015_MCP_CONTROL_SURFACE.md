@@ -1,5 +1,7 @@
 # Slice 015 — MCP Control Surface
 
+> Historical Slice 015 acceptance records the original seven-tool control surface. Slice 018 extends the V1 surface with exactly two bounded Web-brain relay tools (`brain_turn`, `brain_respond`) while preserving the same rule that MCP exposes no low-level coding/mutation primitives.
+
 **Status:** IMPLEMENTED / VERIFIED
 
 **Frozen architecture source:** MAR V1 Product Spec sections 4, 6, 8 and 11; Architecture V1 MCP Edge; Security & Trust Model Outer MCP Policy; ADR-002 and ADR-012.

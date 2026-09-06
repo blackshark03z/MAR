@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,9 +17,14 @@ type goSymbol struct {
 	Line int
 }
 
+// goFileAnalysis is retained as an internal compatibility name, but now holds
+// the lightweight syntax index shared by Go, Python and JS/TS. Go remains
+// compiler-parser backed; the other languages use bounded declaration/import
+// scanners so MAR stays CGO-free and portable on the V1 Windows host.
 type goFileAnalysis struct {
-	Symbols []goSymbol
-	Imports []string
+	Language string
+	Symbols  []goSymbol
+	Imports  []string
 }
 
 type analysisCache struct {
@@ -74,6 +80,19 @@ func (c *analysisCache) clear() int {
 	return removed
 }
 
+func analyzeCodeFile(path string, source []byte) goFileAnalysis {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go":
+		return analyzeGoFile(path, source)
+	case ".py", ".pyw":
+		return analyzePythonFile(source)
+	case ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts":
+		return analyzeJavaScriptFile(source)
+	default:
+		return goFileAnalysis{}
+	}
+}
+
 func analyzeGoFile(path string, source []byte) goFileAnalysis {
 	if !strings.EqualFold(filepath.Ext(path), ".go") {
 		return goFileAnalysis{}
@@ -83,7 +102,7 @@ func analyzeGoFile(path string, source []byte) goFileAnalysis {
 	if file == nil {
 		return goFileAnalysis{}
 	}
-	analysis := goFileAnalysis{}
+	analysis := goFileAnalysis{Language: "go"}
 	for _, decl := range file.Decls {
 		switch node := decl.(type) {
 		case *ast.FuncDecl:
@@ -111,6 +130,72 @@ func analyzeGoFile(path string, source []byte) goFileAnalysis {
 			analysis.Imports = append(analysis.Imports, value)
 		}
 	}
+	return normalizeAnalysis(analysis)
+}
+
+var (
+	pythonDeclRE   = regexp.MustCompile(`^(?:async\s+def|def|class)\s+([A-Za-z_][A-Za-z0-9_]*)`)
+	pythonFromRE   = regexp.MustCompile(`^from\s+([.A-Za-z_][.A-Za-z0-9_]*)\s+import\s+`)
+	pythonImportRE = regexp.MustCompile(`^import\s+(.+)$`)
+
+	jsDeclRE             = regexp.MustCompile(`^(?:(?:export\s+)?(?:default\s+)?)?(?:async\s+)?(?:function|class|interface|type|enum|const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)`)
+	jsFromRE             = regexp.MustCompile(`^(?:import|export)\b.*?\bfrom\s*["']([^"']+)["']`)
+	jsSideEffectImportRE = regexp.MustCompile(`^import\s*["']([^"']+)["']`)
+	jsCallImportRE       = regexp.MustCompile(`(?:require|import)\s*\(\s*["']([^"']+)["']\s*\)`)
+)
+
+func analyzePythonFile(source []byte) goFileAnalysis {
+	analysis := goFileAnalysis{Language: "python"}
+	for i, raw := range strings.Split(string(source), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if match := pythonDeclRE.FindStringSubmatch(line); len(match) == 2 {
+			analysis.Symbols = append(analysis.Symbols, goSymbol{Name: match[1], Line: i + 1})
+		}
+		if match := pythonFromRE.FindStringSubmatch(line); len(match) == 2 {
+			analysis.Imports = append(analysis.Imports, match[1])
+			continue
+		}
+		if match := pythonImportRE.FindStringSubmatch(line); len(match) == 2 {
+			for _, item := range strings.Split(match[1], ",") {
+				fields := strings.Fields(strings.TrimSpace(item))
+				if len(fields) > 0 {
+					analysis.Imports = append(analysis.Imports, fields[0])
+				}
+			}
+		}
+	}
+	return normalizeAnalysis(analysis)
+}
+
+func analyzeJavaScriptFile(source []byte) goFileAnalysis {
+	analysis := goFileAnalysis{Language: "javascript"}
+	for i, raw := range strings.Split(string(source), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
+		if match := jsDeclRE.FindStringSubmatch(line); len(match) == 2 {
+			analysis.Symbols = append(analysis.Symbols, goSymbol{Name: match[1], Line: i + 1})
+		}
+		if match := jsFromRE.FindStringSubmatch(line); len(match) == 2 {
+			analysis.Imports = append(analysis.Imports, match[1])
+		}
+		if match := jsSideEffectImportRE.FindStringSubmatch(line); len(match) == 2 {
+			analysis.Imports = append(analysis.Imports, match[1])
+		}
+		for _, match := range jsCallImportRE.FindAllStringSubmatch(line, -1) {
+			if len(match) == 2 {
+				analysis.Imports = append(analysis.Imports, match[1])
+			}
+		}
+	}
+	return normalizeAnalysis(analysis)
+}
+
+func normalizeAnalysis(analysis goFileAnalysis) goFileAnalysis {
 	sort.Slice(analysis.Symbols, func(i, j int) bool {
 		if analysis.Symbols[i].Line != analysis.Symbols[j].Line {
 			return analysis.Symbols[i].Line < analysis.Symbols[j].Line

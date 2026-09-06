@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 9
+const latestSchemaVersion = 10
 
 type SQLite struct {
 	db *sql.DB
@@ -304,6 +304,28 @@ CREATE TABLE integration_attempts (
 );
 CREATE INDEX idx_integration_task_version ON integration_attempts(task_id, version DESC);
 CREATE INDEX idx_integration_status ON integration_attempts(status, updated_at);
+`
+	case 10:
+		script = `
+CREATE TABLE web_turns (
+    turn_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    run_epoch INTEGER NOT NULL,
+    request_id TEXT NOT NULL,
+    request_json BLOB NOT NULL,
+    response_json BLOB,
+    request_hash TEXT NOT NULL,
+    response_hash TEXT NOT NULL DEFAULT '',
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    responded_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(attempt_id) REFERENCES execution_attempts(attempt_id),
+    UNIQUE(task_id, request_id)
+);
+CREATE INDEX idx_web_turns_task_created ON web_turns(task_id, created_at DESC);
+CREATE INDEX idx_web_turns_task_pending ON web_turns(task_id, responded_at);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

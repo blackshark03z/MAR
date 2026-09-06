@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"mar/internal/agent"
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/processctl"
 )
 
@@ -72,6 +74,14 @@ func (b *fakeControlBackend) RequestInputForAttempt(context.Context, string, str
 	b.inputCalls++
 	b.mu.Unlock()
 	return nil
+}
+
+func (b *fakeControlBackend) RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error) {
+	return domain.WebTurn{}, false, errors.New("web turn not configured in this test")
+}
+
+func (b *fakeControlBackend) WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error) {
+	return model.TurnResponse{}, false, nil
 }
 
 func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {

@@ -862,6 +862,7 @@ func addUsage(dst *model.Usage, add model.Usage) {
 	dst.InputTokens += add.InputTokens
 	dst.OutputTokens += add.OutputTokens
 	dst.TotalTokens += add.TotalTokens
+	dst.Estimated = dst.Estimated || add.Estimated
 }
 
 func contextTerminal(parent, loop context.Context) Status {

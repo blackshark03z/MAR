@@ -23,6 +23,7 @@ import (
 	"mar/internal/agent"
 	"mar/internal/domain"
 	"mar/internal/mcpedge"
+	"mar/internal/model"
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/store"
@@ -375,6 +376,214 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	}
 	if modelCalls.Load() < 3 {
 		t.Fatalf("worker did not complete expected input/write/finish model loop: calls=%d", modelCalls.Load())
+	}
+}
+
+func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
+	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
+		t.Skip("worker helper process")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	projectRoot := filepath.Join(t.TempDir(), "web-project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/mar-web-e2e\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitTest(t, projectRoot, "init", "-b", "main")
+	runGitTest(t, projectRoot, "config", "user.name", "MAR Web E2E")
+	runGitTest(t, projectRoot, "config", "user.email", "mar-web-e2e@local.invalid")
+	runGitTest(t, projectRoot, "config", "core.autocrlf", "false")
+	runGitTest(t, projectRoot, "add", "-A")
+	runGitTest(t, projectRoot, "commit", "-m", "baseline")
+	baseRevision := strings.TrimSpace(runGitTest(t, projectRoot, "rev-parse", "HEAD"))
+
+	t.Setenv("MAR_RUNTIME_E2E_WORKER", "1")
+	goExe := findPortableGo(t)
+	goRoot := filepath.Dir(filepath.Dir(goExe))
+	goBin := filepath.Dir(goExe)
+	dataRoot := filepath.Join(t.TempDir(), "mar-web-data")
+	sharedModCache := filepath.Join(dataRoot, "runtime", "gomodcache")
+	if err := os.MkdirAll(sharedModCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(dataRoot, "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	runtime, err := NewRuntime(s, RuntimeConfig{
+		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		Provider:     worker.ProviderConfig{BrainMode: worker.BrainWeb},
+		AgentProfile: agent.Profile{Model: "gpt-5.6-sol", ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		VerificationProfiles: []verification.Profile{{ID: "go-standard", Commands: []verification.Command{
+			{Name: goExe, Args: []string{"test", "-count=1", "./..."}, Cwd: "."},
+			{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
+			{Name: goExe, Args: []string{"build", "./..."}, Cwd: "."},
+		}}},
+		SandboxReadPaths: []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
+		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,
+		ResourceGovernor: resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 2, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1},
+		Scheduler:        scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
+		Daemon:           DaemonConfig{PollInterval: 25 * time.Millisecond, ControlPollInterval: 25 * time.Millisecond, MaxConcurrentWorkers: 1, MaxPreflightPerTick: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runtime.Service.RegisterProject(ctx, "web-e2e-project", projectRoot); err != nil {
+		t.Fatal(err)
+	}
+	daemonCtx, stopDaemon := context.WithCancel(ctx)
+	daemonDone := make(chan error, 1)
+	go func() { daemonDone <- runtime.Daemon.Run(daemonCtx) }()
+	defer func() {
+		stopDaemon()
+		if err := <-daemonDone; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("daemon shutdown: %v", err)
+		}
+	}()
+
+	server, err := mcpedge.NewServer(runtime.Service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "mar-web-brain-e2e", Version: "1"}, nil)
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+
+	submit, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
+		"idempotency_key": "web-e2e-submit-1",
+		"contract": map[string]any{
+			"goal":       "Create marker.txt containing MAR WEB BRAIN OK.",
+			"acceptance": []string{"marker.txt exists in the authoritative project with the requested content"},
+			"boundaries": []string{"Only create marker.txt; do not change existing source files."},
+			"non_goals":  []string{"No remote Git writes or deployment."},
+			"project_id": "web-e2e-project", "base_revision": baseRevision,
+			"authority":            map[string]any{"local_file_write": true, "local_git_write": true, "network_allowed": false, "remote_git_write": false, "deploy_allowed": false},
+			"verification_profile": "go-standard", "priority": "P2",
+		},
+	}})
+	if err != nil || submit.IsError {
+		t.Fatalf("web brain submit failed: err=%v result=%+v", err, submit)
+	}
+	var submitted struct {
+		Task domain.Task `json:"task"`
+	}
+	raw, _ := json.Marshal(submit.StructuredContent)
+	if err := json.Unmarshal(raw, &submitted); err != nil || submitted.Task.ID == "" {
+		t.Fatalf("decode submitted web task: err=%v raw=%s", err, raw)
+	}
+
+	brainTurns := 0
+	for {
+		statusResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "status", Arguments: map[string]any{"task_id": submitted.Task.ID}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status struct {
+			Status struct {
+				Task domain.Task `json:"task"`
+			} `json:"status"`
+		}
+		rawStatus, _ := json.Marshal(statusResult.StructuredContent)
+		if err := json.Unmarshal(rawStatus, &status); err != nil {
+			t.Fatal(err)
+		}
+		switch status.Status.Task.State {
+		case domain.TaskInputRequired:
+			turnResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{"task_id": submitted.Task.ID}})
+			if err != nil || turnResult.IsError {
+				t.Fatalf("brain_turn failed: err=%v result=%+v", err, turnResult)
+			}
+			var envelope struct {
+				Available bool           `json:"available"`
+				Turn      domain.WebTurn `json:"turn"`
+			}
+			rawTurn, _ := json.Marshal(turnResult.StructuredContent)
+			if err := json.Unmarshal(rawTurn, &envelope); err != nil || !envelope.Available || !envelope.Turn.IntegrityValid() {
+				t.Fatalf("invalid pending web brain turn: err=%v raw=%s turn=%+v", err, rawTurn, envelope.Turn)
+			}
+			var req model.TurnRequest
+			if err := json.Unmarshal(envelope.Turn.Request, &req); err != nil {
+				t.Fatal(err)
+			}
+			if req.Model != "gpt-5.6-sol" || len(req.Messages) < 2 || len(req.Tools) == 0 {
+				t.Fatalf("web brain request lost model/context/tools: %+v", req)
+			}
+			brainTurns++
+			var call model.ToolCall
+			switch brainTurns {
+			case 1:
+				args, _ := json.Marshal(map[string]any{"path": "marker.txt", "expected_sha256": "ABSENT", "content": "MAR WEB BRAIN OK\n"})
+				call = model.ToolCall{ID: "web-call-write", Name: "write_file", Arguments: string(args)}
+			case 2:
+				args, _ := json.Marshal(map[string]any{"status": "completed_candidate", "summary": "Created the requested marker through GPT Web brain mode."})
+				call = model.ToolCall{ID: "web-call-finish", Name: "finish_task", Arguments: string(args)}
+			default:
+				t.Fatalf("unexpected extra web brain turn %d", brainTurns)
+			}
+			respond, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "brain_respond", Arguments: map[string]any{
+				"task_id": submitted.Task.ID, "turn_id": envelope.Turn.ID,
+				"tool_calls": []any{map[string]any{"id": call.ID, "name": call.Name, "arguments": call.Arguments}}, "finish_reason": "tool_calls",
+			}})
+			if err != nil || respond.IsError {
+				t.Fatalf("brain_respond failed: err=%v result=%+v", err, respond)
+			}
+		case domain.TaskComplete:
+			goto complete
+		case domain.TaskBlocked, domain.TaskFailed, domain.TaskCancelled:
+			inspection, _ := runtime.Service.Inspect(context.Background(), submitted.Task.ID)
+			if inspection.Attempt != nil {
+				t.Fatalf("web brain task reached terminal failure %s: attempt=%+v inspection=%+v", status.Status.Task.State, *inspection.Attempt, inspection)
+			}
+			t.Fatalf("web brain task reached terminal failure %s: %+v", status.Status.Task.State, inspection)
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for web brain task; last state=%s", status.Status.Task.State)
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+
+complete:
+	if brainTurns != 2 {
+		t.Fatalf("expected exactly two GPT Web brain turns, got %d", brainTurns)
+	}
+	marker, err := os.ReadFile(filepath.Join(projectRoot, "marker.txt"))
+	if err != nil || string(marker) != "MAR WEB BRAIN OK\n" {
+		t.Fatalf("unexpected authoritative web brain marker: content=%q err=%v", marker, err)
+	}
+	if got := strings.TrimSpace(runGitTest(t, projectRoot, "rev-parse", "HEAD")); got == baseRevision {
+		t.Fatal("web brain verified candidate was not integrated")
+	}
+	result, available, err := runtime.Service.Result(ctx, submitted.Task.ID)
+	if err != nil || !available || result.IntegrationStatus != "INTEGRATED" || result.Verdict != domain.ResultVerified {
+		t.Fatalf("web brain result mismatch: result=%+v available=%v err=%v", result, available, err)
+	}
+	if result.ResourceSummary.AgentTurns != 2 || result.ResourceSummary.AgentToolCalls != 2 || result.ResourceSummary.ModelTotalTokens <= 0 {
+		t.Fatalf("web brain resource accounting mismatch: %+v", result.ResourceSummary)
+	}
+	inspection, err := runtime.Service.Inspect(ctx, submitted.Task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Attempt == nil || inspection.Attempt.RunEpoch != 1 || inspection.Attempt.AuthorityState != domain.AttemptPhysicallyTerminated || inspection.BrainTurn != nil {
+		t.Fatalf("web brain final authority/turn state mismatch: %+v", inspection)
 	}
 }
 

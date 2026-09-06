@@ -10,6 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/service"
 )
 
@@ -23,6 +24,8 @@ type Backend interface {
 	Cancel(context.Context, string, string, domain.CancelPayload) (domain.TaskControl, bool, error)
 	Result(context.Context, string) (domain.TaskResult, bool, error)
 	Inspect(context.Context, string) (service.TaskInspection, error)
+	PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error)
+	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 }
 
 type submitArgs struct {
@@ -51,6 +54,14 @@ type cancelArgs struct {
 	TaskID         string `json:"task_id"`
 	IdempotencyKey string `json:"idempotency_key"`
 	Reason         string `json:"reason,omitempty"`
+}
+
+type brainRespondArgs struct {
+	TaskID       string           `json:"task_id"`
+	TurnID       string           `json:"turn_id"`
+	Content      string           `json:"content,omitempty"`
+	ToolCalls    []model.ToolCall `json:"tool_calls,omitempty"`
+	FinishReason string           `json:"finish_reason,omitempty"`
 }
 
 func NewServer(backend Backend) (*mcp.Server, error) {
@@ -106,13 +117,28 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 		}
 		return map[string]any{"available": available, "result": result}, nil
 	})
-	addRawTaskReadTool(server, "inspect", "Inspect a bounded durable task projection: task, workspace, attempt, checkpoint, result/evidence, and recent control commands.", func(ctx context.Context, taskID string) (any, error) {
+	addRawTaskReadTool(server, "inspect", "Inspect a bounded durable task projection: task, workspace, attempt, checkpoint, pending Web brain turn, result/evidence, and recent control commands.", func(ctx context.Context, taskID string) (any, error) {
 		inspection, err := backend.Inspect(ctx, taskID)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"inspection": inspection}, nil
 	})
+	addRawTaskReadTool(server, "brain_turn", "Read the pending durable model turn when MAR is using GPT Web as the coding brain. Reason over the returned messages and offered tools, then answer it with brain_respond. This does not execute coding tools in the MCP process.", func(ctx context.Context, taskID string) (any, error) {
+		turn, available, err := backend.PendingWebTurn(ctx, taskID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"available": available, "turn": turn}, nil
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "brain_respond", Description: "Return one GPT Web assistant/model response for the exact pending MAR brain turn. Tool calls are executed later inside the weaker worker sandbox, never in the MCP/daemon process."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, args brainRespondArgs) (*mcp.CallToolResult, map[string]any, error) {
+			turn, created, err := backend.RespondWebTurn(ctx, args.TaskID, args.TurnID, model.Message{Role: model.RoleAssistant, Content: args.Content, ToolCalls: args.ToolCalls}, args.FinishReason)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, map[string]any{"created": created, "turn": turn}, nil
+		})
 
 	return server, nil
 }

@@ -2,7 +2,9 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
+**Verified Slice 016 implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
+**Current pushed base HEAD:** `11de3cb2fb1e186ffce796be11b2103697921563`
+**V1 candidate:** uncommitted Slice 017 Project Brain + Slice 018 Web Brain/multi-client/UX changes; final runtime regression pending host sandbox preparation.
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -50,7 +52,7 @@ Latest repository-wide verification on the Slice 016 runtime checkpoint:
 - durable Goal Contract/profile/acceptance identity is revalidated by the store before VERIFIED publication: PASS
 - result/evidence survive SQLite close/reopen with valid integrity: PASS
 - official MCP Go SDK stdio server: PASS
-- public MCP surface is exactly `submit/status/steer/input/cancel/result/inspect`: PASS
+- Slice 015 seven-tool MCP surface: historical PASS; current V1 candidate extends it to exactly `submit/status/steer/input/cancel/result/inspect/brain_turn/brain_respond`: targeted MCP tests PASS
 - low-level worker filesystem/shell primitives are absent from the public MCP surface: PASS
 - durable `task_controls` schema/migration v8: PASS
 - task control stream is monotonic, idempotent, integrity-bound and survives SQLite reopen: PASS
@@ -89,9 +91,11 @@ MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
 ## Next gate
 
-`OWNER_REAL_USE_ACCEPTANCE`
+`HOST_SANDBOX_PREP -> FINAL_V1_REGRESSION -> OWNER_REAL_USE_ACCEPTANCE`
 
-Goal: run one real bounded Goal on a real project through the committed Slice 016 runtime, inspect durable result/evidence, accept or reject integration, and record live resource/workflow baseline metrics. No further architecture work is planned before this gate.
+Current host prerequisite: Windows reset the AppContainer NUL-device DACL after boot. `sandbox-host-check` currently fails closed and `sandbox-host-prepare` requires an elevated Administrator terminal. Do not weaken `SelfHostingSafe` to bypass this gate.
+
+After host preparation passes, rerun T7/real-worker/Web-brain E2E and the full sequential repository sweep. Then run one real bounded Goal through GPT-5.6 Sol Web brain mode, inspect durable result/evidence, and complete UX1-UX7 owner acceptance. No further architecture or retrieval work is planned before this gate.
 
 Frozen requirements:
 - **T16 integration lane implementation: CLOSED at `81c0042`; retain it as a regression boundary while completing Slice 016.**
@@ -117,8 +121,10 @@ Slice 016 may add the missing integration/runtime glue and benchmark harness req
 
 Remaining bootstrap implementation slices: **NONE**.
 
-Remaining gate:
-- Owner real-use acceptance + live baseline metrics.
+Remaining gates:
+- elevated Windows sandbox-host preparation for the current boot;
+- final runtime/full-repository regression on the V1 candidate;
+- owner real-use UX1-UX7 + live baseline metrics.
 
 After that gate passes, MAR becomes the primary coding worker for continuing MAR V1 development. ChatCode remains fallback/inspection/emergency repair.
 
@@ -134,7 +140,7 @@ After that gate passes, MAR becomes the primary coding worker for continuing MAR
 - serialized authoritative integration
 - uncertain side effects reconcile before retry
 - worker authority is OS-enforced and strictly weaker than daemon authority
-- context retrieval is layered and bounded; vector infrastructure is optional, not a prerequisite
+- Project Brain V1 is frozen at deterministic bounded BM25F-style relevance + path/symbol + dependency graph + Personalized PageRank + RRF; vector/embedding infrastructure is post-V1 only if measured evidence requires it
 - live model cognition, transcript artifacts and durable semantic checkpoints are distinct state layers
 - verification evidence is revision/profile/environment bound and supersedes model self-assertion
 

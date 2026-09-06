@@ -224,6 +224,8 @@ func allowedAttemptTransition(from, to domain.TaskState) bool {
 	switch from {
 	case domain.TaskRunning:
 		return to == domain.TaskVerifying || to == domain.TaskInputRequired || to == domain.TaskBlocked || to == domain.TaskRetryWait || to == domain.TaskFailed || to == domain.TaskCancelled
+	case domain.TaskInputRequired:
+		return to == domain.TaskBlocked || to == domain.TaskRetryWait || to == domain.TaskFailed || to == domain.TaskCancelled
 	case domain.TaskVerifying:
 		return to == domain.TaskReviewing || to == domain.TaskVerified || to == domain.TaskBlocked || to == domain.TaskFailed
 	case domain.TaskReviewing:

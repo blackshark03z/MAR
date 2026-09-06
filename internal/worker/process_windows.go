@@ -15,6 +15,7 @@ import (
 
 	"mar/internal/agent"
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/processctl"
 )
 
@@ -25,6 +26,8 @@ type ControlBackend interface {
 	PublishCheckpoint(context.Context, string, string, int64, string, domain.SemanticCheckpointPayload) (domain.SemanticCheckpoint, error)
 	ControlsSince(context.Context, string, int64, int) ([]domain.TaskControl, error)
 	RequestInputForAttempt(context.Context, string, string, int64) error
+	RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error)
+	WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error)
 }
 
 type ProcessConfig struct {
@@ -257,8 +260,62 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 			return respond(nil, errors.New("worker input request escaped assigned attempt"))
 		}
 		return respond(nil, r.backend.RequestInputForAttempt(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch))
+	case methodWebTurn:
+		var payload webTurnRequest
+		if err := json.Unmarshal(request.Payload, &payload); err != nil {
+			return respond(nil, err)
+		}
+		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
+			return respond(nil, errors.New("worker web turn escaped assigned attempt"))
+		}
+		response, err := r.waitForWebTurn(ctx, start, payload)
+		return respond(webTurnResponse{Response: response}, err)
 	default:
 		return respond(nil, fmt.Errorf("unsupported worker RPC method %q", request.Method))
+	}
+}
+
+func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, request webTurnRequest) (model.TurnResponse, error) {
+	turn, _, err := r.backend.RequestWebTurnForAttempt(ctx, request.TaskID, request.AttemptID, request.RunEpoch, request.Request)
+	if err != nil {
+		return model.TurnResponse{}, err
+	}
+	if response, available, err := r.backend.WebTurnResponse(ctx, turn.ID); err != nil || available {
+		return response, err
+	}
+	waitLimit := start.AgentConfig.MaxDuration
+	if waitLimit <= 0 {
+		waitLimit = 30 * time.Minute
+	}
+	timer := time.NewTimer(waitLimit)
+	defer timer.Stop()
+	poll := time.NewTicker(200 * time.Millisecond)
+	defer poll.Stop()
+	heartbeatEvery := r.cfg.LeaseDuration / 3
+	if heartbeatEvery < time.Second {
+		heartbeatEvery = time.Second
+	}
+	heartbeat := time.NewTicker(heartbeatEvery)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return model.TurnResponse{}, ctx.Err()
+		case <-timer.C:
+			return model.TurnResponse{}, errors.New("web brain turn timed out waiting for ChatGPT response")
+		case <-heartbeat.C:
+			if err := r.backend.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
+				return model.TurnResponse{}, fmt.Errorf("web brain wait heartbeat failed: %w", err)
+			}
+		case <-poll.C:
+			response, available, err := r.backend.WebTurnResponse(ctx, turn.ID)
+			if err != nil {
+				return model.TurnResponse{}, err
+			}
+			if available {
+				return response, nil
+			}
+		}
 	}
 }
 
