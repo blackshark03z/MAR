@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -430,24 +431,24 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	isGoCommand := strings.EqualFold(filepath.Base(path), "go.exe") || strings.EqualFold(filepath.Base(path), "go")
 	if isGoCommand {
 		cacheRoot := filepath.Join(r.root, ".mar", "go")
-		if err := os.MkdirAll(filepath.Join(cacheRoot, "build"), 0o755); err != nil {
-			return ExecResult{}, err
-		}
-		modCache := r.goModuleCache
-		if modCache == "" {
-			modCache = filepath.Join(cacheRoot, "mod")
-			if err := os.MkdirAll(modCache, 0o755); err != nil {
+		buildCache := filepath.Join(cacheRoot, "build")
+		modCache := filepath.Join(cacheRoot, "mod")
+		tmpCache := filepath.Join(cacheRoot, "tmp")
+		for _, dir := range []string{buildCache, modCache, tmpCache} {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return ExecResult{}, err
 			}
 		}
-		if err := os.MkdirAll(filepath.Join(cacheRoot, "tmp"), 0o755); err != nil {
-			return ExecResult{}, err
+		goProxy := "off"
+		if r.goModuleCache != "" {
+			proxyURL := url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(r.goModuleCache)}
+			goProxy = proxyURL.String()
 		}
 		env = append(env,
-			"GOCACHE="+filepath.Join(cacheRoot, "build"),
+			"GOCACHE="+buildCache,
 			"GOMODCACHE="+modCache,
-			"GOTMPDIR="+filepath.Join(cacheRoot, "tmp"),
-			"GOPROXY=off",
+			"GOTMPDIR="+tmpCache,
+			"GOPROXY="+goProxy,
 			"GOSUMDB=off",
 			"GOENV=off",
 			"GOTOOLCHAIN=local",

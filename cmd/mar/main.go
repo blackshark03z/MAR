@@ -229,9 +229,9 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	}
 	goRoot := filepath.Dir(filepath.Dir(goExecutable))
 	goBin := filepath.Dir(goExecutable)
-	sharedGoModCache := filepath.Join(dataRoot, "runtime", "gomodcache")
-	if err := os.MkdirAll(sharedGoModCache, 0o755); err != nil {
-		return fmt.Errorf("prepare shared Go module cache: %w", err)
+	goModuleProxyDir, err := resolveGoModuleProxyDir(goExecutable, dataRoot)
+	if err != nil {
+		return fmt.Errorf("resolve read-only Go module proxy seed: %w", err)
 	}
 	s, err := store.Open(opts.DBPath)
 	if err != nil {
@@ -260,9 +260,9 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 				{Name: goExecutable, Args: []string{"build", "./..."}, Cwd: "."},
 			},
 		}},
-		SandboxReadPaths:  []string{goRoot, sharedGoModCache},
+		SandboxReadPaths:  []string{goRoot, goModuleProxyDir},
 		WorkerPathEntries: []string{goBin},
-		GoModuleCache:     sharedGoModCache,
+		GoModuleCache:     goModuleProxyDir,
 		LeaseDuration:     time.Minute,
 		WorkerStopTimeout: 10 * time.Second,
 		ResourceGovernor: resourcegov.Config{
@@ -372,6 +372,33 @@ func waitForActiveWorkers(ctx context.Context, daemon *orchestrator.Daemon) erro
 		}
 	}
 	return nil
+}
+
+func resolveGoModuleProxyDir(goExecutable, dataRoot string) (string, error) {
+	cmd := exec.Command(goExecutable, "env", "GOMODCACHE")
+	out, err := cmd.Output()
+	if err == nil {
+		root := strings.TrimSpace(string(out))
+		if root != "" {
+			download := filepath.Join(root, "cache", "download")
+			if info, statErr := os.Stat(download); statErr == nil && info.IsDir() {
+				abs, absErr := filepath.Abs(download)
+				if absErr != nil {
+					return "", absErr
+				}
+				return filepath.Clean(abs), nil
+			}
+		}
+	}
+	// Offline verification cannot manufacture dependencies that are absent from
+	// every local cache. Keep an empty MAR-owned proxy directory as a bounded,
+	// read-only fallback; Go then fails explicitly if a required module is not
+	// preseeded instead of gaining network or shared-cache write authority.
+	fallback := filepath.Join(dataRoot, "runtime", "gomodproxy")
+	if err := os.MkdirAll(fallback, 0o755); err != nil {
+		return "", err
+	}
+	return filepath.Clean(fallback), nil
 }
 
 func defaultGoExecutable() string {
