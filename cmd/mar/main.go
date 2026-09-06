@@ -255,7 +255,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			ReasoningEffort:  opts.Reasoning,
 			BaseInstructions: defaultWorkerInstructions,
 		},
-		VerificationProfiles: []verification.Profile{goStandardVerificationProfile(goExecutable)},
+		VerificationProfiles: builtinVerificationProfiles(goExecutable),
 		SandboxReadPaths:     []string{goRoot, goModuleProxyDir},
 		WorkerPathEntries:    []string{goBin},
 		GoModuleCache:        goModuleProxyDir,
@@ -374,11 +374,29 @@ func prepareRuntimeDataRoot(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
 
+func builtinVerificationProfiles(goExecutable string) []verification.Profile {
+	return []verification.Profile{
+		goStandardVerificationProfile(goExecutable),
+		goDocsVerificationProfile(goExecutable),
+	}
+}
+
 func goStandardVerificationProfile(goExecutable string) verification.Profile {
 	return verification.Profile{
 		ID: "go-standard",
 		Commands: []verification.Command{
 			{Name: goExecutable, Args: []string{"test", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
+		},
+	}
+}
+
+func goDocsVerificationProfile(goExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "go-docs",
+		Commands: []verification.Command{
+			{Name: goExecutable, Args: []string{"test", "-p", "1", "-count=1", "-run", "^$", "-timeout", "180s", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
 		},
