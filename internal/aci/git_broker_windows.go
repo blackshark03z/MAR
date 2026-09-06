@@ -63,6 +63,8 @@ func (b *ContainedGitBroker) run(ctx context.Context, taskID, root string, maxOu
 		return ExecResult{ExitCode: -1}, err
 	}
 	args := []string{
+		"-c", "core.autocrlf=false",
+		"-c", "core.eol=lf",
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=NUL",
 		"-c", "core.excludesFile=NUL",

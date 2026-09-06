@@ -144,6 +144,8 @@ func (g *GitRepository) run(ctx context.Context, root, operation string, operati
 		return "", err
 	}
 	args := []string{
+		"-c", "core.autocrlf=false",
+		"-c", "core.eol=lf",
 		"-c", "core.fsmonitor=false",
 		"-c", "core.hooksPath=NUL",
 		"-c", "core.excludesFile=NUL",

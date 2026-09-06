@@ -109,6 +109,10 @@ func (m *Manager) EnsureMutable(ctx context.Context, taskID string) (domain.Work
 			if head != workspace.BaseRevision {
 				return domain.Workspace{}, fmt.Errorf("preparing worktree head %s differs from expected base %s", head, workspace.BaseRevision)
 			}
+			if err := m.requireCleanBaseline(ctx, task.ID, workspace); err != nil {
+				_ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, err.Error(), m.now().UTC())
+				return domain.Workspace{}, err
+			}
 			if err := m.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, head, m.now().UTC()); err != nil {
 				return domain.Workspace{}, err
 			}
@@ -120,10 +124,15 @@ func (m *Manager) EnsureMutable(ctx context.Context, taskID string) (domain.Work
 		// A command can report failure after Git has already made the side effect.
 		// Reconcile observable Git truth before classifying creation as failed.
 		if ok, head, inspectErr := m.registeredWorktree(ctx, task.ID, repoRoot, workspace.Path); inspectErr == nil && ok && head == workspace.BaseRevision {
-			if markErr := m.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, head, m.now().UTC()); markErr != nil {
-				return domain.Workspace{}, markErr
+			if cleanErr := m.requireCleanBaseline(ctx, task.ID, workspace); cleanErr == nil {
+				if markErr := m.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, head, m.now().UTC()); markErr != nil {
+					return domain.Workspace{}, markErr
+				}
+				return m.store.GetWorkspaceByTask(ctx, task.ID)
+			} else {
+				_ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, cleanErr.Error(), m.now().UTC())
+				return domain.Workspace{}, cleanErr
 			}
-			return m.store.GetWorkspaceByTask(ctx, task.ID)
 		}
 		_ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, err.Error(), m.now().UTC())
 		return domain.Workspace{}, err
@@ -137,6 +146,10 @@ func (m *Manager) EnsureMutable(ctx context.Context, taskID string) (domain.Work
 		failure := fmt.Sprintf("created worktree failed verification: registered=%v head=%s expected=%s", ok, head, workspace.BaseRevision)
 		_ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, failure, m.now().UTC())
 		return domain.Workspace{}, errors.New(failure)
+	}
+	if err := m.requireCleanBaseline(ctx, task.ID, workspace); err != nil {
+		_ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, err.Error(), m.now().UTC())
+		return domain.Workspace{}, err
 	}
 	if err := m.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, head, m.now().UTC()); err != nil {
 		return domain.Workspace{}, err
@@ -251,7 +264,11 @@ func (m *Manager) registeredWorktree(ctx context.Context, taskID, repoRoot, want
 }
 
 func (m *Manager) git(ctx context.Context, taskID, repoRoot string, args ...string) (string, error) {
-	cmdArgs := append([]string{"-C", repoRoot}, args...)
+	// Managed workspaces must not inherit host/user line-ending policy. Pin a
+	// deterministic LF default while still allowing repository .gitattributes
+	// to override individual paths (for example eol=crlf).
+	cmdArgs := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", repoRoot}
+	cmdArgs = append(cmdArgs, args...)
 	operation := "workspace-git"
 	if len(args) > 0 {
 		operation += ":" + args[0]
@@ -263,6 +280,19 @@ func (m *Manager) git(ctx context.Context, taskID, repoRoot string, args ...stri
 		Args:        cmdArgs,
 		Dir:         repoRoot,
 	})
+}
+
+func (m *Manager) requireCleanBaseline(ctx context.Context, taskID string, workspace domain.Workspace) error {
+	output, err := m.git(ctx, taskID, workspace.Path,
+		"status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=all",
+	)
+	if err != nil {
+		return fmt.Errorf("verify managed workspace baseline: %w", err)
+	}
+	if strings.TrimSpace(output) != "" {
+		return fmt.Errorf("managed workspace baseline is not clean at %s: %s", workspace.BaseRevision, strings.TrimSpace(output))
+	}
+	return nil
 }
 
 func (m *Manager) workspacePath(taskID string) string {

@@ -47,6 +47,34 @@ func TestEnsureMutableCreatesDetachedWorktreeAtExactBase(t *testing.T) {
 	}
 }
 
+func TestEnsureMutablePinsManagedEOLPolicyAndCreatesCleanBaseline(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	// Reproduce the owner host: Git for Windows can provide autocrlf=true via
+	// ambient configuration. A local setting makes the regression deterministic
+	// on every test host; MAR's managed-workspace policy must override it.
+	gitRun(t, repo, "config", "core.autocrlf", "true")
+
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+	task := waitingTask(t, svc, "workspace-eol-policy", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(ws.Path, "seed.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "seed\n" {
+		t.Fatalf("managed worktree inherited host EOL conversion: %q", content)
+	}
+	status := gitOut(t, ws.Path, "-c", "core.autocrlf=false", "-c", "core.eol=lf", "status", "--porcelain=v1", "--untracked-files=all")
+	if status != "" {
+		t.Fatalf("managed worktree baseline is dirty under MAR Git policy: %q", status)
+	}
+}
+
 func TestEnsureMutableIsIdempotentAndConcurrent(t *testing.T) {
 	ctx := context.Background()
 	repo, base := makeRepo(t)
@@ -321,6 +349,51 @@ func TestPreparingWorkspaceReconcilesObservableGitSideEffect(t *testing.T) {
 	}
 }
 
+func TestPreparingWorkspaceRejectsDirtyBaseline(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := service.NewTaskService(db)
+	dataRoot := filepath.Join(t.TempDir(), "mar-data")
+	manager, err := workspace.NewManager(db, dataRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := waitingTask(t, svc, "workspace-dirty-reconcile", repo, base)
+	taskHash := sha256.Sum256([]byte(task.ID))
+	path := filepath.Join(dataRoot, "w", hex.EncodeToString(taskHash[:16]))
+	now := time.Now().UTC()
+	intent := domain.Workspace{
+		ID: "workspace-dirty-reconcile", TaskID: task.ID, ProjectID: task.Contract.ProjectID,
+		Path: path, BaseRevision: base, State: domain.WorkspacePreparing, CreatedAt: now, UpdatedAt: now,
+	}
+	if _, created, err := db.BeginWorkspace(ctx, intent); err != nil || !created {
+		t.Fatalf("persist preparing workspace: created=%v err=%v", created, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "-c", "core.autocrlf=false", "-c", "core.eol=lf", "worktree", "add", "--detach", path, base)
+	if err := os.WriteFile(filepath.Join(path, "seed.txt"), []byte("owner-unexpected-change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := manager.EnsureMutable(ctx, task.ID); err == nil || !strings.Contains(err.Error(), "baseline is not clean") {
+		t.Fatalf("dirty preparing workspace must fail closed, got %v", err)
+	}
+	stored, err := db.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceFailed {
+		t.Fatalf("dirty baseline was not durably failed: %+v", stored)
+	}
+}
+
 func TestUnregisteredPreexistingWorkspacePathIsNotOverwritten(t *testing.T) {
 	ctx := context.Background()
 	repo, base := makeRepo(t)
@@ -440,7 +513,8 @@ func makeRepo(t *testing.T) (string, string) {
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	base := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", dir}
+	cmd := exec.Command("git", append(base, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -448,7 +522,8 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	base := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", dir}
+	cmd := exec.Command("git", append(base, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
