@@ -12,16 +12,17 @@ GPT-5.6 Sol Web can be the primary coding/reasoning brain. MAR keeps task truth,
 
 ## First self-hosting run
 
-1. Verify the Windows AppContainer host prerequisite for the project workspace:
+1. Create a dedicated MAR-owned sandbox probe directory under the MAR data root, for example `<data-root>/sandbox-host-probe`. The probe directory must already exist before running the host check. Use this scratch directory instead of the project root so historical project ACL/worktree state cannot interfere with the prerequisite probe.
 
 ```text
-mar sandbox-host-check -workspace <project-root>
+mar sandbox-host-check -workspace <data-root>/sandbox-host-probe
 ```
 
-If the check reports that the sandbox host is not prepared, run the following once from an **elevated Administrator terminal after each Windows boot**, then re-run the check:
+If the check reports that the sandbox host is not prepared, run the following once from an **elevated Administrator terminal after each Windows boot** against that same probe directory, then re-run the check there:
 
 ```text
-mar sandbox-host-prepare -workspace <project-root>
+mar sandbox-host-prepare -workspace <data-root>/sandbox-host-probe
+mar sandbox-host-check -workspace <data-root>/sandbox-host-probe
 ```
 
 MAR intentionally fails closed instead of running model-controlled commands without the enforced sandbox.
