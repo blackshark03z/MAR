@@ -219,6 +219,9 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := prepareRuntimeDataRoot(dataRoot); err != nil {
+		return fmt.Errorf("prepare MAR data root: %w", err)
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return err
@@ -372,6 +375,10 @@ func waitForActiveWorkers(ctx context.Context, daemon *orchestrator.Daemon) erro
 		}
 	}
 	return nil
+}
+
+func prepareRuntimeDataRoot(path string) error {
+	return os.MkdirAll(path, 0o755)
 }
 
 func resolveGoModuleProxyDir(goExecutable, dataRoot string) (string, error) {
