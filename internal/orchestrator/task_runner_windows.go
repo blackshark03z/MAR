@@ -181,7 +181,7 @@ func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, works
 		}
 		return r.verifyAndIntegrate(ctx, outcome, attempt, proof, workspace)
 	case agent.StatusBlocked:
-		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, "worker-blocked")
+		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskBlocked, blockedTerminalStatus(agentResult))
 	case agent.StatusBudgetExhausted:
 		return outcome, r.finishNonCandidate(finalCtx, attempt, proof, domain.TaskRetryWait, "worker-budget-exhausted")
 	case agent.StatusCancelled:
@@ -264,6 +264,24 @@ func (r *TaskRunner) verifyAndIntegrate(ctx context.Context, outcome RunOutcome,
 	}
 	outcome.Integration = &integrated
 	return outcome, nil
+}
+
+func blockedTerminalStatus(result agent.Result) string {
+	const prefix = "worker-blocked"
+	detail := strings.TrimSpace(result.Blocker)
+	if detail == "" {
+		detail = strings.TrimSpace(result.Summary)
+	}
+	if detail == "" {
+		return prefix
+	}
+	detail = strings.Join(strings.Fields(detail), " ")
+	const maxDetailRunes = 240
+	runes := []rune(detail)
+	if len(runes) > maxDetailRunes {
+		runes = runes[:maxDetailRunes]
+	}
+	return prefix + ": " + string(runes)
 }
 
 func (r *TaskRunner) finishNonCandidate(ctx context.Context, attempt domain.ExecutionAttempt, proof processctl.TerminationProof, target domain.TaskState, terminalStatus string) error {

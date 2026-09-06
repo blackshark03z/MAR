@@ -24,6 +24,7 @@ type fakeTaskService struct {
 	attempt                domain.ExecutionAttempt
 	cancel                 bool
 	events                 []string
+	terminalStatus         string
 	rejectCancelledContext bool
 }
 
@@ -69,12 +70,13 @@ func (s *fakeTaskService) LogicalFenceAttempt(context.Context, string, string, i
 	return nil
 }
 
-func (s *fakeTaskService) ConfirmAttemptProcessTermination(ctx context.Context, _ processctl.TerminationProof, _ string) error {
+func (s *fakeTaskService) ConfirmAttemptProcessTermination(ctx context.Context, _ processctl.TerminationProof, terminalStatus string) error {
 	if s.rejectCancelledContext && ctx.Err() != nil {
 		return errors.New("cancelled context reached physical termination finalization")
 	}
 	s.events = append(s.events, "confirm")
 	s.attempt.AuthorityState = domain.AttemptPhysicallyTerminated
+	s.terminalStatus = terminalStatus
 	return nil
 }
 
@@ -211,6 +213,30 @@ func TestCancellationFinalizesOnlyAfterPhysicalTermination(t *testing.T) {
 	}
 	if svc.task.State != domain.TaskCancelled || integrator.called {
 		t.Fatalf("cancellation outcome mismatch: state=%s integrated=%v", svc.task.State, integrator.called)
+	}
+}
+
+func TestWorkerBlockedPersistsBoundedDiagnostic(t *testing.T) {
+	task, workspace := readyTaskAndWorkspace()
+	svc := &fakeTaskService{task: task}
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{
+		Status:  agent.StatusBlocked,
+		Summary: "worker stopped safely",
+		Blocker: "model protocol error:\nfinish_task is required for terminal completion/blocking",
+	}}
+	verifier := &fakeVerifier{service: svc}
+	integrator := &fakeIntegrator{service: svc}
+	runner := testRunner(t, svc, workerProcess, verifier, integrator)
+
+	if _, err := runner.RunWorkspaceReady(context.Background(), task.ID, workspace); err != nil {
+		t.Fatal(err)
+	}
+	if svc.task.State != domain.TaskBlocked || svc.attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		t.Fatalf("blocked worker did not finalize safely: task=%s authority=%s", svc.task.State, svc.attempt.AuthorityState)
+	}
+	want := "worker-blocked: model protocol error: finish_task is required for terminal completion/blocking"
+	if svc.terminalStatus != want {
+		t.Fatalf("blocked worker diagnostic was not persisted: got=%q want=%q", svc.terminalStatus, want)
 	}
 }
 
