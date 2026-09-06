@@ -255,19 +255,12 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			ReasoningEffort:  opts.Reasoning,
 			BaseInstructions: defaultWorkerInstructions,
 		},
-		VerificationProfiles: []verification.Profile{{
-			ID: "go-standard",
-			Commands: []verification.Command{
-				{Name: goExecutable, Args: []string{"test", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
-				{Name: goExecutable, Args: []string{"vet", "./..."}, Cwd: "."},
-				{Name: goExecutable, Args: []string{"build", "./..."}, Cwd: "."},
-			},
-		}},
-		SandboxReadPaths:  []string{goRoot, goModuleProxyDir},
-		WorkerPathEntries: []string{goBin},
-		GoModuleCache:     goModuleProxyDir,
-		LeaseDuration:     time.Minute,
-		WorkerStopTimeout: 10 * time.Second,
+		VerificationProfiles: []verification.Profile{goStandardVerificationProfile(goExecutable)},
+		SandboxReadPaths:     []string{goRoot, goModuleProxyDir},
+		WorkerPathEntries:    []string{goBin},
+		GoModuleCache:        goModuleProxyDir,
+		LeaseDuration:        time.Minute,
+		WorkerStopTimeout:    10 * time.Second,
 		ResourceGovernor: resourcegov.Config{
 			MaxCPUPercent:           85,
 			MaxMemoryLoadPercent:    85,
@@ -379,6 +372,17 @@ func waitForActiveWorkers(ctx context.Context, daemon *orchestrator.Daemon) erro
 
 func prepareRuntimeDataRoot(path string) error {
 	return os.MkdirAll(path, 0o755)
+}
+
+func goStandardVerificationProfile(goExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "go-standard",
+		Commands: []verification.Command{
+			{Name: goExecutable, Args: []string{"test", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
+		},
+	}
 }
 
 func resolveGoModuleProxyDir(goExecutable, dataRoot string) (string, error) {
