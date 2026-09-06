@@ -2,7 +2,7 @@
 
 **Architecture:** FROZEN
 **Branch:** `master`
-**Verified implementation HEAD:** `d0b3290246c92524d6c4e0b142bf3e9a83310193`
+**Verified implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -26,7 +26,7 @@ Git + frozen docs + this checkpoint are continuity truth. Chat history is dispos
 
 ## Current state
 
-Repo implementation is verified through Slice 015 plus the T16 authoritative-integration substep and the self-hosting runtime wiring substep of Slice 016. Slice 016 remains **IN PROGRESS** and MAR is not yet `SELF_HOSTING_READY`.
+Repo implementation is verified through **Slice 016 technical self-hosting acceptance** at `a0c0906`. Frozen T1–T17 behavioral acceptance is complete and the repository-wide technical sweep is clean. MAR remains **PENDING OWNER REAL-USE ACCEPTANCE** and must not be claimed `SELF_HOSTING_READY` until owner real-use plus live baseline metrics pass.
 
 T16 integration checkpoint: `81c0042` — durable `integration_attempt`, serialized expected-head CAS, deterministic pre/post-CAS crash recovery, stale-evidence/base-drift blocking, and explicit integration-result integrity preservation.
 
@@ -87,11 +87,11 @@ Latest repository-wide verification on the Slice 016 runtime checkpoint:
 
 MAR as a product is **not** yet `SELF_HOSTING_READY`.
 
-## Next slice
+## Next gate
 
-`016` Self-Hosting Acceptance.
+`OWNER_REAL_USE_ACCEPTANCE`
 
-Goal: close the remaining runtime wiring needed for one real MCP-submitted Goal to run autonomously through bounded context, worker execution, semantic resume, authoritative verification/result, cancellation/recovery and serialized integration/reject handling; then execute the frozen acceptance suite before any `SELF_HOSTING_READY` claim.
+Goal: run one real bounded Goal on a real project through the committed Slice 016 runtime, inspect durable result/evidence, accept or reject integration, and record live resource/workflow baseline metrics. No further architecture work is planned before this gate.
 
 Frozen requirements:
 - **T16 integration lane implementation: CLOSED at `81c0042`; retain it as a regression boundary while completing Slice 016.**
@@ -115,10 +115,12 @@ Slice 016 may add the missing integration/runtime glue and benchmark harness req
 
 `MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
 
-Remaining bootstrap slices:
-- 016 Self-Hosting Acceptance
+Remaining bootstrap implementation slices: **NONE**.
 
-After Slice 016 passes, MAR becomes the primary coding worker for continuing MAR V1 development. ChatCode remains fallback/inspection/emergency repair.
+Remaining gate:
+- Owner real-use acceptance + live baseline metrics.
+
+After that gate passes, MAR becomes the primary coding worker for continuing MAR V1 development. ChatCode remains fallback/inspection/emergency repair.
 
 ## Frozen boundaries — do not reopen without evidence
 
