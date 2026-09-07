@@ -67,6 +67,7 @@ The Console exposes four normal surfaces:
 - **Work** — current/recent durable tasks, attention queue, result/evidence, MAR-measured token usage and Owner feedback;
 - **Projects** — add a supported local repository and narrow project-level local file/local Git permissions;
 - **Connections** — capability/readiness for local MCP clients, a one-click candidate-bound Claude Desktop `.mcpb` package, ChatGPT remote/tunnel requirements and provider mode without pretending configuration means a live connection;
+  On Windows, installing Claude Desktop itself may require Administrator/UAC when its MSIX contains a packaged service; MAR treats that as an external OS prerequisite and does not bypass it.
 - **Advanced** — raw task/runtime diagnostics for Tech Lead/debug use.
 
 For unattended provider-backed cognition, configure provider URL, API-key environment variable and model, then launch:
