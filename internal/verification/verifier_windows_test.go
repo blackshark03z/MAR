@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mar/internal/aci"
@@ -122,6 +123,56 @@ func TestVerifierPassPersistsRevisionBoundEvidenceAndVerifiedState(t *testing.T)
 	}
 }
 
+func TestVerifierDocumentationOnlyProfileRejectsSourceCandidateBeforeCommands(t *testing.T) {
+	h := newSealerHarness(t, true)
+	prepareVerifierCandidate(t, h)
+	profile := verifierProfile()
+	profile.ChangeScope = ChangeScopeDocumentationOnly
+	verifier := verifierForHarness(t, h, profile)
+	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}}
+
+	_, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
+	if err == nil || !strings.Contains(err.Error(), "only admits documentation changes") {
+		t.Fatalf("docs-only profile did not reject source candidate: %v", err)
+	}
+	if len(runtime.calls) != 0 {
+		t.Fatalf("docs-only source candidate reached verification commands: %+v", runtime.calls)
+	}
+	if _, ok, loadErr := h.store.LatestTaskResult(context.Background(), h.task.ID); loadErr != nil || ok {
+		t.Fatalf("rejected docs-only candidate published a result: ok=%v err=%v", ok, loadErr)
+	}
+}
+
+func TestVerifierPassingCommandsWithoutCriterionOracleRemainUnverified(t *testing.T) {
+	h := newSealerHarnessWithAcceptanceChecks(t, true, false)
+	prepareVerifierCandidate(t, h)
+	verifier := verifierForHarness(t, h, verifierProfile())
+	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {Output: "ok vet", ExitCode: 0}}}
+
+	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Verdict != domain.ResultUnverified || len(result.UnresolvedRisks) == 0 {
+		t.Fatalf("criterion without oracle was not kept UNVERIFIED: %+v", result)
+	}
+	task, err := h.store.GetTask(context.Background(), h.task.ID)
+	if err != nil || task.State != domain.TaskBlocked {
+		t.Fatalf("unverified task became integration-eligible: task=%+v err=%v", task, err)
+	}
+	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Verdict != domain.VerificationUnverified || len(evidence.Acceptance) != 1 || evidence.Acceptance[0].EffectiveStatus() != domain.AcceptanceUnverified || len(evidence.Acceptance[0].EvidenceRefs) != 0 {
+		t.Fatalf("unverified criterion claimed evidence or wrong status: %+v", evidence)
+	}
+	fresh, err := verifier.EvidenceFresh(context.Background(), evidence.ID)
+	if err != nil || fresh {
+		t.Fatalf("UNVERIFIED evidence must never be integration-eligible: fresh=%v err=%v", fresh, err)
+	}
+}
+
 func TestVerifierFailurePersistsEvidenceAndCannotBecomeVerified(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
@@ -173,7 +224,7 @@ func TestVerifierRejectsStaleAttemptBeforeCandidatePublication(t *testing.T) {
 	}
 }
 
-func TestVerifierEnvironmentDriftProducesFailedEvidence(t *testing.T) {
+func TestVerifierEnvironmentDriftProducesUnverifiedEvidence(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
 	verifier := verifierForHarness(t, h, verifierProfile())
@@ -192,8 +243,8 @@ func TestVerifierEnvironmentDriftProducesFailedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Verdict != domain.ResultVerificationFailed || len(result.UnresolvedRisks) == 0 {
-		t.Fatalf("environment drift did not fail verification explicitly: %+v", result)
+	if result.Verdict != domain.ResultUnverified || len(result.UnresolvedRisks) == 0 {
+		t.Fatalf("environment drift was not marked UNVERIFIED explicitly: %+v", result)
 	}
 	task, _ := h.store.GetTask(context.Background(), h.task.ID)
 	if task.State != domain.TaskBlocked {
@@ -201,7 +252,7 @@ func TestVerifierEnvironmentDriftProducesFailedEvidence(t *testing.T) {
 	}
 }
 
-func TestVerifierCandidateDriftProducesFailedEvidence(t *testing.T) {
+func TestVerifierCandidateDriftProducesUnverifiedEvidence(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
 	verifier := verifierForHarness(t, h, verifierProfile())
@@ -220,8 +271,8 @@ func TestVerifierCandidateDriftProducesFailedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Verdict != domain.ResultVerificationFailed || len(result.UnresolvedRisks) == 0 {
-		t.Fatalf("candidate drift did not fail verification: %+v", result)
+	if result.Verdict != domain.ResultUnverified || len(result.UnresolvedRisks) == 0 {
+		t.Fatalf("candidate drift was not marked UNVERIFIED: %+v", result)
 	}
 }
 
@@ -264,7 +315,7 @@ func TestVerifierFreshnessRejectsProfileAndRevisionDrift(t *testing.T) {
 	}
 }
 
-func TestVerifierUntrackedSourceDriftProducesFailedEvidence(t *testing.T) {
+func TestVerifierUntrackedSourceDriftProducesUnverifiedEvidence(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
 	verifier := verifierForHarness(t, h, verifierProfile())
@@ -283,8 +334,8 @@ func TestVerifierUntrackedSourceDriftProducesFailedEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Verdict != domain.ResultVerificationFailed || len(result.UnresolvedRisks) == 0 {
-		t.Fatalf("untracked source drift did not fail verification: %+v", result)
+	if result.Verdict != domain.ResultUnverified || len(result.UnresolvedRisks) == 0 {
+		t.Fatalf("untracked source drift was not marked UNVERIFIED: %+v", result)
 	}
 }
 

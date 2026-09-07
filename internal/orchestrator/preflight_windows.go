@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -103,6 +104,9 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 	if _, ok := p.profiles.Get(task.Contract.VerificationProfile); !ok {
 		return fmt.Errorf("verification profile %q is not registered", task.Contract.VerificationProfile)
 	}
+	if err := validateSupportedV1Authority(task.Contract.Authority); err != nil {
+		return err
+	}
 	project, err := p.store.GetProject(ctx, task.Contract.ProjectID)
 	if err != nil {
 		return err
@@ -112,6 +116,13 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 		return err
 	}
 	root = filepath.Clean(root)
+	goMod := filepath.Join(root, "go.mod")
+	if info, statErr := os.Stat(goMod); statErr != nil || info.IsDir() {
+		if statErr != nil {
+			return fmt.Errorf("project execution is unsupported by MAR V1: registered profile requires a Go module with go.mod: %w", statErr)
+		}
+		return errors.New("project execution is unsupported by MAR V1: go.mod is not a regular file")
+	}
 	observedTop, err := p.git.Run(ctx, task.ID, root, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return fmt.Errorf("registered project is not a readable Git repository: %w", err)
@@ -125,6 +136,23 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 	}
 	if strings.TrimSpace(resolved) == "" {
 		return errors.New("base revision resolved to empty Git identity")
+	}
+	return nil
+}
+
+func validateSupportedV1Authority(authority domain.Authority) error {
+	unsupported := make([]string, 0, 3)
+	if authority.NetworkAllowed {
+		unsupported = append(unsupported, "network")
+	}
+	if authority.RemoteGitWrite {
+		unsupported = append(unsupported, "remote Git write")
+	}
+	if authority.DeployAllowed {
+		unsupported = append(unsupported, "deploy")
+	}
+	if len(unsupported) > 0 {
+		return fmt.Errorf("requested authority is unsupported by MAR V1 runtime: %s", strings.Join(unsupported, ", "))
 	}
 	return nil
 }

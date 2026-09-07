@@ -17,14 +17,34 @@ type Command struct {
 	Cwd  string   `json:"cwd,omitempty"`
 }
 
+type ChangeScope string
+
+const (
+	ChangeScopeAny               ChangeScope = "any"
+	ChangeScopeDocumentationOnly ChangeScope = "documentation-only"
+)
+
 type Profile struct {
-	ID       string    `json:"id"`
-	Commands []Command `json:"commands"`
+	ID          string      `json:"id"`
+	ChangeScope ChangeScope `json:"change_scope,omitempty"`
+	Commands    []Command   `json:"commands"`
+}
+
+func (p Profile) EffectiveChangeScope() ChangeScope {
+	if p.ChangeScope == "" {
+		return ChangeScopeAny
+	}
+	return p.ChangeScope
 }
 
 func (p Profile) Validate() error {
 	if strings.TrimSpace(p.ID) == "" {
 		return errors.New("verification profile id is required")
+	}
+	switch p.EffectiveChangeScope() {
+	case ChangeScopeAny, ChangeScopeDocumentationOnly:
+	default:
+		return fmt.Errorf("verification profile change scope %q is not supported", p.ChangeScope)
 	}
 	if len(p.Commands) == 0 {
 		return errors.New("verification profile requires at least one command")
@@ -49,7 +69,7 @@ func (p Profile) Hash() (string, error) {
 	if err := p.Validate(); err != nil {
 		return "", err
 	}
-	clone := Profile{ID: strings.TrimSpace(p.ID), Commands: make([]Command, len(p.Commands))}
+	clone := Profile{ID: strings.TrimSpace(p.ID), ChangeScope: p.EffectiveChangeScope(), Commands: make([]Command, len(p.Commands))}
 	for i, command := range p.Commands {
 		clone.Commands[i] = Command{Name: strings.TrimSpace(command.Name), Args: append([]string(nil), command.Args...), Cwd: filepath.ToSlash(filepath.Clean(command.Cwd))}
 	}
@@ -92,11 +112,38 @@ func (r *Registry) Get(id string) (Profile, bool) {
 }
 
 func cloneProfile(profile Profile) Profile {
-	clone := Profile{ID: profile.ID, Commands: make([]Command, len(profile.Commands))}
+	clone := Profile{ID: profile.ID, ChangeScope: profile.ChangeScope, Commands: make([]Command, len(profile.Commands))}
 	for i, command := range profile.Commands {
 		clone.Commands[i] = Command{Name: command.Name, Args: append([]string(nil), command.Args...), Cwd: command.Cwd}
 	}
 	return clone
+}
+
+func (p Profile) ValidateChangedPaths(paths []string) error {
+	if p.EffectiveChangeScope() != ChangeScopeDocumentationOnly {
+		return nil
+	}
+	for _, changed := range paths {
+		if !isDocumentationPath(changed) {
+			return fmt.Errorf("verification profile %q only admits documentation changes; observed %q", p.ID, changed)
+		}
+	}
+	return nil
+}
+
+func isDocumentationPath(changed string) bool {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(changed)))
+	base := strings.ToLower(filepath.Base(clean))
+	switch base {
+	case "license", "notice", "authors", "contributors", "changelog":
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(clean)) {
+	case ".md", ".mdx", ".rst", ".adoc", ".asciidoc", ".txt":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Registry) IDs() []string {

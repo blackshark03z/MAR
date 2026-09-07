@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -49,6 +50,7 @@ type ownerUIBackend struct {
 	apiKeyEnv       string
 	model           string
 	reasoning       string
+	sessionToken    string
 }
 
 type ownerProjectView struct {
@@ -133,6 +135,7 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		apiKeyEnv:       strings.TrimSpace(opts.APIKeyEnv),
 		model:           strings.TrimSpace(opts.Model),
 		reasoning:       strings.TrimSpace(opts.Reasoning),
+		sessionToken:    newOwnerUIID("session"),
 	}
 	mux := backend.routes()
 	listener, err := net.Listen("tcp", opts.Listen)
@@ -183,6 +186,8 @@ func requireLoopbackListen(address string) error {
 	return nil
 }
 
+const ownerSessionHeader = "X-MAR-Owner-Token"
+
 func (b *ownerUIBackend) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", b.serveIndex)
@@ -195,7 +200,61 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{taskID}/brain-turn", b.proxyTaskRead("brain_turn"))
 	mux.HandleFunc("POST /api/tasks/{taskID}/cancel", b.cancelTask)
 	mux.HandleFunc("POST /api/tasks/{taskID}/input", b.inputTask)
-	return withOwnerUIHeaders(mux)
+	return withOwnerUIHeaders(b.withOwnerRequestBoundary(mux))
+}
+
+func (b *ownerUIBackend) withOwnerRequestBoundary(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !ownerHostAllowed(r.Host) {
+			writeOwnerError(w, http.StatusForbidden, errors.New("owner UI request host is not loopback"))
+			return
+		}
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+			contentType := strings.TrimSpace(strings.SplitN(r.Header.Get("Content-Type"), ";", 2)[0])
+			if !strings.EqualFold(contentType, "application/json") {
+				writeOwnerError(w, http.StatusUnsupportedMediaType, errors.New("owner UI mutations require application/json"))
+				return
+			}
+			provided := r.Header.Get(ownerSessionHeader)
+			if b.sessionToken == "" || subtle.ConstantTimeCompare([]byte(provided), []byte(b.sessionToken)) != 1 {
+				writeOwnerError(w, http.StatusForbidden, errors.New("owner UI session token is missing or invalid"))
+				return
+			}
+			if strings.EqualFold(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site")), "cross-site") || !ownerOriginAllowed(r) {
+				writeOwnerError(w, http.StatusForbidden, errors.New("owner UI mutation origin is not authorized"))
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func ownerHostAllowed(rawHost string) bool {
+	host := strings.TrimSpace(rawHost)
+	if host == "" {
+		return false
+	}
+	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+		host = parsedHost
+	}
+	host = strings.Trim(host, "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func ownerOriginAllowed(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	prefix := "http://"
+	if !strings.HasPrefix(strings.ToLower(origin), prefix) {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSuffix(origin[len(prefix):], "/"), r.Host)
 }
 
 func withOwnerUIHeaders(next http.Handler) http.Handler {
@@ -214,7 +273,8 @@ func (b *ownerUIBackend) serveIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(ownerUIHTML))
+	html := strings.ReplaceAll(ownerUIHTML, "__MAR_OWNER_SESSION_TOKEN__", b.sessionToken)
+	_, _ = w.Write([]byte(html))
 }
 
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
@@ -294,6 +354,10 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if !slices.Contains([]string{"P0", "P1", "P2", "P3"}, req.Priority) {
 		writeOwnerError(w, http.StatusBadRequest, errors.New("priority must be P0, P1, P2, or P3"))
+		return
+	}
+	if req.NetworkAllowed {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("network authority is not supported by MAR V1 runtime"))
 		return
 	}
 	if req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey); req.IdempotencyKey == "" {

@@ -25,7 +25,11 @@ func (s *SQLite) PersistVerificationOutcome(ctx context.Context, evidence domain
 	target := domain.TaskBlocked
 	if evidence.Verdict == domain.VerificationPass && result.Verdict == domain.ResultVerified {
 		target = domain.TaskVerified
-	} else if evidence.Verdict != domain.VerificationFail || result.Verdict != domain.ResultVerificationFailed {
+	} else if evidence.Verdict == domain.VerificationFail && result.Verdict == domain.ResultVerificationFailed {
+		target = domain.TaskBlocked
+	} else if evidence.Verdict == domain.VerificationUnverified && result.Verdict == domain.ResultUnverified {
+		target = domain.TaskBlocked
+	} else {
 		return domain.TaskResult{}, errors.New("verification/result verdict combination is invalid")
 	}
 

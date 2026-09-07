@@ -12,8 +12,17 @@ import (
 type VerificationVerdict string
 
 const (
-	VerificationPass VerificationVerdict = "PASS"
-	VerificationFail VerificationVerdict = "FAIL"
+	VerificationPass       VerificationVerdict = "PASS"
+	VerificationFail       VerificationVerdict = "FAIL"
+	VerificationUnverified VerificationVerdict = "UNVERIFIED"
+)
+
+type AcceptanceStatus string
+
+const (
+	AcceptancePass       AcceptanceStatus = "PASS"
+	AcceptanceFail       AcceptanceStatus = "FAIL"
+	AcceptanceUnverified AcceptanceStatus = "UNVERIFIED"
 )
 
 type VerificationCommandEvidence struct {
@@ -28,9 +37,22 @@ type VerificationCommandEvidence struct {
 }
 
 type AcceptanceEvidence struct {
-	Criterion    string   `json:"criterion"`
-	Passed       bool     `json:"passed"`
-	EvidenceRefs []string `json:"evidence_refs"`
+	Criterion    string           `json:"criterion"`
+	Passed       bool             `json:"passed"` // legacy compatibility; Status is authoritative when present.
+	Status       AcceptanceStatus `json:"status,omitempty"`
+	Scenario     string           `json:"scenario,omitempty"`
+	Oracle       string           `json:"oracle,omitempty"`
+	EvidenceRefs []string         `json:"evidence_refs"`
+}
+
+func (e AcceptanceEvidence) EffectiveStatus() AcceptanceStatus {
+	if e.Status != "" {
+		return e.Status
+	}
+	if e.Passed {
+		return AcceptancePass
+	}
+	return AcceptanceFail
 }
 
 type VerificationEvidence struct {
@@ -74,7 +96,10 @@ func (e VerificationEvidence) ValidateIdentity() error {
 	if len(e.Commands) == 0 || len(e.Acceptance) == 0 {
 		return errors.New("verification evidence requires commands and acceptance evaluation")
 	}
-	allPassed := true
+	allCommandsPassed := true
+	allAcceptancePassed := true
+	acceptanceUnverified := false
+	acceptanceFailed := false
 	for _, command := range e.Commands {
 		if strings.TrimSpace(command.Name) == "" || command.DurationMS < 0 {
 			return errors.New("verification command evidence is incomplete")
@@ -86,19 +111,51 @@ func (e VerificationEvidence) ValidateIdentity() error {
 		if command.Passed != (command.ExitCode == 0) {
 			return errors.New("verification command pass flag and exit code disagree")
 		}
-		allPassed = allPassed && command.Passed
+		allCommandsPassed = allCommandsPassed && command.Passed
 	}
 	for _, criterion := range e.Acceptance {
-		if strings.TrimSpace(criterion.Criterion) == "" || len(criterion.EvidenceRefs) == 0 {
-			return errors.New("acceptance evidence criterion and evidence_refs are required")
+		if strings.TrimSpace(criterion.Criterion) == "" {
+			return errors.New("acceptance evidence criterion is required")
 		}
-		allPassed = allPassed && criterion.Passed
+		status := criterion.EffectiveStatus()
+		if status != AcceptancePass && status != AcceptanceFail && status != AcceptanceUnverified {
+			return errors.New("acceptance evidence status is invalid")
+		}
+		if status == AcceptanceUnverified {
+			acceptanceUnverified = true
+			allAcceptancePassed = false
+			if len(criterion.EvidenceRefs) != 0 {
+				return errors.New("unverified acceptance evidence must not claim evidence_refs")
+			}
+			continue
+		}
+		if status == AcceptanceFail {
+			acceptanceFailed = true
+		}
+		if len(criterion.EvidenceRefs) == 0 {
+			return errors.New("verified acceptance evidence requires evidence_refs")
+		}
+		if criterion.Status != "" && (strings.TrimSpace(criterion.Scenario) == "" || strings.TrimSpace(criterion.Oracle) == "") {
+			return errors.New("criterion-specific acceptance evidence requires scenario and oracle")
+		}
+		allAcceptancePassed = allAcceptancePassed && status == AcceptancePass
 	}
-	if e.Verdict != VerificationPass && e.Verdict != VerificationFail {
-		return errors.New("verification evidence verdict must be PASS or FAIL")
+	if e.Verdict != VerificationPass && e.Verdict != VerificationFail && e.Verdict != VerificationUnverified {
+		return errors.New("verification evidence verdict must be PASS, FAIL, or UNVERIFIED")
 	}
-	if (e.Verdict == VerificationPass) != allPassed {
-		return errors.New("verification verdict does not match command/acceptance evidence")
+	switch e.Verdict {
+	case VerificationPass:
+		if !allCommandsPassed || !allAcceptancePassed {
+			return errors.New("PASS verification verdict requires all command and acceptance evidence to pass")
+		}
+	case VerificationUnverified:
+		if !allCommandsPassed || acceptanceFailed || !acceptanceUnverified {
+			return errors.New("UNVERIFIED verdict requires passing commands and at least one unverified criterion without acceptance failure")
+		}
+	case VerificationFail:
+		if allCommandsPassed && !acceptanceFailed {
+			return errors.New("FAIL verification verdict requires at least one failed command or acceptance observation")
+		}
 	}
 	if e.CreatedAt.IsZero() {
 		return errors.New("verification evidence created_at is required")
@@ -145,6 +202,7 @@ type ResultVerdict string
 const (
 	ResultVerified           ResultVerdict = "VERIFIED"
 	ResultVerificationFailed ResultVerdict = "VERIFICATION_FAILED"
+	ResultUnverified         ResultVerdict = "UNVERIFIED"
 )
 
 type ResourceSummary struct {
@@ -191,7 +249,7 @@ func (r TaskResult) ValidateIdentity() error {
 	if r.ResourceSummary.AgentTurns < 0 || r.ResourceSummary.AgentToolCalls < 0 || r.ResourceSummary.ModelTotalTokens < 0 {
 		return errors.New("task result resource summary cannot be negative")
 	}
-	if r.Verdict != ResultVerified && r.Verdict != ResultVerificationFailed {
+	if r.Verdict != ResultVerified && r.Verdict != ResultVerificationFailed && r.Verdict != ResultUnverified {
 		return errors.New("task result verdict is invalid")
 	}
 	if r.CreatedAt.IsZero() {

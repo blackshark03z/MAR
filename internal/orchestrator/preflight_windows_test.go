@@ -5,6 +5,7 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -37,6 +38,12 @@ func preflightFixture(t *testing.T, profileID string) (*store.SQLite, *service.T
 	t.Helper()
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.invalid/preflight\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -93,6 +100,56 @@ func TestPreflightValidatesGitBaseBeforeWaitingResource(t *testing.T) {
 	}
 	if len(waiting) != 1 || waiting[0].ID != task.ID {
 		t.Fatalf("state listing mismatch: %+v", waiting)
+	}
+}
+
+func TestPreflightRejectsUnsupportedAuthorityBeforeQueueing(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*domain.Authority)
+	}{
+		{name: "network", mutate: func(a *domain.Authority) { a.NetworkAllowed = true }},
+		{name: "remote-git", mutate: func(a *domain.Authority) { a.RemoteGitWrite = true }},
+		{name: "deploy", mutate: func(a *domain.Authority) { a.DeployAllowed = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, svc, baseTask, root, profiles := preflightFixture(t, "go-standard")
+			contract := baseTask.Contract
+			tc.mutate(&contract.Authority)
+			task, _, err := svc.Submit(context.Background(), "unsupported-"+tc.name, contract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := preflight.Drive(context.Background(), task.ID); err == nil {
+				t.Fatal("unsupported authority entered the resource queue")
+			}
+			got, err := s.GetTask(context.Background(), task.ID)
+			if err != nil || got.State != domain.TaskBlocked {
+				t.Fatalf("unsupported authority did not block in preflight: task=%+v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestPreflightRejectsNonGoProjectBeforeQueueing(t *testing.T) {
+	s, svc, task, root, profiles := preflightFixture(t, "go-standard")
+	if err := os.Remove(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := preflight.Drive(context.Background(), task.ID); err == nil {
+		t.Fatal("non-Go project entered the resource queue")
+	}
+	got, err := s.GetTask(context.Background(), task.ID)
+	if err != nil || got.State != domain.TaskBlocked {
+		t.Fatalf("unsupported project did not block in preflight: task=%+v err=%v", got, err)
 	}
 }
 

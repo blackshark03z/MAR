@@ -94,6 +94,9 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if err != nil {
 		return domain.TaskResult{}, err
 	}
+	if err := profile.ValidateChangedPaths(candidate.ChangedPaths); err != nil {
+		return domain.TaskResult{}, fmt.Errorf("verification profile admission rejected candidate: %w", err)
+	}
 	workspace, err := v.store.GetWorkspaceByTask(ctx, req.TaskID)
 	if err != nil {
 		return domain.TaskResult{}, err
@@ -160,17 +163,50 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	environmentStable := envErr == nil && startEnvironmentHash == endEnvironmentHash
 	candidateStable := v.assertCandidateHead(ctx, req.TaskID, candidate.Revision, true) == nil
 
-	acceptanceRefs := make([]string, 0, len(commandEvidence))
-	for i, evidence := range commandEvidence {
-		acceptanceRefs = append(acceptanceRefs, fmt.Sprintf("command:%d:%s", i+1, evidence.OutputSHA256))
+	checks := make(map[int]domain.AcceptanceCheck, len(task.Contract.AcceptanceChecks))
+	for _, check := range task.Contract.AcceptanceChecks {
+		checks[check.CriterionIndex] = check
 	}
-	acceptancePassed := allCommandsPassed && environmentStable && candidateStable
 	acceptance := make([]domain.AcceptanceEvidence, 0, len(task.Contract.Acceptance))
-	for _, criterion := range task.Contract.Acceptance {
+	acceptanceUnverified := false
+	acceptanceFailed := false
+	for i, criterion := range task.Contract.Acceptance {
+		criterion = strings.TrimSpace(criterion)
+		check, ok := checks[i+1]
+		if !ok {
+			acceptanceUnverified = true
+			acceptance = append(acceptance, domain.AcceptanceEvidence{Criterion: criterion, Status: domain.AcceptanceUnverified, EvidenceRefs: []string{}})
+			continue
+		}
+		refs := make([]string, 0, len(check.CommandIndexes))
+		status := domain.AcceptancePass
+		valid := true
+		for _, commandIndex := range check.CommandIndexes {
+			if commandIndex < 1 || commandIndex > len(commandEvidence) {
+				valid = false
+				break
+			}
+			command := commandEvidence[commandIndex-1]
+			refs = append(refs, fmt.Sprintf("command:%d:%s", commandIndex, command.OutputSHA256))
+			if !command.Passed {
+				status = domain.AcceptanceFail
+			}
+		}
+		if !valid {
+			acceptanceUnverified = true
+			acceptance = append(acceptance, domain.AcceptanceEvidence{Criterion: criterion, Status: domain.AcceptanceUnverified, Scenario: strings.TrimSpace(check.Scenario), Oracle: strings.TrimSpace(check.Oracle), EvidenceRefs: []string{}})
+			continue
+		}
+		if status == domain.AcceptanceFail {
+			acceptanceFailed = true
+		}
 		acceptance = append(acceptance, domain.AcceptanceEvidence{
-			Criterion:    strings.TrimSpace(criterion),
-			Passed:       acceptancePassed,
-			EvidenceRefs: append([]string(nil), acceptanceRefs...),
+			Criterion:    criterion,
+			Passed:       status == domain.AcceptancePass,
+			Status:       status,
+			Scenario:     strings.TrimSpace(check.Scenario),
+			Oracle:       strings.TrimSpace(check.Oracle),
+			EvidenceRefs: refs,
 		})
 	}
 
@@ -198,10 +234,32 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if !allCommandsPassed {
 		risks = append(risks, "one or more required verification commands failed")
 	}
+	if acceptanceUnverified {
+		risks = append(risks, "one or more acceptance criteria lack a valid criterion-specific scenario/oracle observation")
+	}
+	if acceptanceFailed {
+		risks = append(risks, "one or more criterion-specific acceptance observations failed")
+	}
+	if allCommandsPassed && !acceptanceFailed && (!environmentStable || !candidateStable) {
+		for i := range acceptance {
+			if acceptance[i].EffectiveStatus() == domain.AcceptancePass {
+				acceptance[i].Passed = false
+				acceptance[i].Status = domain.AcceptanceUnverified
+				acceptance[i].EvidenceRefs = []string{}
+				acceptanceUnverified = true
+			}
+		}
+	}
 
 	verdict := domain.VerificationFail
 	resultVerdict := domain.ResultVerificationFailed
-	if acceptancePassed {
+	switch {
+	case !allCommandsPassed || acceptanceFailed:
+		// A concrete command/oracle observation failed.
+	case !environmentStable || !candidateStable || acceptanceUnverified:
+		verdict = domain.VerificationUnverified
+		resultVerdict = domain.ResultUnverified
+	default:
 		verdict = domain.VerificationPass
 		resultVerdict = domain.ResultVerified
 	}
@@ -240,10 +298,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 		passFailEvidence = append(passFailEvidence, fmt.Sprintf("command:%d:%s:%s", i+1, status, command.OutputSHA256))
 	}
 	for i, criterion := range acceptance {
-		status := "FAIL"
-		if criterion.Passed {
-			status = "PASS"
-		}
+		status := string(criterion.EffectiveStatus())
 		passFailEvidence = append(passFailEvidence, fmt.Sprintf("acceptance:%d:%s", i+1, status))
 	}
 	changed := append([]string{}, candidate.ChangedPaths...)

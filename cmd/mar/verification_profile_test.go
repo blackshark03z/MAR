@@ -27,12 +27,25 @@ func TestGoDocsVerificationProfileCompilesTestsWithoutRunningHostSensitiveSuite(
 	if profile.ID != "go-docs" {
 		t.Fatalf("unexpected profile id %q", profile.ID)
 	}
+	if profile.EffectiveChangeScope() != verification.ChangeScopeDocumentationOnly {
+		t.Fatalf("go-docs must enforce documentation-only change admission: %+v", profile)
+	}
 	want := [][]string{
 		{"test", "-p", "1", "-count=1", "-run", "^$", "-timeout", "180s", "./..."},
 		{"vet", "-p", "1", "./..."},
 		{"build", "-p", "1", "./..."},
 	}
 	assertVerificationCommands(t, profile.ID, profile.Commands, goExecutable, want)
+}
+
+func TestGoDocsVerificationProfileRejectsSourcePaths(t *testing.T) {
+	profile := goDocsVerificationProfile(`C:\\toolchain\\go.exe`)
+	if err := profile.ValidateChangedPaths([]string{"README.md", "docs/guide.rst"}); err != nil {
+		t.Fatalf("documentation paths were rejected: %v", err)
+	}
+	if err := profile.ValidateChangedPaths([]string{"README.md", "cmd/mar/main.go"}); err == nil {
+		t.Fatal("go-docs admitted a source change")
+	}
 }
 
 func TestBuiltinVerificationProfilesKeepFullAndDocsProfilesDistinct(t *testing.T) {

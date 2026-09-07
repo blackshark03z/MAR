@@ -49,6 +49,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeMarkerOracleTest(t, projectRoot, "MAR E2E OK\n")
 	runGitTest(t, projectRoot, "init", "-b", "main")
 	runGitTest(t, projectRoot, "config", "user.name", "MAR E2E")
 	runGitTest(t, projectRoot, "config", "user.email", "mar-e2e@local.invalid")
@@ -228,8 +229,14 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	submit, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
 		"idempotency_key": "e2e-submit-1",
 		"contract": map[string]any{
-			"goal":                 "Create marker.txt containing MAR E2E OK.",
-			"acceptance":           []string{"marker.txt exists in the authoritative project with the requested content"},
+			"goal":       "Create marker.txt containing MAR E2E OK.",
+			"acceptance": []string{"marker.txt exists in the authoritative project with the requested content"},
+			"acceptance_checks": []any{map[string]any{
+				"criterion_index": 1,
+				"scenario":        "run the project acceptance test against the sealed candidate",
+				"oracle":          "TestMarkerAcceptance passes only when marker.txt exists with exactly MAR E2E OK content",
+				"command_indexes": []int{1},
+			}},
 			"boundaries":           []string{"Only create marker.txt; do not change existing source files."},
 			"non_goals":            []string{"No remote Git writes or deployment."},
 			"project_id":           "e2e-project",
@@ -379,6 +386,30 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	}
 }
 
+func writeMarkerOracleTest(t *testing.T, projectRoot, want string) {
+	t.Helper()
+	source := fmt.Sprintf(`package smoke
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMarkerAcceptance(t *testing.T) {
+	got, err := os.ReadFile("marker.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != %q {
+		t.Fatalf("marker content = %%q", got)
+	}
+}
+`, want)
+	if err := os.WriteFile(filepath.Join(projectRoot, "main_test.go"), []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
 		t.Skip("worker helper process")
@@ -396,6 +427,7 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeMarkerOracleTest(t, projectRoot, "MAR WEB BRAIN OK\n")
 	runGitTest(t, projectRoot, "init", "-b", "main")
 	runGitTest(t, projectRoot, "config", "user.name", "MAR Web E2E")
 	runGitTest(t, projectRoot, "config", "user.email", "mar-web-e2e@local.invalid")
@@ -471,6 +503,12 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 		"contract": map[string]any{
 			"goal":       "Create marker.txt containing MAR WEB BRAIN OK.",
 			"acceptance": []string{"marker.txt exists in the authoritative project with the requested content"},
+			"acceptance_checks": []any{map[string]any{
+				"criterion_index": 1,
+				"scenario":        "run the project acceptance test against the sealed candidate",
+				"oracle":          "TestMarkerAcceptance passes only when marker.txt exists with exactly MAR WEB BRAIN OK content",
+				"command_indexes": []int{1},
+			}},
 			"boundaries": []string{"Only create marker.txt; do not change existing source files."},
 			"non_goals":  []string{"No remote Git writes or deployment."},
 			"project_id": "web-e2e-project", "base_revision": baseRevision,

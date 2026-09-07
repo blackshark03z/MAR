@@ -275,6 +275,7 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 	if err != nil {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
 	}
+	advancedRef := false
 	if head == attempt.ExpectedHead {
 		freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, attempt.TaskID)
 		if gateErr != nil || !fresh || freshResult.ID != attempt.TaskResultID || freshResult.EvidenceID != attempt.EvidenceID {
@@ -293,6 +294,7 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 			switch observed {
 			case attempt.CandidateRevision:
 				head = observed
+				advancedRef = true
 			case attempt.ExpectedHead:
 				return attempt, domain.TaskResult{}, fmt.Errorf("integration CAS not applied: %w", updateErr)
 			default:
@@ -300,6 +302,7 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 			}
 		} else {
 			head = attempt.CandidateRevision
+			advancedRef = true
 		}
 	}
 	if head != attempt.CandidateRevision {
@@ -307,18 +310,40 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 	}
 
 	// The ref is authoritative. Synchronize the registered root only if it is
-	// still checked out on that same ref. reset --merge refuses to overwrite
-	// conflicting owner changes, so recovery can retry without data loss.
+	// still checked out on that ref. Never derive Owner-work safety from HEAD-relative
+	// cleanliness after CAS: HEAD has already advanced while the index/worktree may
+	// intentionally still represent ExpectedHead. Recovery may finalize directly if
+	// the checkout is already clean at the candidate. Otherwise, only the exact
+	// expected-base checkout is eligible for a two-tree read-tree sync that
+	// updates index/worktree from ExpectedHead to CandidateRevision without
+	// moving the already-CASed ref and refuses conflicting local changes.
 	if checkedRef, refErr := m.symbolicHead(ctx, attempt.TaskID, project.Root); refErr == nil && checkedRef == attempt.ExpectedRef {
-		if _, resetErr := m.git.Run(ctx, attempt.TaskID, project.Root, "reset", "--merge", attempt.CandidateRevision); resetErr != nil {
-			return attempt, domain.TaskResult{}, fmt.Errorf("%w: %v", ErrWorktreeSyncRequired, resetErr)
+		alreadySynced := false
+		if !advancedRef {
+			clean, cleanErr := m.projectClean(ctx, attempt.TaskID, project.Root)
+			if cleanErr != nil {
+				return attempt, domain.TaskResult{}, cleanErr
+			}
+			alreadySynced = clean
 		}
-		clean, cleanErr := m.projectClean(ctx, attempt.TaskID, project.Root)
-		if cleanErr != nil {
-			return attempt, domain.TaskResult{}, cleanErr
-		}
-		if !clean {
-			return attempt, domain.TaskResult{}, ErrWorktreeSyncRequired
+		if !alreadySynced {
+			safe, detail, safeErr := m.projectCheckoutMatchesExpectedBase(ctx, attempt.TaskID, project.Root, attempt.ExpectedHead)
+			if safeErr != nil {
+				return attempt, domain.TaskResult{}, safeErr
+			}
+			if !safe {
+				return attempt, domain.TaskResult{}, fmt.Errorf("%w: Owner checkout changed before synchronization: %s", ErrWorktreeSyncRequired, detail)
+			}
+			if _, syncErr := m.git.Run(ctx, attempt.TaskID, project.Root, "read-tree", "-m", "-u", attempt.ExpectedHead, attempt.CandidateRevision); syncErr != nil {
+				return attempt, domain.TaskResult{}, fmt.Errorf("%w: %v", ErrWorktreeSyncRequired, syncErr)
+			}
+			clean, cleanErr := m.projectClean(ctx, attempt.TaskID, project.Root)
+			if cleanErr != nil {
+				return attempt, domain.TaskResult{}, cleanErr
+			}
+			if !clean {
+				return attempt, domain.TaskResult{}, ErrWorktreeSyncRequired
+			}
 		}
 	}
 	result, err := m.store.FinalizeIntegrationApplied(ctx, attempt.ID, attempt.CandidateRevision, newID("result"), m.now().UTC())
@@ -371,6 +396,31 @@ func (m *Manager) projectClean(ctx context.Context, taskID, root string) (bool, 
 		return false, err
 	}
 	return len(out) == 0, nil
+}
+
+func (m *Manager) projectCheckoutMatchesExpectedBase(ctx context.Context, taskID, root, expectedHead string) (bool, string, error) {
+	staged, err := m.git.Run(ctx, taskID, root, "diff-index", "--cached", "--name-only", "-z", expectedHead, "--")
+	if err != nil {
+		return false, "", fmt.Errorf("inspect staged Owner work: %w", err)
+	}
+	if len(staged) != 0 {
+		return false, "staged changes are present", nil
+	}
+	unstaged, err := m.git.Run(ctx, taskID, root, "diff-files", "--name-only", "-z", "--")
+	if err != nil {
+		return false, "", fmt.Errorf("inspect unstaged Owner work: %w", err)
+	}
+	if len(unstaged) != 0 {
+		return false, "unstaged changes are present", nil
+	}
+	untracked, err := m.git.Run(ctx, taskID, root, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return false, "", fmt.Errorf("inspect untracked Owner work: %w", err)
+	}
+	if len(untracked) != 0 {
+		return false, "untracked files are present", nil
+	}
+	return true, "", nil
 }
 
 func (m *Manager) projectLock(projectID string) *sync.Mutex {

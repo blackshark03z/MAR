@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +32,10 @@ type sealerHarness struct {
 }
 
 func newSealerHarness(t *testing.T, localGitWrite bool) sealerHarness {
+	return newSealerHarnessWithAcceptanceChecks(t, localGitWrite, true)
+}
+
+func newSealerHarnessWithAcceptanceChecks(t *testing.T, localGitWrite, withAcceptanceChecks bool) sealerHarness {
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -63,7 +68,15 @@ func newSealerHarness(t *testing.T, localGitWrite bool) sealerHarness {
 		VerificationProfile: "test",
 		Priority:            "P2",
 	}
-	task, _, err := svc.Submit(ctx, "seal-task-"+base[:8], contract)
+	if withAcceptanceChecks {
+		contract.AcceptanceChecks = []domain.AcceptanceCheck{{
+			CriterionIndex: 1,
+			Scenario:       "run the selected verification profile against the sealed candidate",
+			Oracle:         "the profile's primary test command succeeds on that candidate",
+			CommandIndexes: []int{1},
+		}}
+	}
+	task, _, err := svc.Submit(ctx, fmt.Sprintf("seal-task-%s-%t", base[:8], withAcceptanceChecks), contract)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,7 +9,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,12 +45,18 @@ func (g *fakeFreshResultGate) LatestFreshResult(context.Context, string) (domain
 }
 
 type fakeIntegrationGit struct {
-	ref         string
-	head        string
-	clean       bool
-	descendant  bool
-	updateCalls int
-	resetCalls  int
+	ref                     string
+	head                    string
+	clean                   bool
+	descendant              bool
+	updateCalls             int
+	resetCalls              int
+	staged                  bool
+	unstaged                bool
+	untracked               bool
+	injectStagedAfterCAS    bool
+	injectUnstagedAfterCAS  bool
+	injectUntrackedAfterCAS bool
 }
 
 func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...string) (string, error) {
@@ -69,6 +78,21 @@ func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...
 			return "", nil
 		}
 		return "", errors.New("candidate is not a descendant")
+	case "diff-index":
+		if g.staged {
+			return "owner-staged.txt\x00", nil
+		}
+		return "", nil
+	case "diff-files":
+		if g.unstaged {
+			return "owner-unstaged.txt\x00", nil
+		}
+		return "", nil
+	case "ls-files":
+		if g.untracked {
+			return "owner-untracked.txt\x00", nil
+		}
+		return "", nil
 	case "update-ref":
 		if len(args) != 4 {
 			return "", fmt.Errorf("unexpected update-ref args: %v", args)
@@ -78,12 +102,25 @@ func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...
 		}
 		g.updateCalls++
 		g.head = args[2]
+		if g.injectStagedAfterCAS {
+			g.staged = true
+			g.clean = false
+		}
+		if g.injectUnstagedAfterCAS {
+			g.unstaged = true
+			g.clean = false
+		}
+		if g.injectUntrackedAfterCAS {
+			g.untracked = true
+			g.clean = false
+		}
 		return "", nil
-	case "reset":
-		if len(args) != 3 || args[1] != "--merge" || args[2] != g.head {
-			return "", fmt.Errorf("unexpected reset args: %v", args)
+	case "read-tree":
+		if len(args) != 5 || args[1] != "-m" || args[2] != "-u" || args[4] != g.head {
+			return "", fmt.Errorf("unexpected read-tree args: %v", args)
 		}
 		g.resetCalls++
+		g.clean = true
 		return "", nil
 	default:
 		return "", fmt.Errorf("unexpected git operation: %v", args)
@@ -314,6 +351,143 @@ func TestRecoverAfterCASBeforeFinalizeDoesNotDoubleAdvance(t *testing.T) {
 	if git.updateCalls != 0 {
 		t.Fatalf("post-CAS recovery repeated authoritative update-ref: %d", git.updateCalls)
 	}
+}
+
+func TestIntegrationStopsBeforeCheckoutMutationWhenOwnerWorkAppearsAfterCAS(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func(*fakeIntegrationGit)
+	}{
+		{name: "staged", configure: func(g *fakeIntegrationGit) { g.injectStagedAfterCAS = true }},
+		{name: "unstaged", configure: func(g *fakeIntegrationGit) { g.injectUnstagedAfterCAS = true }},
+		{name: "untracked", configure: func(g *fakeIntegrationGit) { g.injectUntrackedAfterCAS = true }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newIntegrationHarness(t)
+			defer h.store.Close()
+			attempt := prepareDispatchedAttempt(t, h)
+			git := &fakeIntegrationGit{ref: attempt.ExpectedRef, head: h.base, clean: true, descendant: true}
+			tc.configure(git)
+			gate := &fakeFreshResultGate{result: h.result, fresh: true}
+			manager, err := newManagerWithGit(h.store, gate, git)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observedAttempt, _, err := manager.RecoverAttempt(context.Background(), attempt.ID)
+			if !errors.Is(err, ErrWorktreeSyncRequired) {
+				t.Fatalf("Owner %s work did not stop synchronization: %v", tc.name, err)
+			}
+			if git.updateCalls != 1 || git.resetCalls != 0 {
+				t.Fatalf("unexpected checkout mutation after Owner %s work: update=%d sync=%d", tc.name, git.updateCalls, git.resetCalls)
+			}
+			if observedAttempt.Status != domain.IntegrationDispatched {
+				t.Fatalf("integration should remain recoverable/dispatched, got %s", observedAttempt.Status)
+			}
+		})
+	}
+}
+
+func TestTwoTreeSyncPreservesOrRefusesOwnerWork(t *testing.T) {
+	tests := []struct {
+		name       string
+		prepare    func(t *testing.T, root string)
+		wantExitOK bool
+		wantA      string
+		wantB      string
+		wantC      string
+	}{
+		{name: "staged same file", prepare: func(t *testing.T, root string) {
+			os.WriteFile(filepath.Join(root, "a.txt"), []byte("OWNER-STAGED"), 0o644)
+			runIntegrationGit(t, root, "add", "a.txt")
+		}, wantA: "OWNER-STAGED", wantB: "", wantC: "base-c"},
+		{name: "unstaged same file", prepare: func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("OWNER-UNSTAGED"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, wantA: "OWNER-UNSTAGED", wantB: "", wantC: "base-c"},
+		{name: "untracked collision", prepare: func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("OWNER-UNTRACKED"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}, wantA: "base", wantB: "OWNER-UNTRACKED", wantC: "base-c"},
+		{name: "staged different file", prepare: func(t *testing.T, root string) {
+			if err := os.WriteFile(filepath.Join(root, "c.txt"), []byte("OWNER-STAGED-OTHER"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runIntegrationGit(t, root, "add", "c.txt")
+		}, wantExitOK: true, wantA: "candidate", wantB: "candidate-b", wantC: "OWNER-STAGED-OTHER"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "project")
+			if err := os.MkdirAll(root, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			runIntegrationGit(t, root, "init", "-b", "main")
+			runIntegrationGit(t, root, "config", "user.email", "integration-race@example.invalid")
+			runIntegrationGit(t, root, "config", "user.name", "Integration Race")
+			if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("base"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "c.txt"), []byte("base-c"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runIntegrationGit(t, root, "add", "a.txt", "c.txt")
+			runIntegrationGit(t, root, "commit", "-m", "base")
+			base := strings.TrimSpace(runIntegrationGit(t, root, "rev-parse", "HEAD"))
+			if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("candidate"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("candidate-b"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runIntegrationGit(t, root, "add", "a.txt", "b.txt")
+			runIntegrationGit(t, root, "commit", "-m", "candidate")
+			candidate := strings.TrimSpace(runIntegrationGit(t, root, "rev-parse", "HEAD"))
+			runIntegrationGit(t, root, "reset", "--hard", base)
+			runIntegrationGit(t, root, "update-ref", "refs/heads/main", candidate, base)
+			tc.prepare(t, root)
+
+			cmd := exec.Command("git", "-C", root, "read-tree", "-m", "-u", base, candidate)
+			err := cmd.Run()
+			if tc.wantExitOK && err != nil {
+				t.Fatalf("safe different-file sync failed: %v", err)
+			}
+			if !tc.wantExitOK && err == nil {
+				t.Fatal("conflicting Owner work was unexpectedly overwritten")
+			}
+			read := func(name string) string {
+				data, readErr := os.ReadFile(filepath.Join(root, name))
+				if errors.Is(readErr, os.ErrNotExist) {
+					return ""
+				}
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				return string(data)
+			}
+			if got := read("a.txt"); got != tc.wantA {
+				t.Fatalf("a.txt=%q want=%q", got, tc.wantA)
+			}
+			if got := read("b.txt"); got != tc.wantB {
+				t.Fatalf("b.txt=%q want=%q", got, tc.wantB)
+			}
+			if got := read("c.txt"); got != tc.wantC {
+				t.Fatalf("c.txt=%q want=%q", got, tc.wantC)
+			}
+		})
+	}
+}
+
+func runIntegrationGit(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, out)
+	}
+	return string(out)
 }
 
 func TestIntegrateRejectsAuthoritativeBaseDrift(t *testing.T) {

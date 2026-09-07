@@ -34,6 +34,9 @@ func TestAcceptanceT8WorkerCrashDurablyBlocksRealRuntime(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "seed.txt"), []byte("seed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.invalid/mar-t8\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	runGitTest(t, projectRoot, "init", "-b", "main")
 	runGitTest(t, projectRoot, "config", "user.name", "MAR T8")
 	runGitTest(t, projectRoot, "config", "user.email", "mar-t8@local.invalid")

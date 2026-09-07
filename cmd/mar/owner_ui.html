@@ -96,8 +96,7 @@
             <label>Non-goals · one per line<textarea id="non-goals" placeholder="No deployment&#10;No unrelated refactor"></textarea></label>
             <label class="checkbox"><input id="local-file-write" type="checkbox" checked> Allow local file changes in the isolated task workspace</label>
             <label class="checkbox"><input id="local-git-write" type="checkbox" checked> Allow bounded local Git changes required by the task</label>
-            <label class="checkbox"><input id="network" type="checkbox"> Allow worker network access</label>
-            <p class="help">Remote Git writes and deployment remain disabled in this V1 surface.</p>
+            <p class="help">Network access, remote Git writes and deployment are not supported by the MAR V1 runtime and are therefore not offered here.</p>
           </div>
         </details>
         <div id="form-error" class="notice error hidden" role="alert"></div>
@@ -138,6 +137,7 @@
   </main>
 </div>
 <script>
+const ownerSessionToken = '__MAR_OWNER_SESSION_TOKEN__';
 const $ = id => document.getElementById(id);
 const terminalStates = new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED']);
 const stateOrder = {
@@ -160,7 +160,7 @@ function show(id, yes=true){ $(id).classList.toggle('hidden', !yes); }
 function fail(id, message){ $(id).textContent = message; show(id, true); }
 function clearFail(id){ $(id).textContent=''; show(id,false); }
 async function api(path, options={}){
-  const res = await fetch(path, {headers:{'Content-Type':'application/json'}, ...options});
+  const res = await fetch(path, {headers:{'Content-Type':'application/json','X-MAR-Owner-Token':ownerSessionToken}, ...options});
   let data = {};
   try { data = await res.json(); } catch (_) {}
   if(!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
@@ -204,7 +204,7 @@ $('goal-form').addEventListener('submit', async e=>{
       idempotency_key: crypto.randomUUID ? `owner-ui-${crypto.randomUUID()}` : '', project_id:p.id, base_revision:p.head,
       goal:$('goal').value.trim(), acceptance, boundaries:lines($('boundaries').value), non_goals:lines($('non-goals').value),
       verification_profile:$('verification').value, priority:$('priority').value,
-      local_file_write:$('local-file-write').checked, local_git_write:$('local-git-write').checked, network_allowed:$('network').checked
+      local_file_write:$('local-file-write').checked, local_git_write:$('local-git-write').checked, network_allowed:false
     })});
     const task=data.task; if(!task?.id) throw new Error('MAR did not return a task id.');
     taskId=task.id; $('task-id').textContent=taskId; show('idle',false); show('active',true); show('result',false); show('task-error',false); startPolling(); await refreshTask();

@@ -58,6 +58,7 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 		reasoning:       "high",
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
+	req.Host = "127.0.0.1:8787"
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -104,6 +105,7 @@ func TestOwnerUIProjectsExposeRegisteredProjectAndCurrentHead(t *testing.T) {
 
 	backend := &ownerUIBackend{db: db}
 	req := httptest.NewRequest(http.MethodGet, "/api/projects", nil)
+	req.Host = "127.0.0.1:8787"
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -122,7 +124,7 @@ func TestOwnerUIProjectsExposeRegisteredProjectAndCurrentHead(t *testing.T) {
 
 func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
 	fake := &fakeOwnerMCP{}
-	backend := &ownerUIBackend{session: fake}
+	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
 	body := []byte(`{
 		"project_id":"mar",
 		"base_revision":"abc123",
@@ -137,7 +139,10 @@ func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
 		"network_allowed":false
 	}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
@@ -158,11 +163,34 @@ func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
 	}
 }
 
+func TestOwnerUISubmitRejectsUnsupportedNetworkAuthorityBeforeMCP(t *testing.T) {
+	fake := &fakeOwnerMCP{}
+	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
+	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"go-standard","priority":"P2","network_allowed":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	if fake.name != "" {
+		t.Fatalf("unsupported network request reached MCP tool %q", fake.name)
+	}
+}
+
 func TestOwnerUISubmitRejectsUnknownVerificationProfileBeforeMCP(t *testing.T) {
 	fake := &fakeOwnerMCP{}
-	backend := &ownerUIBackend{session: fake}
+	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
 	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"skip-tests","priority":"P2"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -170,6 +198,71 @@ func TestOwnerUISubmitRejectsUnknownVerificationProfileBeforeMCP(t *testing.T) {
 	}
 	if fake.name != "" {
 		t.Fatalf("invalid request reached MCP tool %q", fake.name)
+	}
+}
+
+func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
+	validSubmit := `{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"go-standard","priority":"P2"}`
+	tests := []struct {
+		name        string
+		method      string
+		path        string
+		body        string
+		host        string
+		origin      string
+		fetchSite   string
+		contentType string
+		token       string
+		wantStatus  int
+	}{
+		{name: "foreign host get", method: http.MethodGet, path: "/api/runtime", host: "evil.example", wantStatus: http.StatusForbidden},
+		{name: "foreign origin submit", method: http.MethodPost, path: "/api/tasks", body: validSubmit, host: "127.0.0.1:8787", origin: "https://evil.example", contentType: "application/json", token: "test-owner-token", wantStatus: http.StatusForbidden},
+		{name: "cross site submit", method: http.MethodPost, path: "/api/tasks", body: validSubmit, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", fetchSite: "cross-site", contentType: "application/json", token: "test-owner-token", wantStatus: http.StatusForbidden},
+		{name: "plain text submit", method: http.MethodPost, path: "/api/tasks", body: validSubmit, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "text/plain", token: "test-owner-token", wantStatus: http.StatusUnsupportedMediaType},
+		{name: "missing token cancel", method: http.MethodPost, path: "/api/tasks/task-ui-test/cancel", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
+		{name: "invalid token input", method: http.MethodPost, path: "/api/tasks/task-ui-test/input", body: `{"message":"continue"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", token: "wrong-token", wantStatus: http.StatusForbidden},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &fakeOwnerMCP{}
+			backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			req.Host = tc.host
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+			}
+			if tc.contentType != "" {
+				req.Header.Set("Content-Type", tc.contentType)
+			}
+			if tc.token != "" {
+				req.Header.Set(ownerSessionHeader, tc.token)
+			}
+			rec := httptest.NewRecorder()
+			backend.routes().ServeHTTP(rec, req)
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if fake.name != "" {
+				t.Fatalf("unauthorized request reached MCP tool %q", fake.name)
+			}
+		})
+	}
+}
+
+func TestOwnerUISessionTokenIsEmbeddedForSameOriginClient(t *testing.T) {
+	backend := &ownerUIBackend{sessionToken: "test-owner-token"}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "127.0.0.1:8787"
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "test-owner-token") || strings.Contains(rec.Body.String(), "__MAR_OWNER_SESSION_TOKEN__") {
+		t.Fatal("owner UI did not embed the current startup session token")
 	}
 }
 

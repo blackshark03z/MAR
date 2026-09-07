@@ -18,17 +18,29 @@ type Authority struct {
 	DeployAllowed  bool `json:"deploy_allowed"`
 }
 
+// AcceptanceCheck binds one immutable acceptance criterion to the scenario/oracle
+// and concrete verification commands intended to observe it. CommandIndexes are
+// one-based indexes into the selected verification profile. Missing checks are
+// allowed for backward-compatible durable contracts but remain UNVERIFIED.
+type AcceptanceCheck struct {
+	CriterionIndex int    `json:"criterion_index"`
+	Scenario       string `json:"scenario"`
+	Oracle         string `json:"oracle"`
+	CommandIndexes []int  `json:"command_indexes"`
+}
+
 // GoalContract is immutable task intent. Material changes create a superseding task.
 type GoalContract struct {
-	Goal                string    `json:"goal"`
-	Acceptance          []string  `json:"acceptance"`
-	Boundaries          []string  `json:"boundaries"`
-	NonGoals            []string  `json:"non_goals"`
-	ProjectID           string    `json:"project_id"`
-	BaseRevision        string    `json:"base_revision"`
-	Authority           Authority `json:"authority"`
-	VerificationProfile string    `json:"verification_profile"`
-	Priority            string    `json:"priority"`
+	Goal                string            `json:"goal"`
+	Acceptance          []string          `json:"acceptance"`
+	AcceptanceChecks    []AcceptanceCheck `json:"acceptance_checks,omitempty"`
+	Boundaries          []string          `json:"boundaries"`
+	NonGoals            []string          `json:"non_goals"`
+	ProjectID           string            `json:"project_id"`
+	BaseRevision        string            `json:"base_revision"`
+	Authority           Authority         `json:"authority"`
+	VerificationProfile string            `json:"verification_profile"`
+	Priority            string            `json:"priority"`
 }
 
 func (g GoalContract) Validate() error {
@@ -41,6 +53,37 @@ func (g GoalContract) Validate() error {
 	for _, criterion := range g.Acceptance {
 		if strings.TrimSpace(criterion) == "" {
 			return errors.New("acceptance criteria cannot be blank")
+		}
+	}
+	if len(g.AcceptanceChecks) > 0 {
+		if len(g.AcceptanceChecks) != len(g.Acceptance) {
+			return errors.New("acceptance_checks must cover every acceptance criterion exactly once")
+		}
+		seen := make(map[int]struct{}, len(g.AcceptanceChecks))
+		for _, check := range g.AcceptanceChecks {
+			if check.CriterionIndex < 1 || check.CriterionIndex > len(g.Acceptance) {
+				return errors.New("acceptance check criterion_index is out of range")
+			}
+			if _, duplicate := seen[check.CriterionIndex]; duplicate {
+				return errors.New("acceptance check criterion_index must be unique")
+			}
+			seen[check.CriterionIndex] = struct{}{}
+			if strings.TrimSpace(check.Scenario) == "" || strings.TrimSpace(check.Oracle) == "" {
+				return errors.New("acceptance check scenario and oracle are required")
+			}
+			if len(check.CommandIndexes) == 0 {
+				return errors.New("acceptance check requires at least one command index")
+			}
+			seenCommand := map[int]struct{}{}
+			for _, index := range check.CommandIndexes {
+				if index <= 0 {
+					return errors.New("acceptance check command indexes must be positive")
+				}
+				if _, duplicate := seenCommand[index]; duplicate {
+					return errors.New("acceptance check command indexes must be unique")
+				}
+				seenCommand[index] = struct{}{}
+			}
 		}
 	}
 	if strings.TrimSpace(g.ProjectID) == "" {
