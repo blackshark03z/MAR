@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MAR Owner Console</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    button, input, textarea, select { font: inherit; }
+    button, input, textarea, select { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 8px; background: Canvas; color: CanvasText; }
+    button { cursor: pointer; padding: 10px 14px; font-weight: 650; }
+    button.primary { background: CanvasText; color: Canvas; border-color: CanvasText; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    input, textarea, select { width: 100%; padding: 10px 11px; }
+    textarea { min-height: 92px; resize: vertical; line-height: 1.45; }
+    label { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    header { border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; background: color-mix(in srgb, Canvas 94%, transparent); backdrop-filter: blur(10px); z-index: 2; }
+    .brand { display: flex; align-items: baseline; gap: 10px; }
+    .brand strong { font-size: 18px; letter-spacing: .02em; }
+    .muted { color: color-mix(in srgb, CanvasText 62%, transparent); }
+    .runtime { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; font-size: 12px; }
+    .badge { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 999px; padding: 5px 8px; white-space: nowrap; }
+    main { width: min(1320px, 100%); margin: 0 auto; padding: 22px; display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 22px; align-items: start; }
+    section { border-top: 2px solid CanvasText; padding-top: 14px; }
+    h1, h2, h3, p { margin-top: 0; }
+    h2 { font-size: 16px; margin-bottom: 13px; }
+    h3 { font-size: 14px; margin-bottom: 9px; }
+    .stack { display: grid; gap: 13px; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .row > * { flex: 1; }
+    .checkbox { display: flex; gap: 8px; align-items: center; font-weight: 500; }
+    .checkbox input { width: auto; }
+    .help { font-size: 12px; line-height: 1.45; color: color-mix(in srgb, CanvasText 62%, transparent); }
+    details { border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); padding-top: 10px; }
+    summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+    .workspace { display: grid; gap: 18px; }
+    .empty { min-height: 270px; display: grid; place-items: center; text-align: center; border: 1px dashed color-mix(in srgb, CanvasText 23%, transparent); border-radius: 10px; padding: 28px; }
+    .task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .task-id { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; word-break: break-all; }
+    .state { font-size: 22px; font-weight: 750; letter-spacing: -.02em; }
+    .state-raw { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
+    .notice { border-left: 3px solid CanvasText; padding: 10px 12px; background: color-mix(in srgb, CanvasText 5%, Canvas); line-height: 1.45; }
+    .notice.warning { border-left-style: double; }
+    .notice.error { border-left-width: 5px; }
+    .timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .timeline span { height: 5px; border-radius: 999px; background: color-mix(in srgb, CanvasText 12%, transparent); }
+    .timeline span.on { background: CanvasText; }
+    .result-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 18px; }
+    .metric { border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); padding-top: 8px; }
+    .metric b { display: block; margin-top: 3px; word-break: break-word; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    pre { overflow: auto; max-height: 360px; padding: 12px; border-radius: 8px; background: color-mix(in srgb, CanvasText 6%, Canvas); white-space: pre-wrap; word-break: break-word; font-size: 12px; }
+    ul { margin: 0; padding-left: 19px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .hidden { display: none !important; }
+    :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+    @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; align-items: flex-start; } .runtime { justify-content: flex-start; } .result-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="brand"><strong>MAR</strong><span class="muted">Owner Console · V1 acceptance surface</span></div>
+    <div class="runtime" id="runtime"><span class="badge">Connecting…</span></div>
+  </header>
+  <main>
+    <section aria-labelledby="goal-title">
+      <h2 id="goal-title">Run one bounded goal</h2>
+      <div id="brain-readiness" class="notice warning hidden" role="status"></div>
+      <form id="goal-form" class="stack">
+        <label>Project
+          <select id="project" required><option value="">Loading projects…</option></select>
+        </label>
+        <div class="help" id="project-meta">The selected project’s current Git HEAD becomes the task base revision.</div>
+        <label>Goal
+          <textarea id="goal" required placeholder="Describe the smallest useful software outcome to complete."></textarea>
+        </label>
+        <label>Acceptance · one criterion per line
+          <textarea id="acceptance" required placeholder="Observable result 1&#10;Observable result 2"></textarea>
+        </label>
+        <div class="row">
+          <label>Verification
+            <select id="verification"><option value="go-standard">go-standard · code</option><option value="go-docs">go-docs · docs-only</option></select>
+          </label>
+          <label>Priority
+            <select id="priority"><option>P2</option><option>P1</option><option>P3</option><option>P0</option></select>
+          </label>
+        </div>
+        <details>
+          <summary>Boundaries & authority</summary>
+          <div class="stack" style="margin-top:12px">
+            <label>Boundaries · one per line<textarea id="boundaries" placeholder="Only edit …&#10;Preserve …"></textarea></label>
+            <label>Non-goals · one per line<textarea id="non-goals" placeholder="No deployment&#10;No unrelated refactor"></textarea></label>
+            <label class="checkbox"><input id="local-file-write" type="checkbox" checked> Allow local file changes in the isolated task workspace</label>
+            <label class="checkbox"><input id="local-git-write" type="checkbox" checked> Allow bounded local Git changes required by the task</label>
+            <label class="checkbox"><input id="network" type="checkbox"> Allow worker network access</label>
+            <p class="help">Remote Git writes and deployment remain disabled in this V1 surface.</p>
+          </div>
+        </details>
+        <div id="form-error" class="notice error hidden" role="alert"></div>
+        <button class="primary" id="run" type="submit">Run goal</button>
+      </form>
+    </section>
+
+    <section aria-labelledby="activity-title">
+      <div id="idle" class="empty">
+        <div><h2 id="activity-title">No active goal</h2><p class="muted">Choose a project, define observable acceptance, then run. MAR will own execution, verification and integration.</p></div>
+      </div>
+      <div id="active" class="workspace hidden" aria-live="polite">
+        <div class="task-head">
+          <div><div class="muted" style="font-size:12px">Current task</div><div class="task-id" id="task-id"></div></div>
+          <div class="actions"><button id="refresh" type="button">Refresh</button><button id="cancel" type="button">Cancel</button></div>
+        </div>
+        <div>
+          <div class="state" id="state-label">Starting…</div>
+          <div class="state-raw muted" id="state-raw"></div>
+        </div>
+        <div class="timeline" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+        <div id="state-detail" class="notice"></div>
+        <div id="brain-notice" class="notice warning hidden"></div>
+        <div id="human-input" class="stack hidden">
+          <label>MAR needs your input<textarea id="input-message" placeholder="Provide the missing fact or choice only."></textarea></label>
+          <button id="send-input" type="button">Send input</button>
+        </div>
+        <div id="task-error" class="notice error hidden" role="alert"></div>
+        <div id="result" class="stack hidden">
+          <h2>Result</h2>
+          <div class="result-grid" id="result-grid"></div>
+          <div><h3>Changed areas</h3><ul id="changed"></ul></div>
+          <div><h3>Evidence</h3><ul id="evidence"></ul></div>
+          <details><summary>Full inspection</summary><pre id="inspect"></pre></details>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+const terminalStates = new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED']);
+const stateOrder = {
+  SUBMITTED:0, PREFLIGHT:0, WAITING_RESOURCE:1, WORKSPACE_READY:1,
+  RUNNING:2, INPUT_REQUIRED:2, RETRY_WAIT:2, VERIFYING:3, REVIEWING:3,
+  READY_TO_INTEGRATE:4, INTEGRATING:4, VERIFIED:4, COMPLETE:5,
+  BLOCKED:5, FAILED:5, CANCELLED:5
+};
+const stateNames = {
+  SUBMITTED:'Goal received', PREFLIGHT:'Checking prerequisites', WAITING_RESOURCE:'Waiting for workstation capacity', WORKSPACE_READY:'Workspace ready',
+  RUNNING:'Working on the goal', INPUT_REQUIRED:'Input required', RETRY_WAIT:'Waiting to retry', VERIFYING:'Checking the candidate', REVIEWING:'Reviewing result',
+  READY_TO_INTEGRATE:'Ready to integrate', INTEGRATING:'Integrating safely', VERIFIED:'Verified', COMPLETE:'Complete', BLOCKED:'Blocked', FAILED:'Failed', CANCELLED:'Cancelled'
+};
+let projects = [];
+let taskId = '';
+let pollTimer = null;
+let runtime = null;
+function lines(value){ return value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); }
+function show(id, yes=true){ $(id).classList.toggle('hidden', !yes); }
+function fail(id, message){ $(id).textContent = message; show(id, true); }
+function clearFail(id){ $(id).textContent=''; show(id,false); }
+async function api(path, options={}){
+  const res = await fetch(path, {headers:{'Content-Type':'application/json'}, ...options});
+  let data = {};
+  try { data = await res.json(); } catch (_) {}
+  if(!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
+  return data;
+}
+async function loadRuntime(){
+  runtime = await api('/api/runtime');
+  $('runtime').innerHTML = `<span class="badge">brain: ${runtime.brain_mode}</span><span class="badge">model: ${runtime.model || 'default'}</span><span class="badge">reasoning: ${runtime.reasoning || 'default'}</span>`;
+  const readiness = $('brain-readiness');
+  if(runtime.web_brain_requires_mcp_client){
+    $('runtime').insertAdjacentHTML('beforeend','<span class="badge">GPT Web client required for brain turns</span>');
+    readiness.className='notice warning';
+    readiness.textContent=`Brain readiness: Web mode needs an MCP-capable ChatGPT client. ${runtime.brain_next_action || ''}`;
+    show('brain-readiness', true);
+  } else {
+    readiness.className = runtime.provider_ready ? 'notice' : 'notice error';
+    readiness.textContent = `Brain readiness: ${runtime.brain_next_action || (runtime.provider_ready ? 'Provider configured.' : 'Provider configuration required.')}`;
+    show('brain-readiness', true);
+  }
+}
+async function loadProjects(){
+  const data = await api('/api/projects'); projects = data.projects || [];
+  $('project').innerHTML = projects.length ? '<option value="">Select a registered project</option>' + projects.map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('') : '<option value="">No registered projects</option>';
+  $('run').disabled = !projects.length;
+}
+function esc(v){ const d=document.createElement('div'); d.textContent=v ?? ''; return d.innerHTML; }
+$('project').addEventListener('change',()=>{
+  const p=projects.find(x=>x.id===$('project').value);
+  if(!p){ $('project-meta').textContent='The selected project’s current Git HEAD becomes the task base revision.'; return; }
+  $('project-meta').textContent = p.head ? `${p.root} · HEAD ${p.head.slice(0,12)}` : `${p.root} · HEAD unavailable: ${p.head_error || 'unknown error'}`;
+  $('run').disabled = !p.head;
+});
+$('goal-form').addEventListener('submit', async e=>{
+  e.preventDefault(); clearFail('form-error');
+  const p=projects.find(x=>x.id===$('project').value);
+  if(!p || !p.head) return fail('form-error','Select a registered project with a readable Git HEAD.');
+  const acceptance=lines($('acceptance').value); if(!acceptance.length) return fail('form-error','Add at least one observable acceptance criterion.');
+  $('run').disabled=true; $('run').textContent='Submitting…';
+  try{
+    const data=await api('/api/tasks',{method:'POST',body:JSON.stringify({
+      idempotency_key: crypto.randomUUID ? `owner-ui-${crypto.randomUUID()}` : '', project_id:p.id, base_revision:p.head,
+      goal:$('goal').value.trim(), acceptance, boundaries:lines($('boundaries').value), non_goals:lines($('non-goals').value),
+      verification_profile:$('verification').value, priority:$('priority').value,
+      local_file_write:$('local-file-write').checked, local_git_write:$('local-git-write').checked, network_allowed:$('network').checked
+    })});
+    const task=data.task; if(!task?.id) throw new Error('MAR did not return a task id.');
+    taskId=task.id; $('task-id').textContent=taskId; show('idle',false); show('active',true); show('result',false); show('task-error',false); startPolling(); await refreshTask();
+  }catch(err){ fail('form-error',err.message); }
+  finally{ $('run').disabled=false; $('run').textContent='Run goal'; }
+});
+function startPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=setInterval(refreshTask,1200); }
+async function refreshTask(){
+  if(!taskId) return;
+  try{
+    const data=await api(`/api/tasks/${encodeURIComponent(taskId)}/status`); const s=data.status || {}; const t=s.task || {}; const state=(t.state || '').toUpperCase();
+    $('state-label').textContent=stateNames[state] || state || 'Unknown state'; $('state-raw').textContent=state;
+    const index=stateOrder[state] ?? 0; document.querySelectorAll('.timeline span').forEach((el,i)=>el.classList.toggle('on', i < Math.min(index+1,5)));
+    $('state-detail').textContent=s.detail || s.state_detail || s.next_action || 'MAR is progressing this task.';
+    $('cancel').disabled=terminalStates.has(state);
+    const brain=!!s.brain_turn_available;
+    show('brain-notice', brain);
+    if(brain){ $('brain-notice').textContent='This task is waiting for a GPT Web brain turn. Connect an MCP-capable ChatGPT client to this MAR database to answer it. This owner console will not fabricate or bypass GPT Web cognition.'; }
+    show('human-input', state==='INPUT_REQUIRED' && !brain);
+    if(terminalStates.has(state)){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} await loadOutcome(state); }
+  }catch(err){ fail('task-error',err.message); }
+}
+async function loadOutcome(state){
+  try{
+    const [r,i]=await Promise.all([api(`/api/tasks/${encodeURIComponent(taskId)}/result`),api(`/api/tasks/${encodeURIComponent(taskId)}/inspect`)]);
+    const result=r.result || null; show('result',true);
+    const grid=$('result-grid'); grid.innerHTML='';
+    const metrics = result ? [['Verdict',result.verdict],['Integration',result.integration_status],['Final revision',result.final_revision],['Workspace',result.workspace_disposition]] : [['Outcome',state],['Technical result','No result available']];
+    for(const [k,v] of metrics){ const d=document.createElement('div'); d.className='metric'; d.innerHTML=`<span class="muted">${esc(k)}</span><b>${esc(v || '—')}</b>`; grid.appendChild(d); }
+    $('changed').innerHTML=(result?.changed_areas || []).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>None reported</li>';
+    $('evidence').innerHTML=(result?.pass_fail_evidence || []).map(x=>`<li><code>${esc(x)}</code></li>`).join('') || '<li>No result evidence available</li>';
+    $('inspect').textContent=JSON.stringify(i,null,2);
+  }catch(err){ fail('task-error',`Outcome inspection failed: ${err.message}`); }
+}
+$('refresh').addEventListener('click',refreshTask);
+$('cancel').addEventListener('click',async()=>{ if(!taskId || !confirm('Request cancellation for this task?')) return; try{await api(`/api/tasks/${encodeURIComponent(taskId)}/cancel`,{method:'POST',body:'{}'}); await refreshTask();}catch(err){fail('task-error',err.message);} });
+$('send-input').addEventListener('click',async()=>{ const message=$('input-message').value.trim(); if(!message) return; try{await api(`/api/tasks/${encodeURIComponent(taskId)}/input`,{method:'POST',body:JSON.stringify({message})}); $('input-message').value=''; await refreshTask();}catch(err){fail('task-error',err.message);} });
+Promise.all([loadRuntime(),loadProjects()]).catch(err=>fail('form-error',err.message));
+</script>
+</body>
+</html>

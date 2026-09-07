@@ -393,6 +393,32 @@ func (s *SQLite) GetProject(ctx context.Context, id string) (domain.Project, err
 	return p, nil
 }
 
+func (s *SQLite) ListProjects(ctx context.Context) ([]domain.Project, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, root, created_at FROM projects ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list projects: %w", err)
+	}
+	defer rows.Close()
+
+	projects := make([]domain.Project, 0)
+	for rows.Next() {
+		var p domain.Project
+		var created string
+		if err := rows.Scan(&p.ID, &p.Root, &created); err != nil {
+			return nil, fmt.Errorf("scan project: %w", err)
+		}
+		p.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			return nil, fmt.Errorf("parse project created_at: %w", err)
+		}
+		projects = append(projects, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate projects: %w", err)
+	}
+	return projects, nil
+}
+
 // SubmitTask is idempotent on idempotency_key. The same key + same contract
 // returns the original task; the same key + different contract is rejected.
 func (s *SQLite) SubmitTask(ctx context.Context, task domain.Task) (domain.Task, bool, error) {

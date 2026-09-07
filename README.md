@@ -46,6 +46,28 @@ mar mcp-stdio -db <data-root>/mar.db -data-root <data-root> -brain web
 
 5. After completion, use `result` for the revision-bound verification/integration result and `inspect` for the full task, workspace, attempt, checkpoint, control, evidence, and pending-brain state.
 
+## Owner Console / hands-on V1 UAT
+
+The local Owner Console is the minimum V1 surface for personally running and judging the MAR journey. It listens on loopback only and remains a client of the same MAR MCP/task authority.
+
+For GPT Web brain mode:
+
+```text
+mar ui -db <data-root>/mar.db -data-root <data-root> -brain web
+```
+
+Then open `http://127.0.0.1:8787`. Web mode requires an MCP-capable ChatGPT client connected to the same MAR runtime for brain turns; the console surfaces this prerequisite before Run and never fabricates cognition when the bridge is absent.
+
+For unattended provider-backed cognition, configure the provider URL, API-key environment variable and model, then launch:
+
+```text
+mar ui -db <data-root>/mar.db -data-root <data-root> -brain provider -provider-base-url <provider-url> -api-key-env OPENAI_API_KEY -model <model>
+```
+
+The API key value remains in the named environment variable; the console does not display it.
+
+Hands-on UAT is intentionally one path: select a registered project -> enter one bounded Goal and observable acceptance -> Run -> follow meaningful state/next action -> provide real input if requested -> inspect verification/integration result and evidence -> accept or reject the experience. Engineering PASS alone is not Owner Product Acceptance.
+
 ## Verification profiles
 
 `go-standard` runs the full sequential Go test/vet/build profile inside the enforced worker sandbox. Use it for ordinary code Goals whose repository tests are compatible with that sandbox.

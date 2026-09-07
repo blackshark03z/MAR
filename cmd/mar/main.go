@@ -148,6 +148,37 @@ func run(ctx context.Context, args []string) error {
 			MaxWorkers:      *maxWorkers,
 		})
 
+	case "ui":
+		fs := flag.NewFlagSet("ui", flag.ContinueOnError)
+		dbPath := fs.String("db", defaultDB, "SQLite database path")
+		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
+		listen := fs.String("listen", "127.0.0.1:8787", "loopback address for the local owner UI")
+		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: provider or web")
+		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
+		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
+		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
+		reasoning := fs.String("reasoning", envOrDefault("MAR_REASONING_EFFORT", "high"), "agent reasoning effort")
+		goPath := fs.String("go", defaultGoExecutable(), "Go executable used by built-in verification profiles")
+		maxWorkers := fs.Int("max-workers", 2, "maximum concurrent MAR worker processes")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if strings.TrimSpace(*modelName) == "" && strings.EqualFold(strings.TrimSpace(*brainMode), string(worker.BrainWeb)) {
+			*modelName = "gpt-5.6-sol"
+		}
+		return runOwnerUI(ctx, ownerUIOptions{
+			DBPath:          *dbPath,
+			DataRoot:        *dataRoot,
+			Listen:          *listen,
+			BrainMode:       *brainMode,
+			ProviderBaseURL: *providerBaseURL,
+			APIKeyEnv:       *apiKeyEnv,
+			Model:           *modelName,
+			Reasoning:       *reasoning,
+			GoPath:          *goPath,
+			MaxWorkers:      *maxWorkers,
+		})
+
 	case "worker-run":
 		return worker.RunChild(ctx, os.Stdin, os.Stdout)
 
@@ -474,5 +505,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|sandbox-host-check|sandbox-host-prepare> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|sandbox-host-check|sandbox-host-prepare> [options]")
 }
