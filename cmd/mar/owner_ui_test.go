@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -74,8 +75,8 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 	if payload["provider_ready"] != true {
 		t.Fatalf("expected configured provider alternative, got %#v", payload)
 	}
-	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "MCP-capable client") || !strings.Contains(rec.Body.String(), "REMOTE_BRIDGE_REQUIRED") {
-		t.Fatalf("missing actionable brain guidance: %#v", payload)
+	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "remote MCP bridge") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "REMOTE_BRIDGE_REQUIRED") {
+		t.Fatalf("missing actionable Web MCP guidance: %#v", payload)
 	}
 	if strings.Contains(rec.Body.String(), "super-secret-value") {
 		t.Fatal("runtime response leaked provider API key value")
@@ -228,6 +229,7 @@ func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
 		{name: "missing token project add", method: http.MethodPost, path: "/api/projects", body: `{"root":"D:\\\\MAR"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token policy", method: http.MethodPost, path: "/api/projects/mar/policy", body: `{"local_file_write":true,"local_git_write":true}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token feedback", method: http.MethodPost, path: "/api/tasks/task-ui-test/feedback", body: `{"verdict":"COMMENT","message":"note"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
+		{name: "missing token web bridge start", method: http.MethodPost, path: "/api/connections/web-bridge/start", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -256,6 +258,51 @@ func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
 				t.Fatalf("unauthorized request reached MCP tool %q", fake.name)
 			}
 		})
+	}
+}
+
+func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(db), t.TempDir())
+	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
+	var stopped atomic.Bool
+	fakeDone := make(chan error)
+	manager.startTunnel = func(_ context.Context, _ string, localURL string) (string, func() error, <-chan error, error) {
+		return localURL, func() error { stopped.Store(true); return nil }, fakeDone, nil
+	}
+	defer manager.Close()
+	backend := &ownerUIBackend{db: db, svc: service.NewTaskService(db), bridge: manager, brainMode: "web", sessionToken: "test-owner-token"}
+
+	post := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{}`))
+		req.Host = "127.0.0.1:8787"
+		req.Header.Set("Origin", "http://127.0.0.1:8787")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(ownerSessionHeader, "test-owner-token")
+		rec := httptest.NewRecorder()
+		backend.routes().ServeHTTP(rec, req)
+		return rec
+	}
+	start := post("/api/connections/web-bridge/start")
+	if start.Code != http.StatusOK || !strings.Contains(start.Body.String(), "/mcp/") || !strings.Contains(start.Body.String(), "LINK_READY") {
+		t.Fatalf("start bridge failed: status=%d body=%s", start.Code, start.Body.String())
+	}
+	runtimeReq := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
+	runtimeReq.Host = "127.0.0.1:8787"
+	runtimeRec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(runtimeRec, runtimeReq)
+	if runtimeRec.Code != http.StatusOK || !strings.Contains(runtimeRec.Body.String(), "claude-web") || !strings.Contains(runtimeRec.Body.String(), "LINK_READY") || !strings.Contains(runtimeRec.Body.String(), "/mcp/") {
+		t.Fatalf("active bridge missing from runtime metadata: status=%d body=%s", runtimeRec.Code, runtimeRec.Body.String())
+	}
+	stop := post("/api/connections/web-bridge/stop")
+	if stop.Code != http.StatusOK || !stopped.Load() || strings.Contains(stop.Body.String(), "public_url\":\"http") {
+		t.Fatalf("stop bridge did not revoke public URL: status=%d stopped=%v body=%s", stop.Code, stopped.Load(), stop.Body.String())
 	}
 }
 

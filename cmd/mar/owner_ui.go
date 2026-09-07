@@ -58,6 +58,7 @@ type ownerUIBackend struct {
 	goPath          string
 	maxWorkers      int
 	sessionToken    string
+	bridge          *remoteBridgeManager
 }
 
 type ownerProjectView struct {
@@ -102,14 +103,17 @@ type ownerTaskView struct {
 }
 
 type ownerConnectionView struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Status      string   `json:"status"`
-	Transport   string   `json:"transport"`
-	Summary     string   `json:"summary"`
-	Command     string   `json:"command,omitempty"`
-	Args        []string `json:"args,omitempty"`
-	SetupAction string   `json:"setup_action,omitempty"`
+	ID            string     `json:"id"`
+	Name          string     `json:"name"`
+	Status        string     `json:"status"`
+	Transport     string     `json:"transport"`
+	Summary       string     `json:"summary"`
+	Command       string     `json:"command,omitempty"`
+	Args          []string   `json:"args,omitempty"`
+	SetupAction   string     `json:"setup_action,omitempty"`
+	ConnectionURL string     `json:"connection_url,omitempty"`
+	TemporaryLink bool       `json:"temporary_link,omitempty"`
+	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
 }
 
 type ownerSubmitRequest struct {
@@ -194,6 +198,8 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		maxWorkers:      opts.MaxWorkers,
 		sessionToken:    newOwnerUIID("session"),
 	}
+	backend.bridge = newRemoteBridgeManager(ctx, backend.svc, opts.DataRoot)
+	defer backend.bridge.Close()
 	mux := backend.routes()
 	listener, err := net.Listen("tcp", opts.Listen)
 	if err != nil {
@@ -249,6 +255,8 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", b.serveIndex)
 	mux.HandleFunc("GET /api/runtime", b.serveRuntime)
+	mux.HandleFunc("POST /api/connections/web-bridge/start", b.startWebBridge)
+	mux.HandleFunc("POST /api/connections/web-bridge/stop", b.stopWebBridge)
 	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
 	mux.HandleFunc("POST /api/projects", b.addProject)
@@ -356,18 +364,68 @@ func (b *ownerUIBackend) downloadClaudeDesktopPackage(w http.ResponseWriter, _ *
 	_, _ = w.Write(payload)
 }
 
+func (b *ownerUIBackend) startWebBridge(w http.ResponseWriter, _ *http.Request) {
+	if b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
+		return
+	}
+	state, err := b.bridge.Start()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": state})
+}
+
+func (b *ownerUIBackend) stopWebBridge(w http.ResponseWriter, _ *http.Request) {
+	if b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
+		return
+	}
+	if err := b.bridge.Stop(); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
+}
+
+func (b *ownerUIBackend) currentBridgeState() remoteBridgeState {
+	if b.bridge == nil {
+		return remoteBridgeState{Status: "REMOTE_BRIDGE_REQUIRED", Provider: "external", TemporaryLink: true}
+	}
+	return b.bridge.State()
+}
+
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
+	bridge := b.currentBridgeState()
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "Use an MCP-capable client. Claude Desktop can install the local MAR MCP package; cloud ChatWeb clients require a supported remote MCP/tunnel path."
+		switch bridge.Status {
+		case "CONNECTED":
+			nextAction = "A remote MCP session has initialized successfully. Tech Lead Web can submit and control bounded MAR tasks."
+		case "LINK_READY":
+			nextAction = "Temporary remote MCP link is ready. Add it as a custom connector in Claude Web, then enable it in the conversation."
+		case "READY_TO_START":
+			nextAction = "Start a temporary Web MCP link from Connections, then add that URL to Claude Web as a custom connector."
+		case "BRIDGE_RUNTIME_MISSING":
+			nextAction = "Remote MCP needs the cloudflared tunnel runtime before MAR can generate a temporary Claude Web link."
+		default:
+			nextAction = "Cloud ChatWeb needs a supported remote MCP bridge. Local stdio remains available for desktop MCP clients."
+		}
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
 	}
 	stdioArgs := b.webStdioArgs()
+	remoteStatus := bridge.Status
+	remoteAction := "START_WEB_LINK"
+	if bridge.PublicURL != "" {
+		remoteAction = "STOP_WEB_LINK"
+	}
 	connections := []ownerConnectionView{
-		{ID: "claude-desktop", Name: "Claude Desktop / local MCP client", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Download the candidate-bound MCPB package and install it in Claude Desktop. No API key is embedded in the package.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"},
-		{ID: "chatgpt", Name: "ChatGPT", Status: "REMOTE_BRIDGE_REQUIRED", Transport: "remote-mcp", Summary: "This MAR build is local/stdio. ChatGPT cloud cannot be labeled connected until a supported remote MCP or Secure MCP Tunnel path is configured and observed. Full write MCP also depends on the ChatGPT plan/workspace capability."},
+		{ID: "claude-web", Name: "Claude Web", Status: remoteStatus, Transport: "streamable-http", Summary: "Primary Web path. Start a temporary capability URL, add it under Claude Customize → Connectors → Add custom connector, then enable it for the conversation. The URL is a secret and is revoked when the bridge stops.", SetupAction: remoteAction, ConnectionURL: bridge.PublicURL, TemporaryLink: bridge.TemporaryLink, LastSeenAt: bridge.LastSeenAt},
+		{ID: "chatgpt-web", Name: "ChatGPT Web", Status: remoteStatus, Transport: "streamable-http", Summary: "Uses the same remote MCP endpoint when the ChatGPT account/workspace supports custom remote MCP write tools. MAR does not label plan capability as connected without an observed MCP session.", ConnectionURL: bridge.PublicURL, TemporaryLink: bridge.TemporaryLink, LastSeenAt: bridge.LastSeenAt},
+		{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web. A candidate-bound MCPB package is available for desktop use.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"},
 	}
 	providerStatus := "NOT_CONFIGURED"
 	if providerReady {
@@ -381,6 +439,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		"provider_ready":                providerReady,
 		"web_brain_requires_mcp_client": b.brainMode == "web",
 		"brain_next_action":             nextAction,
+		"remote_bridge":                 bridge,
 		"connections":                   connections,
 	})
 }

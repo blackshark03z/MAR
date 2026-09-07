@@ -70,6 +70,8 @@
     .feedback-history { display:grid; gap:7px; font-size:13px; }
     .feedback-item { border-left:2px solid color-mix(in srgb, CanvasText 28%, transparent); padding-left:9px; }
     .connection-command { margin-top:10px; }
+    .connection-url { display:block; margin-top:8px; padding:10px; border-radius:8px; background:color-mix(in srgb, CanvasText 6%, Canvas); word-break:break-all; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+    .secret-note { font-size:12px; margin-top:7px; }
     .danger { border-color:color-mix(in srgb, CanvasText 38%, transparent); }
     summary { cursor:pointer; font-weight:650; }
     :focus-visible { outline:3px solid Highlight; outline-offset:2px; }
@@ -139,7 +141,7 @@
   </section>
 
   <section id="view-connections" class="view">
-    <div class="intro"><h2>Kết nối AI</h2><p class="muted">MAR chỉ hiển thị capability thực. “Có hướng dẫn cấu hình” không đồng nghĩa “đã connected”.</p></div>
+    <div class="intro"><h2>Kết nối AI</h2><p class="muted">Claude Web là Web path chính: tạo một remote MCP URL tạm thời, thêm URL đó vào Custom Connector rồi bật connector trong chat. MAR chỉ coi là có phiên MCP sau khi thực sự quan sát <code>initialize</code>. Claude Desktop chỉ là tùy chọn local.</p></div>
     <div id="connection-summary" class="notice warn"></div>
     <div id="connection-list" class="connection-list" style="margin-top:16px"></div>
   </section>
@@ -183,16 +185,35 @@ async function loadRuntime(){
 function renderConnections(items){
   const host=$('connection-list'); host.innerHTML='';
   for(const c of items){
-    const ready=c.status==='READY'; const local=c.status==='AVAILABLE_LOCAL';
+    const ready=['READY','AVAILABLE_LOCAL','CONNECTED','LINK_READY'].includes(c.status);
     const card=document.createElement('div');card.className='card';
     const config=(c.command&&c.args)?JSON.stringify({command:c.command,args:c.args},null,2):'';
-    const packageAction=c.setup_action==='DOWNLOAD_MCPB'?`<div class="actions" style="margin-top:10px"><button type="button" data-package class="primary">Tải gói cài Claude Desktop (.mcpb)</button></div>`:'';
-    card.innerHTML=`<div class="card-head"><div><h3>${esc(c.name)}</h3><div class="muted">${esc(c.transport)}</div></div><span class="chip">${esc(c.status)}</span></div><p>${esc(c.summary)}</p>${packageAction}${config?`<details class="connection-command"><summary>Cấu hình local MCP nâng cao</summary><pre>${esc(config)}</pre><button type="button" data-copy>Sao chép cấu hình</button></details>`:''}`;
-    if(ready||local) card.dataset.ready='true'; host.appendChild(card);
+    const webStart=c.setup_action==='START_WEB_LINK'?`<button type="button" data-bridge-start class="primary">Tạo link kết nối Web</button>`:'';
+    const webStop=c.setup_action==='STOP_WEB_LINK'?`<button type="button" data-bridge-stop>Dừng & thu hồi link</button>`:'';
+    const packageAction=c.setup_action==='DOWNLOAD_MCPB'?`<button type="button" data-package>Tạo gói Claude Desktop (.mcpb)</button>`:'';
+    const urlBlock=c.connection_url?`<div class="connection-url" data-url>${esc(c.connection_url)}</div><div class="actions" style="margin-top:8px"><button type="button" data-copy-url>Sao chép MCP URL</button></div>${c.temporary_link?'<div class="muted secret-note">Link tạm thời · coi như mật khẩu. Dừng bridge hoặc đóng MAR Console sẽ thu hồi link.</div>':''}`:'';
+    const seen=c.last_seen_at?`<div class="muted" style="font-size:12px;margin-top:8px">MCP traffic gần nhất: ${fmtTime(c.last_seen_at)}</div>`:'';
+    const actions=(webStart||webStop||packageAction)?`<div class="actions" style="margin-top:10px">${webStart}${webStop}${packageAction}</div>`:'';
+    card.innerHTML=`<div class="card-head"><div><h3>${esc(c.name)}</h3><div class="muted">${esc(c.transport)}</div></div><span class="chip">${esc(c.status)}</span></div><p>${esc(c.summary)}</p>${urlBlock}${seen}${actions}${config?`<details class="connection-command"><summary>Cấu hình local MCP nâng cao</summary><pre>${esc(config)}</pre><button type="button" data-copy-config>Sao chép cấu hình</button></details>`:''}`;
+    if(ready) card.dataset.ready='true'; host.appendChild(card);
+    const start=card.querySelector('[data-bridge-start]'); if(start) start.addEventListener('click',()=>startWebBridge(start));
+    const stop=card.querySelector('[data-bridge-stop]'); if(stop) stop.addEventListener('click',()=>stopWebBridge(stop));
     const packageButton=card.querySelector('[data-package]'); if(packageButton) packageButton.addEventListener('click',()=>downloadClaudePackage(packageButton));
-    const copy=card.querySelector('[data-copy]'); if(copy) copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(config);copy.textContent='Đã sao chép';}catch{copy.textContent='Không thể sao chép tự động';}});
+    const copyURL=card.querySelector('[data-copy-url]'); if(copyURL) copyURL.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(c.connection_url);copyURL.textContent='Đã sao chép URL';}catch{copyURL.textContent='Không thể sao chép tự động';}});
+    const copyConfig=card.querySelector('[data-copy-config]'); if(copyConfig) copyConfig.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(config);copyConfig.textContent='Đã sao chép';}catch{copyConfig.textContent='Không thể sao chép tự động';}});
   }
   if(!items.length) host.innerHTML='<div class="empty">Không có connection metadata.</div>';
+}
+
+async function startWebBridge(button){
+  const original=button.textContent; button.disabled=true; button.textContent='Đang tạo link…';
+  try{await api('/api/connections/web-bridge/start',{method:'POST',body:'{}'});await loadRuntime();}
+  catch(err){alert(err.message);button.disabled=false;button.textContent=original;}
+}
+async function stopWebBridge(button){
+  const original=button.textContent; button.disabled=true; button.textContent='Đang thu hồi…';
+  try{await api('/api/connections/web-bridge/stop',{method:'POST',body:'{}'});await loadRuntime();}
+  catch(err){alert(err.message);button.disabled=false;button.textContent=original;}
 }
 
 async function downloadClaudePackage(button){

@@ -36,7 +36,7 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 
 ## Current P1 product work
 
-- Connection capability/readiness metadata implemented for local MCP, ChatGPT bridge requirement and provider mode without false connected state.
+- Claude Web remote MCP is now the primary Web connection path. Secure token-bound Streamable HTTP, temporary outbound tunnel lifecycle, public-readiness health probe, Start/Stop/Copy URL Console controls, and observed `initialize`/`tools/list` telemetry are implemented without a second coordinator. Public internet E2E has listed exactly the nine MAR task tools through a real `trycloudflare.com` URL. Claude Desktop is optional only.
 - Add Project + project readiness + durable project-level local file/local Git policy implemented and enforced by preflight.
 - Current/recent task continuity + attention queue implemented from the same SQLite task truth.
 - Durable Owner feedback implemented and bound to exact result/candidate; acceptance is rejected before a verified integrated result exists.
@@ -69,4 +69,4 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 
 # Current Safe Action
 
-Converge the typed acceptance-observation correction with full repository test/vet/build/diff-check, checkpoint it separately, then build a clean candidate. Run the representative Owner real-use/self-hosting Goal only after this verifier gate is green. Claude Desktop local MCP packaging is implemented; installing Claude Desktop itself is currently an external Administrator/UAC prerequisite on this Windows host and must not be bypassed. ChatGPT cloud remains truthful as remote-MCP/Secure-MCP-Tunnel capability dependent rather than falsely labeled connected.
+Converge the Claude-Web remote MCP slice with rendered Console review and full repository test/vet/build/diff-check, then checkpoint it separately. Build a clean candidate from that commit and run one representative Goal end-to-end through the public remote MCP URL (submit -> Web brain turns -> worker -> typed verification -> integration -> result), not merely tools/list. After that, launch the clean Owner Console for the owner to connect Claude Web and perform the final human journey/UAT. ChatGPT Web remains capability/plan dependent and must not be falsely labeled connected.
