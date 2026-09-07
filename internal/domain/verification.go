@@ -206,9 +206,11 @@ const (
 )
 
 type ResourceSummary struct {
-	AgentTurns       int   `json:"agent_turns,omitempty"`
-	AgentToolCalls   int   `json:"agent_tool_calls,omitempty"`
-	ModelTotalTokens int64 `json:"model_total_tokens,omitempty"`
+	AgentTurns        int   `json:"agent_turns,omitempty"`
+	AgentToolCalls    int   `json:"agent_tool_calls,omitempty"`
+	ModelInputTokens  int64 `json:"model_input_tokens,omitempty"`
+	ModelOutputTokens int64 `json:"model_output_tokens,omitempty"`
+	ModelTotalTokens  int64 `json:"model_total_tokens,omitempty"`
 }
 
 type TaskResult struct {
@@ -246,7 +248,7 @@ func (r TaskResult) ValidateIdentity() error {
 	if len(r.VerificationExecuted) == 0 || len(r.PassFailEvidence) == 0 {
 		return errors.New("task result requires verification and pass/fail evidence")
 	}
-	if r.ResourceSummary.AgentTurns < 0 || r.ResourceSummary.AgentToolCalls < 0 || r.ResourceSummary.ModelTotalTokens < 0 {
+	if r.ResourceSummary.AgentTurns < 0 || r.ResourceSummary.AgentToolCalls < 0 || r.ResourceSummary.ModelInputTokens < 0 || r.ResourceSummary.ModelOutputTokens < 0 || r.ResourceSummary.ModelTotalTokens < 0 {
 		return errors.New("task result resource summary cannot be negative")
 	}
 	if r.Verdict != ResultVerified && r.Verdict != ResultVerificationFailed && r.Verdict != ResultUnverified {

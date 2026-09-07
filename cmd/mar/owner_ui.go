@@ -21,6 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+	"mar/internal/service"
 	"mar/internal/store"
 )
 
@@ -43,6 +44,7 @@ type ownerMCPClient interface {
 
 type ownerUIBackend struct {
 	db              *store.SQLite
+	svc             *service.TaskService
 	session         ownerMCPClient
 	mcpMu           sync.Mutex
 	brainMode       string
@@ -50,15 +52,63 @@ type ownerUIBackend struct {
 	apiKeyEnv       string
 	model           string
 	reasoning       string
+	executable      string
+	dbPath          string
+	dataRoot        string
+	goPath          string
+	maxWorkers      int
 	sessionToken    string
 }
 
 type ownerProjectView struct {
-	ID        string    `json:"id"`
-	Root      string    `json:"root"`
-	CreatedAt time.Time `json:"created_at"`
-	Head      string    `json:"head,omitempty"`
-	HeadError string    `json:"head_error,omitempty"`
+	ID            string               `json:"id"`
+	Root          string               `json:"root"`
+	CreatedAt     time.Time            `json:"created_at"`
+	Head          string               `json:"head,omitempty"`
+	HeadError     string               `json:"head_error,omitempty"`
+	Supported     bool                 `json:"supported"`
+	SupportReason string               `json:"support_reason,omitempty"`
+	Policy        domain.ProjectPolicy `json:"policy"`
+}
+
+type ownerProjectRequest struct {
+	ID   string `json:"id,omitempty"`
+	Root string `json:"root"`
+}
+
+type ownerProjectPolicyRequest struct {
+	LocalFileWrite bool `json:"local_file_write"`
+	LocalGitWrite  bool `json:"local_git_write"`
+}
+
+type ownerFeedbackRequest struct {
+	IdempotencyKey string                      `json:"idempotency_key,omitempty"`
+	Verdict        domain.OwnerFeedbackVerdict `json:"verdict"`
+	Message        string                      `json:"message,omitempty"`
+}
+
+type ownerTaskView struct {
+	ID                string                 `json:"id"`
+	ProjectID         string                 `json:"project_id"`
+	Goal              string                 `json:"goal"`
+	State             domain.TaskState       `json:"state"`
+	UpdatedAt         time.Time              `json:"updated_at"`
+	NeedsAttention    bool                   `json:"needs_attention"`
+	ResultVerdict     domain.ResultVerdict   `json:"result_verdict,omitempty"`
+	IntegrationStatus string                 `json:"integration_status,omitempty"`
+	CandidateRevision string                 `json:"candidate_revision,omitempty"`
+	OwnerFeedback     *domain.OwnerFeedback  `json:"owner_feedback,omitempty"`
+	Usage             domain.ResourceSummary `json:"usage"`
+}
+
+type ownerConnectionView struct {
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	Status    string   `json:"status"`
+	Transport string   `json:"transport"`
+	Summary   string   `json:"summary"`
+	Command   string   `json:"command,omitempty"`
+	Args      []string `json:"args,omitempty"`
 }
 
 type ownerSubmitRequest struct {
@@ -129,12 +179,18 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 
 	backend := &ownerUIBackend{
 		db:              db,
+		svc:             service.NewTaskService(db),
 		session:         session,
 		brainMode:       strings.ToLower(strings.TrimSpace(opts.BrainMode)),
 		providerBaseURL: strings.TrimSpace(opts.ProviderBaseURL),
 		apiKeyEnv:       strings.TrimSpace(opts.APIKeyEnv),
 		model:           strings.TrimSpace(opts.Model),
 		reasoning:       strings.TrimSpace(opts.Reasoning),
+		executable:      executable,
+		dbPath:          opts.DBPath,
+		dataRoot:        opts.DataRoot,
+		goPath:          opts.GoPath,
+		maxWorkers:      opts.MaxWorkers,
 		sessionToken:    newOwnerUIID("session"),
 	}
 	mux := backend.routes()
@@ -193,6 +249,9 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("GET /", b.serveIndex)
 	mux.HandleFunc("GET /api/runtime", b.serveRuntime)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
+	mux.HandleFunc("POST /api/projects", b.addProject)
+	mux.HandleFunc("POST /api/projects/{projectID}/policy", b.updateProjectPolicy)
+	mux.HandleFunc("GET /api/tasks", b.serveTasks)
 	mux.HandleFunc("POST /api/tasks", b.submitTask)
 	mux.HandleFunc("GET /api/tasks/{taskID}/status", b.proxyTaskRead("status"))
 	mux.HandleFunc("GET /api/tasks/{taskID}/result", b.proxyTaskRead("result"))
@@ -200,6 +259,8 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("GET /api/tasks/{taskID}/brain-turn", b.proxyTaskRead("brain_turn"))
 	mux.HandleFunc("POST /api/tasks/{taskID}/cancel", b.cancelTask)
 	mux.HandleFunc("POST /api/tasks/{taskID}/input", b.inputTask)
+	mux.HandleFunc("GET /api/tasks/{taskID}/feedback", b.serveTaskFeedback)
+	mux.HandleFunc("POST /api/tasks/{taskID}/feedback", b.recordTaskFeedback)
 	return withOwnerUIHeaders(b.withOwnerRequestBoundary(mux))
 }
 
@@ -281,10 +342,20 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "Connect an MCP-capable ChatGPT client before running a Web-brain task, or relaunch MAR UI in provider mode after configuring provider base URL, model, and API key environment."
+		nextAction = "Use an MCP-capable client. Local desktop clients can launch MAR over stdio; cloud ChatWeb clients require a supported remote MCP/tunnel path."
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
 	}
+	stdioArgs := []string{"mcp-stdio", "-db", b.dbPath, "-data-root", b.dataRoot, "-brain", "web", "-model", "gpt-5.6-sol", "-reasoning", "high", "-go", b.goPath, "-max-workers", fmt.Sprint(b.maxWorkers)}
+	connections := []ownerConnectionView{
+		{ID: "claude-desktop", Name: "Claude Desktop / local MCP client", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Runs MAR locally with the current OS user. Configure the client to launch this executable and arguments.", Command: b.executable, Args: stdioArgs},
+		{ID: "chatgpt", Name: "ChatGPT", Status: "REMOTE_BRIDGE_REQUIRED", Transport: "remote-mcp", Summary: "This MAR build is local/stdio. ChatGPT cloud cannot be labeled connected until a supported remote MCP or secure tunnel path is configured and observed."},
+	}
+	providerStatus := "NOT_CONFIGURED"
+	if providerReady {
+		providerStatus = "READY"
+	}
+	connections = append(connections, ownerConnectionView{ID: "provider", Name: "Autonomous provider", Status: providerStatus, Transport: "provider-api", Summary: "Provider usage is autonomous when configured. API key values are never returned by the Console."})
 	writeOwnerJSON(w, http.StatusOK, map[string]any{
 		"brain_mode":                    b.brainMode,
 		"model":                         b.model,
@@ -292,6 +363,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		"provider_ready":                providerReady,
 		"web_brain_requires_mcp_client": b.brainMode == "web",
 		"brain_next_action":             nextAction,
+		"connections":                   connections,
 	})
 }
 
@@ -304,15 +376,213 @@ func (b *ownerUIBackend) serveProjects(w http.ResponseWriter, r *http.Request) {
 	views := make([]ownerProjectView, 0, len(projects))
 	for _, project := range projects {
 		view := ownerProjectView{ID: project.ID, Root: project.Root, CreatedAt: project.CreatedAt}
-		head, err := gitProjectHead(r.Context(), project.Root)
-		if err != nil {
-			view.HeadError = err.Error()
+		view.Head, view.SupportReason = validateOwnerProjectRoot(r.Context(), project.Root)
+		view.Supported = view.SupportReason == ""
+		if !view.Supported {
+			view.HeadError = view.SupportReason
+		}
+		if policy, policyErr := b.db.GetProjectPolicy(r.Context(), project.ID); policyErr == nil {
+			view.Policy = policy
 		} else {
-			view.Head = head
+			view.SupportReason = strings.TrimSpace(strings.Join([]string{view.SupportReason, "Project policy unavailable: " + policyErr.Error()}, "; "))
+			view.Supported = false
 		}
 		views = append(views, view)
 	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"projects": views})
+}
+
+func (b *ownerUIBackend) addProject(w http.ResponseWriter, r *http.Request) {
+	if b.svc == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("project service is unavailable"))
+		return
+	}
+	var req ownerProjectRequest
+	if err := decodeOwnerJSON(r, &req); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	root, err := filepath.Abs(strings.TrimSpace(req.Root))
+	if err != nil || strings.TrimSpace(req.Root) == "" {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("project root is required"))
+		return
+	}
+	root = filepath.Clean(root)
+	head, reason := validateOwnerProjectRoot(r.Context(), root)
+	if reason != "" {
+		writeOwnerError(w, http.StatusBadRequest, errors.New(reason))
+		return
+	}
+	projects, err := b.db.ListProjects(r.Context())
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	for _, existing := range projects {
+		if strings.EqualFold(filepath.Clean(existing.Root), root) {
+			policy, _ := b.db.GetProjectPolicy(r.Context(), existing.ID)
+			writeOwnerJSON(w, http.StatusOK, map[string]any{"created": false, "project": ownerProjectView{ID: existing.ID, Root: existing.Root, CreatedAt: existing.CreatedAt, Head: head, Supported: true, Policy: policy}})
+			return
+		}
+	}
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		id = uniqueOwnerProjectID(projects, root)
+	}
+	project, created, err := b.svc.RegisterProject(r.Context(), id, root)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	policy, err := b.svc.ProjectPolicy(r.Context(), project.ID)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusCreated, map[string]any{"created": created, "project": ownerProjectView{ID: project.ID, Root: project.Root, CreatedAt: project.CreatedAt, Head: head, Supported: true, Policy: policy}})
+}
+
+func (b *ownerUIBackend) updateProjectPolicy(w http.ResponseWriter, r *http.Request) {
+	if b.svc == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("project service is unavailable"))
+		return
+	}
+	projectID := strings.TrimSpace(r.PathValue("projectID"))
+	var req ownerProjectPolicyRequest
+	if projectID == "" || decodeOwnerJSON(r, &req) != nil {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("valid project id and policy JSON are required"))
+		return
+	}
+	policy, err := b.svc.UpdateProjectPolicy(r.Context(), projectID, req.LocalFileWrite, req.LocalGitWrite)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"policy": policy})
+}
+
+func validateOwnerProjectRoot(ctx context.Context, root string) (string, string) {
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "", "Project folder does not exist or is not a directory."
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", filepath.Clean(root), "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil || !strings.EqualFold(filepath.Clean(strings.TrimSpace(string(out))), filepath.Clean(root)) {
+		return "", "Project folder must be the root of a readable Git repository."
+	}
+	if info, err := os.Stat(filepath.Join(root, "go.mod")); err != nil || info.IsDir() {
+		return "", "MAR V1 currently supports Go module projects only; go.mod was not found at the project root."
+	}
+	head, err := gitProjectHead(ctx, root)
+	if err != nil {
+		return "", err.Error()
+	}
+	return head, ""
+}
+
+func uniqueOwnerProjectID(projects []domain.Project, root string) string {
+	base := strings.ToLower(filepath.Base(filepath.Clean(root)))
+	var clean strings.Builder
+	lastDash := false
+	for _, r := range base {
+		allowed := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if allowed {
+			clean.WriteRune(r)
+			lastDash = false
+		} else if !lastDash && clean.Len() > 0 {
+			clean.WriteByte('-')
+			lastDash = true
+		}
+	}
+	candidate := strings.Trim(clean.String(), "-")
+	if candidate == "" {
+		candidate = "project"
+	}
+	used := make(map[string]struct{}, len(projects))
+	for _, project := range projects {
+		used[strings.ToLower(project.ID)] = struct{}{}
+	}
+	if _, exists := used[candidate]; !exists {
+		return candidate
+	}
+	for n := 2; ; n++ {
+		value := fmt.Sprintf("%s-%d", candidate, n)
+		if _, exists := used[value]; !exists {
+			return value
+		}
+	}
+}
+
+func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
+	tasks, err := b.db.ListRecentTasks(r.Context(), 30)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	views := make([]ownerTaskView, 0, len(tasks))
+	for _, task := range tasks {
+		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, Goal: task.Contract.Goal, State: task.State, UpdatedAt: task.UpdatedAt}
+		view.NeedsAttention = task.State == domain.TaskInputRequired || task.State == domain.TaskBlocked || task.State == domain.TaskFailed
+		result, ok, resultErr := b.db.LatestTaskResult(r.Context(), task.ID)
+		if resultErr != nil {
+			writeOwnerError(w, http.StatusInternalServerError, fmt.Errorf("read durable result for %s: %w", task.ID, resultErr))
+			return
+		}
+		if ok {
+			view.ResultVerdict = result.Verdict
+			view.IntegrationStatus = result.IntegrationStatus
+			view.CandidateRevision = result.FinalRevision
+			view.Usage = result.ResourceSummary
+		}
+		feedback, feedbackErr := b.db.ListOwnerFeedbackByTask(r.Context(), task.ID, 1)
+		if feedbackErr != nil {
+			writeOwnerError(w, http.StatusInternalServerError, fmt.Errorf("read owner feedback for %s: %w", task.ID, feedbackErr))
+			return
+		}
+		if len(feedback) > 0 {
+			copy := feedback[0]
+			view.OwnerFeedback = &copy
+		}
+		views = append(views, view)
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"tasks": views})
+}
+
+func (b *ownerUIBackend) serveTaskFeedback(w http.ResponseWriter, r *http.Request) {
+	taskID := strings.TrimSpace(r.PathValue("taskID"))
+	if taskID == "" {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("task id is required"))
+		return
+	}
+	feedback, err := b.db.ListOwnerFeedbackByTask(r.Context(), taskID, 20)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"feedback": feedback})
+}
+
+func (b *ownerUIBackend) recordTaskFeedback(w http.ResponseWriter, r *http.Request) {
+	if b.svc == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("feedback service is unavailable"))
+		return
+	}
+	taskID := strings.TrimSpace(r.PathValue("taskID"))
+	var req ownerFeedbackRequest
+	if taskID == "" || decodeOwnerJSON(r, &req) != nil {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("valid task id and feedback JSON are required"))
+		return
+	}
+	if strings.TrimSpace(req.IdempotencyKey) == "" {
+		req.IdempotencyKey = newOwnerUIID("feedback")
+	}
+	feedback, created, err := b.svc.RecordOwnerFeedback(r.Context(), taskID, req.IdempotencyKey, req.Verdict, req.Message)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusCreated, map[string]any{"created": created, "feedback": feedback})
 }
 
 func gitProjectHead(ctx context.Context, root string) (string, error) {

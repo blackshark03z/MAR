@@ -8,7 +8,11 @@ The V1 architecture is frozen. Canonical architecture documents live under `docs
 
 `Goal -> Durable Task -> Isolated Worker -> Verification -> Crash-safe Integration -> Result`
 
-GPT-5.6 Sol Web can be the primary coding/reasoning brain. MAR keeps task truth, sandboxed execution, resource control, verification evidence, recovery, and integration authority. A provider-backed autonomous brain remains optional for unattended execution.
+The intended owner experience is:
+
+`Owner -> Tech Lead Web -> CADS framing -> MAR MCP -> Worker(s) -> verified/integrated result -> Owner feedback`
+
+The owner may be non-technical. Normal flow should not require the owner to author Goal Contract fields, Git/base revisions, verification profiles, run epochs, or engineering oracles. The Tech Lead Web owns requirement framing and uses CADS; MAR owns durable execution, sandboxing, resource control, criterion-bound evidence, recovery and integration authority. A provider-backed autonomous brain remains optional for unattended execution.
 
 ## First self-hosting run
 
@@ -48,25 +52,32 @@ mar mcp-stdio -db <data-root>/mar.db -data-root <data-root> -brain web
 
 ## Owner Console / hands-on V1 UAT
 
-The local Owner Console is the minimum V1 surface for personally running and judging the MAR journey. It listens on loopback only and remains a client of the same MAR MCP/task authority.
+The local Owner Console is MAR's setup and operations surface, not the primary place where the owner writes engineering contracts. It listens on loopback only, uses a startup-session token for mutations, and does not create a second task/integration authority.
 
-For GPT Web brain mode:
+Launch in Web-brain mode:
 
 ```text
 mar ui -db <data-root>/mar.db -data-root <data-root> -brain web
 ```
 
-Then open `http://127.0.0.1:8787`. Web mode requires an MCP-capable ChatGPT client connected to the same MAR runtime for brain turns; the console surfaces this prerequisite before Run and never fabricates cognition when the bridge is absent.
+Then open `http://127.0.0.1:8787`.
 
-For unattended provider-backed cognition, configure the provider URL, API-key environment variable and model, then launch:
+The Console exposes four normal surfaces:
+
+- **Work** — current/recent durable tasks, attention queue, result/evidence, MAR-measured token usage and Owner feedback;
+- **Projects** — add a supported local repository and narrow project-level local file/local Git permissions;
+- **Connections** — capability/readiness for local MCP clients, ChatGPT bridge requirements and provider mode without pretending configuration means a live connection;
+- **Advanced** — raw task/runtime diagnostics for Tech Lead/debug use.
+
+For unattended provider-backed cognition, configure provider URL, API-key environment variable and model, then launch:
 
 ```text
 mar ui -db <data-root>/mar.db -data-root <data-root> -brain provider -provider-base-url <provider-url> -api-key-env OPENAI_API_KEY -model <model>
 ```
 
-The API key value remains in the named environment variable; the console does not display it.
+The API key value remains only in the named environment variable; the Console never returns it. Token counters show only usage MAR actually receives/measures. They do not estimate hidden ChatWeb conversation usage.
 
-Hands-on UAT is intentionally one path: select a registered project -> enter one bounded Goal and observable acceptance -> Run -> follow meaningful state/next action -> provide real input if requested -> inspect verification/integration result and evidence -> accept or reject the experience. Engineering PASS alone is not Owner Product Acceptance.
+Representative Owner UAT starts in the Tech Lead Web conversation: describe one real product need in normal language, allow the Tech Lead to frame the bounded Goal/acceptance/oracles, let MAR execute it without manual prompt/report forwarding, then use the product and record accept/reject/comment against the exact durable candidate/result in the Console. Engineering PASS alone is not Owner Product Acceptance.
 
 ## Verification profiles
 

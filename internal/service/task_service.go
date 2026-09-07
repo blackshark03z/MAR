@@ -38,7 +38,18 @@ func (s *TaskService) RegisterProject(ctx context.Context, id, root string) (dom
 		return domain.Project{}, false, fmt.Errorf("resolve project root: %w", err)
 	}
 	p := domain.Project{ID: id, Root: filepath.Clean(abs), CreatedAt: s.now().UTC()}
-	return s.store.RegisterProject(ctx, p)
+	project, created, err := s.store.RegisterProject(ctx, p)
+	if err != nil {
+		return domain.Project{}, false, err
+	}
+	if _, err := s.store.GetProjectPolicy(ctx, project.ID); errors.Is(err, store.ErrNotFound) {
+		if err := s.store.PutProjectPolicy(ctx, defaultProjectPolicy(project.ID, s.now().UTC())); err != nil {
+			return domain.Project{}, false, err
+		}
+	} else if err != nil {
+		return domain.Project{}, false, err
+	}
+	return project, created, nil
 }
 
 func (s *TaskService) Submit(ctx context.Context, idempotencyKey string, contract domain.GoalContract) (domain.Task, bool, error) {

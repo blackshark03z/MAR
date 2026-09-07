@@ -111,6 +111,25 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 	if err != nil {
 		return err
 	}
+	policy, err := p.store.GetProjectPolicy(ctx, task.Contract.ProjectID)
+	if err != nil {
+		return fmt.Errorf("read project execution policy: %w", err)
+	}
+	if task.Contract.Authority.LocalFileWrite && !policy.LocalFileWrite {
+		return errors.New("Goal Contract requests local file write authority disabled by project policy")
+	}
+	if task.Contract.Authority.LocalGitWrite && !policy.LocalGitWrite {
+		return errors.New("Goal Contract requests local Git write authority disabled by project policy")
+	}
+	if task.Contract.Authority.NetworkAllowed && !policy.NetworkAllowed {
+		return errors.New("Goal Contract requests network authority disabled by project policy")
+	}
+	if task.Contract.Authority.RemoteGitWrite && !policy.RemoteGitWrite {
+		return errors.New("Goal Contract requests remote Git authority disabled by project policy")
+	}
+	if task.Contract.Authority.DeployAllowed && !policy.DeployAllowed {
+		return errors.New("Goal Contract requests deploy authority disabled by project policy")
+	}
 	root, err := filepath.Abs(project.Root)
 	if err != nil {
 		return err

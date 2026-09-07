@@ -1,248 +1,232 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MAR Owner Console</title>
+  <title>MAR Console</title>
   <style>
     :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; background: Canvas; color: CanvasText; }
-    button, input, textarea, select { font: inherit; }
-    button, input, textarea, select { border: 1px solid color-mix(in srgb, CanvasText 22%, transparent); border-radius: 8px; background: Canvas; color: CanvasText; }
-    button { cursor: pointer; padding: 10px 14px; font-weight: 650; }
+    button, input, textarea { font: inherit; }
+    button, input, textarea { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 9px; background: Canvas; color: CanvasText; }
+    button { cursor: pointer; padding: 9px 13px; font-weight: 650; }
     button.primary { background: CanvasText; color: Canvas; border-color: CanvasText; }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    input, textarea, select { width: 100%; padding: 10px 11px; }
-    textarea { min-height: 92px; resize: vertical; line-height: 1.45; }
+    input, textarea { width: 100%; padding: 10px 11px; }
+    textarea { min-height: 86px; resize: vertical; line-height: 1.45; }
     label { display: grid; gap: 6px; font-size: 13px; font-weight: 650; }
+    h1,h2,h3,p { margin-top: 0; }
+    h2 { font-size: 18px; margin-bottom: 8px; }
+    h3 { font-size: 14px; margin-bottom: 8px; }
     .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
-    header { border-bottom: 1px solid color-mix(in srgb, CanvasText 15%, transparent); padding: 16px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px; position: sticky; top: 0; background: color-mix(in srgb, Canvas 94%, transparent); backdrop-filter: blur(10px); z-index: 2; }
-    .brand { display: flex; align-items: baseline; gap: 10px; }
-    .brand strong { font-size: 18px; letter-spacing: .02em; }
-    .muted { color: color-mix(in srgb, CanvasText 62%, transparent); }
-    .runtime { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; font-size: 12px; }
-    .badge { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 999px; padding: 5px 8px; white-space: nowrap; }
-    main { width: min(1320px, 100%); margin: 0 auto; padding: 22px; display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 22px; align-items: start; }
-    section { border-top: 2px solid CanvasText; padding-top: 14px; }
-    h1, h2, h3, p { margin-top: 0; }
-    h2 { font-size: 16px; margin-bottom: 13px; }
-    h3 { font-size: 14px; margin-bottom: 9px; }
-    .stack { display: grid; gap: 13px; }
-    .row { display: flex; gap: 10px; align-items: center; }
-    .row > * { flex: 1; }
-    .checkbox { display: flex; gap: 8px; align-items: center; font-weight: 500; }
-    .checkbox input { width: auto; }
-    .help { font-size: 12px; line-height: 1.45; color: color-mix(in srgb, CanvasText 62%, transparent); }
-    details { border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); padding-top: 10px; }
-    summary { cursor: pointer; font-size: 13px; font-weight: 650; }
-    .workspace { display: grid; gap: 18px; }
-    .empty { min-height: 270px; display: grid; place-items: center; text-align: center; border: 1px dashed color-mix(in srgb, CanvasText 23%, transparent); border-radius: 10px; padding: 28px; }
-    .task-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    .task-id { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; word-break: break-all; }
-    .state { font-size: 22px; font-weight: 750; letter-spacing: -.02em; }
-    .state-raw { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; }
-    .notice { border-left: 3px solid CanvasText; padding: 10px 12px; background: color-mix(in srgb, CanvasText 5%, Canvas); line-height: 1.45; }
-    .notice.warning { border-left-style: double; }
-    .notice.error { border-left-width: 5px; }
-    .timeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-    .timeline span { height: 5px; border-radius: 999px; background: color-mix(in srgb, CanvasText 12%, transparent); }
-    .timeline span.on { background: CanvasText; }
-    .result-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 18px; }
-    .metric { border-top: 1px solid color-mix(in srgb, CanvasText 14%, transparent); padding-top: 8px; }
-    .metric b { display: block; margin-top: 3px; word-break: break-word; }
-    code, pre { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    pre { overflow: auto; max-height: 360px; padding: 12px; border-radius: 8px; background: color-mix(in srgb, CanvasText 6%, Canvas); white-space: pre-wrap; word-break: break-word; font-size: 12px; }
-    ul { margin: 0; padding-left: 19px; }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-    .hidden { display: none !important; }
-    :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
-    @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 14px 16px; align-items: flex-start; } .runtime { justify-content: flex-start; } .result-grid { grid-template-columns: 1fr; } }
+    header { position: sticky; top: 0; z-index: 4; border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent); background: color-mix(in srgb, Canvas 95%, transparent); backdrop-filter: blur(10px); }
+    .topbar { max-width: 1320px; margin: 0 auto; padding: 14px 20px 10px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .brand { display:flex; gap:10px; align-items:baseline; }
+    .brand strong { font-size:19px; }
+    .muted { color: color-mix(in srgb, CanvasText 61%, transparent); }
+    .runtime { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; font-size:12px; }
+    .badge,.chip { border:1px solid color-mix(in srgb, CanvasText 17%, transparent); border-radius:999px; padding:4px 8px; white-space:nowrap; }
+    nav { max-width:1320px; margin:0 auto; padding:0 20px; display:flex; gap:4px; overflow:auto; }
+    nav button { border:0; border-bottom:3px solid transparent; border-radius:0; background:transparent; padding:9px 12px; color:inherit; opacity:.65; }
+    nav button.active { opacity:1; border-bottom-color:CanvasText; }
+    main { max-width:1320px; width:100%; margin:0 auto; padding:22px 20px 44px; }
+    .view { display:none; }
+    .view.active { display:block; }
+    .intro { max-width:760px; margin-bottom:20px; }
+    .notice { border-left:3px solid CanvasText; padding:11px 13px; background:color-mix(in srgb, CanvasText 5%, Canvas); line-height:1.45; border-radius:0 8px 8px 0; }
+    .notice.warn { border-left-style:double; }
+    .notice.error { border-left-width:5px; }
+    .grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:14px; }
+    .card { border:1px solid color-mix(in srgb, CanvasText 14%, transparent); border-radius:11px; padding:15px; background:Canvas; min-width:0; }
+    .card.span-4 { grid-column:span 4; } .card.span-6 { grid-column:span 6; } .card.span-8 { grid-column:span 8; } .card.span-12 { grid-column:span 12; }
+    .card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .stack { display:grid; gap:12px; }
+    .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .row > .grow { flex:1 1 240px; }
+    .metric { border-top:1px solid color-mix(in srgb, CanvasText 13%, transparent); padding-top:9px; }
+    .metric b { display:block; margin-top:3px; font-size:18px; }
+    .metric small { display:block; margin-top:3px; }
+    .task-list { display:grid; gap:9px; }
+    .task { width:100%; text-align:left; padding:12px; border-radius:10px; display:grid; gap:7px; }
+    .task:hover,.task.selected { border-color:color-mix(in srgb, CanvasText 55%, transparent); }
+    .task-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+    .task-goal { font-weight:700; line-height:1.35; }
+    .task-meta { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; }
+    .status-attention { border-style:double; }
+    .split { display:grid; grid-template-columns:minmax(300px,420px) minmax(0,1fr); gap:18px; align-items:start; }
+    .detail { display:grid; gap:14px; min-height:260px; }
+    .empty { border:1px dashed color-mix(in srgb, CanvasText 23%, transparent); border-radius:10px; min-height:180px; padding:26px; display:grid; place-items:center; text-align:center; }
+    .project-list,.connection-list { display:grid; gap:12px; }
+    .project-path, code, pre { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .project-path { font-size:12px; word-break:break-all; }
+    .policy { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; }
+    .policy label { display:flex; align-items:center; gap:6px; font-weight:500; }
+    .policy input { width:auto; }
+    pre { overflow:auto; max-height:360px; padding:12px; border-radius:8px; background:color-mix(in srgb, CanvasText 6%, Canvas); white-space:pre-wrap; word-break:break-word; font-size:12px; }
+    .hidden { display:none !important; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .feedback-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .feedback-history { display:grid; gap:7px; font-size:13px; }
+    .feedback-item { border-left:2px solid color-mix(in srgb, CanvasText 28%, transparent); padding-left:9px; }
+    .connection-command { margin-top:10px; }
+    .danger { border-color:color-mix(in srgb, CanvasText 38%, transparent); }
+    summary { cursor:pointer; font-weight:650; }
+    :focus-visible { outline:3px solid Highlight; outline-offset:2px; }
+    @media(max-width:900px){ .grid{grid-template-columns:1fr;} .card.span-4,.card.span-6,.card.span-8,.card.span-12{grid-column:auto;} .split{grid-template-columns:1fr;} .topbar{align-items:flex-start;} .runtime{justify-content:flex-start;} }
+    @media(max-width:560px){ main{padding:16px 12px 36px;} .topbar{padding:12px;} nav{padding:0 8px;} .brand .muted{display:none;} .row{align-items:stretch;} .row button{width:100%;} }
   </style>
 </head>
 <body>
 <div class="shell">
-  <header>
-    <div class="brand"><strong>MAR</strong><span class="muted">Owner Console · V1 acceptance surface</span></div>
-    <div class="runtime" id="runtime"><span class="badge">Connecting…</span></div>
-  </header>
-  <main>
-    <section aria-labelledby="goal-title">
-      <h2 id="goal-title">Run one bounded goal</h2>
-      <div id="brain-readiness" class="notice warning hidden" role="status"></div>
-      <form id="goal-form" class="stack">
-        <label>Project
-          <select id="project" required><option value="">Loading projects…</option></select>
-        </label>
-        <div class="help" id="project-meta">The selected project’s current Git HEAD becomes the task base revision.</div>
-        <label>Goal
-          <textarea id="goal" required placeholder="Describe the smallest useful software outcome to complete."></textarea>
-        </label>
-        <label>Acceptance · one criterion per line
-          <textarea id="acceptance" required placeholder="Observable result 1&#10;Observable result 2"></textarea>
-        </label>
-        <div class="row">
-          <label>Verification
-            <select id="verification"><option value="go-standard">go-standard · code</option><option value="go-docs">go-docs · docs-only</option></select>
-          </label>
-          <label>Priority
-            <select id="priority"><option>P2</option><option>P1</option><option>P3</option><option>P0</option></select>
-          </label>
+<header>
+  <div class="topbar">
+    <div class="brand"><strong>MAR</strong><span class="muted">local coding operations</span></div>
+    <div class="runtime" id="runtime-badges"><span class="badge">Đang kết nối…</span></div>
+  </div>
+  <nav aria-label="MAR sections">
+    <button data-view="work" class="active">Công việc</button>
+    <button data-view="projects">Dự án</button>
+    <button data-view="connections">Kết nối AI</button>
+    <button data-view="advanced">Nâng cao</button>
+  </nav>
+</header>
+<main>
+  <section id="view-work" class="view active">
+    <div class="intro">
+      <h2>Công việc</h2>
+      <p class="muted">Bạn không cần tạo Goal Contract ở đây. Hãy nói nhu cầu với Tech Lead Web bằng ngôn ngữ bình thường. Khi Tech Lead giao việc qua MAR, task sẽ tự xuất hiện và tiếp tục tồn tại sau khi đóng/mở lại Console.</p>
+      <div id="work-readiness" class="notice warn"></div>
+    </div>
+    <div class="grid" id="usage-grid">
+      <div class="card span-4 metric"><span class="muted">Task gần đây</span><b id="usage-tasks">0</b></div>
+      <div class="card span-4 metric"><span class="muted">Input tokens MAR đo được</span><b id="usage-input">0</b><small class="muted">Không suy đoán token của client nếu client không báo.</small></div>
+      <div class="card span-4 metric"><span class="muted">Output / tổng tokens</span><b id="usage-output-total">0 / 0</b></div>
+    </div>
+    <div class="split" style="margin-top:18px">
+      <div class="stack">
+        <div class="card">
+          <div class="card-head"><div><h3>Cần bạn chú ý</h3><div class="muted" style="font-size:12px">Chỉ những việc thật sự cần input/quyết định.</div></div><span class="chip" id="attention-count">0</span></div>
+          <div id="attention-list" class="task-list"></div>
         </div>
-        <details>
-          <summary>Boundaries & authority</summary>
-          <div class="stack" style="margin-top:12px">
-            <label>Boundaries · one per line<textarea id="boundaries" placeholder="Only edit …&#10;Preserve …"></textarea></label>
-            <label>Non-goals · one per line<textarea id="non-goals" placeholder="No deployment&#10;No unrelated refactor"></textarea></label>
-            <label class="checkbox"><input id="local-file-write" type="checkbox" checked> Allow local file changes in the isolated task workspace</label>
-            <label class="checkbox"><input id="local-git-write" type="checkbox" checked> Allow bounded local Git changes required by the task</label>
-            <p class="help">Network access, remote Git writes and deployment are not supported by the MAR V1 runtime and are therefore not offered here.</p>
-          </div>
-        </details>
-        <div id="form-error" class="notice error hidden" role="alert"></div>
-        <button class="primary" id="run" type="submit">Run goal</button>
-      </form>
-    </section>
+        <div class="card">
+          <div class="card-head"><div><h3>Gần đây</h3><div class="muted" style="font-size:12px">Click để mở lại task, không cần nhớ task ID.</div></div><button id="refresh-work" type="button">Làm mới</button></div>
+          <div id="recent-list" class="task-list"></div>
+        </div>
+      </div>
+      <div class="card detail" id="task-detail">
+        <div class="empty"><div><h3>Chọn một task</h3><p class="muted">Trạng thái, kết quả, evidence và feedback sẽ hiện ở đây.</p></div></div>
+      </div>
+    </div>
+  </section>
 
-    <section aria-labelledby="activity-title">
-      <div id="idle" class="empty">
-        <div><h2 id="activity-title">No active goal</h2><p class="muted">Choose a project, define observable acceptance, then run. MAR will own execution, verification and integration.</p></div>
+  <section id="view-projects" class="view">
+    <div class="intro"><h2>Dự án</h2><p class="muted">Đăng ký repository local và cấp quyền mặc định. Goal cụ thể có thể dùng ít quyền hơn, nhưng không được vượt policy của project.</p></div>
+    <div class="grid">
+      <form id="add-project-form" class="card span-4 stack">
+        <h3>Thêm dự án</h3>
+        <label>Đường dẫn thư mục Git repository<input id="project-root" placeholder="D:\\Projects\\MyApp" required></label>
+        <details><summary>Tên kỹ thuật (tùy chọn)</summary><label style="margin-top:9px">Project ID<input id="project-id" placeholder="Tự tạo nếu để trống"></label></details>
+        <div id="project-error" class="notice error hidden"></div>
+        <button class="primary" type="submit">Thêm dự án</button>
+        <div class="muted" style="font-size:12px">MAR V1 hiện chỉ nhận project Go module có <code>go.mod</code> ở Git root.</div>
+      </form>
+      <div class="card span-8">
+        <div class="card-head"><div><h3>Đã đăng ký</h3><div class="muted" style="font-size:12px">Readiness và quyền là dữ liệu MAR thật, không phải checkbox trang trí.</div></div><button id="refresh-projects" type="button">Làm mới</button></div>
+        <div id="project-list" class="project-list"></div>
       </div>
-      <div id="active" class="workspace hidden" aria-live="polite">
-        <div class="task-head">
-          <div><div class="muted" style="font-size:12px">Current task</div><div class="task-id" id="task-id"></div></div>
-          <div class="actions"><button id="refresh" type="button">Refresh</button><button id="cancel" type="button">Cancel</button></div>
-        </div>
-        <div>
-          <div class="state" id="state-label">Starting…</div>
-          <div class="state-raw muted" id="state-raw"></div>
-        </div>
-        <div class="timeline" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-        <div id="state-detail" class="notice"></div>
-        <div id="brain-notice" class="notice warning hidden"></div>
-        <div id="human-input" class="stack hidden">
-          <label>MAR needs your input<textarea id="input-message" placeholder="Provide the missing fact or choice only."></textarea></label>
-          <button id="send-input" type="button">Send input</button>
-        </div>
-        <div id="task-error" class="notice error hidden" role="alert"></div>
-        <div id="result" class="stack hidden">
-          <h2>Result</h2>
-          <div class="result-grid" id="result-grid"></div>
-          <div><h3>Changed areas</h3><ul id="changed"></ul></div>
-          <div><h3>Evidence</h3><ul id="evidence"></ul></div>
-          <details><summary>Full inspection</summary><pre id="inspect"></pre></details>
-        </div>
-      </div>
-    </section>
-  </main>
+    </div>
+  </section>
+
+  <section id="view-connections" class="view">
+    <div class="intro"><h2>Kết nối AI</h2><p class="muted">MAR chỉ hiển thị capability thực. “Có hướng dẫn cấu hình” không đồng nghĩa “đã connected”.</p></div>
+    <div id="connection-summary" class="notice warn"></div>
+    <div id="connection-list" class="connection-list" style="margin-top:16px"></div>
+  </section>
+
+  <section id="view-advanced" class="view">
+    <div class="intro"><h2>Nâng cao</h2><p class="muted">Dành cho Tech Lead/debug. Owner normal flow không cần base revision, verification profile, run epoch hoặc raw evidence.</p></div>
+    <div class="grid">
+      <div class="card span-6"><h3>Runtime</h3><pre id="runtime-raw">Đang tải…</pre></div>
+      <div class="card span-6"><h3>Nguyên tắc normal flow</h3><div class="stack"><div class="notice">Owner → Tech Lead Web → CADS → MAR → Worker(s) → verified/integrated result → Owner feedback.</div><p class="muted">Engineering submit endpoint vẫn tồn tại cho MCP/diagnostics, nhưng Console không bắt Owner tự viết acceptance/profile/authority.</p></div></div>
+      <div class="card span-12"><h3>Task inspection</h3><pre id="advanced-inspect">Chọn task ở tab Công việc để xem raw inspection.</pre></div>
+    </div>
+  </section>
+</main>
 </div>
 <script>
-const ownerSessionToken = '__MAR_OWNER_SESSION_TOKEN__';
-const $ = id => document.getElementById(id);
-const terminalStates = new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED']);
-const stateOrder = {
-  SUBMITTED:0, PREFLIGHT:0, WAITING_RESOURCE:1, WORKSPACE_READY:1,
-  RUNNING:2, INPUT_REQUIRED:2, RETRY_WAIT:2, VERIFYING:3, REVIEWING:3,
-  READY_TO_INTEGRATE:4, INTEGRATING:4, VERIFIED:4, COMPLETE:5,
-  BLOCKED:5, FAILED:5, CANCELLED:5
-};
-const stateNames = {
-  SUBMITTED:'Goal received', PREFLIGHT:'Checking prerequisites', WAITING_RESOURCE:'Waiting for workstation capacity', WORKSPACE_READY:'Workspace ready',
-  RUNNING:'Working on the goal', INPUT_REQUIRED:'Input required', RETRY_WAIT:'Waiting to retry', VERIFYING:'Checking the candidate', REVIEWING:'Reviewing result',
-  READY_TO_INTEGRATE:'Ready to integrate', INTEGRATING:'Integrating safely', VERIFIED:'Verified', COMPLETE:'Complete', BLOCKED:'Blocked', FAILED:'Failed', CANCELLED:'Cancelled'
-};
-let projects = [];
-let taskId = '';
-let pollTimer = null;
-let runtime = null;
-function lines(value){ return value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean); }
-function show(id, yes=true){ $(id).classList.toggle('hidden', !yes); }
-function fail(id, message){ $(id).textContent = message; show(id, true); }
-function clearFail(id){ $(id).textContent=''; show(id,false); }
-async function api(path, options={}){
-  const res = await fetch(path, {headers:{'Content-Type':'application/json','X-MAR-Owner-Token':ownerSessionToken}, ...options});
-  let data = {};
-  try { data = await res.json(); } catch (_) {}
-  if(!res.ok) throw new Error(data.error || `${res.status} ${res.statusText}`);
-  return data;
+const ownerSessionToken='__MAR_OWNER_SESSION_TOKEN__';
+const $=id=>document.getElementById(id);
+const terminalStates=new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED']);
+let runtime=null, projects=[], tasks=[], selectedTaskId='', pollTimer=null;
+function esc(v){const d=document.createElement('div');d.textContent=v??'';return d.innerHTML;}
+function fmtTokens(n){n=Number(n||0);return new Intl.NumberFormat('vi-VN').format(n);}
+function fmtTime(v){try{return new Date(v).toLocaleString('vi-VN');}catch{return v||'';}}
+function show(id,yes=true){$(id).classList.toggle('hidden',!yes);}
+function setError(id,msg=''){const el=$(id);el.textContent=msg;show(id,!!msg);}
+async function api(path,options={}){
+  const headers={'Content-Type':'application/json','X-MAR-Owner-Token':ownerSessionToken,...(options.headers||{})};
+  const res=await fetch(path,{...options,headers}); let data={}; try{data=await res.json();}catch{}
+  if(!res.ok) throw new Error(data.error||`${res.status} ${res.statusText}`); return data;
 }
+function activateView(name){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${name}`));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===name));}
+document.querySelectorAll('nav button').forEach(btn=>btn.addEventListener('click',()=>activateView(btn.dataset.view)));
+
 async function loadRuntime(){
-  runtime = await api('/api/runtime');
-  $('runtime').innerHTML = `<span class="badge">brain: ${runtime.brain_mode}</span><span class="badge">model: ${runtime.model || 'default'}</span><span class="badge">reasoning: ${runtime.reasoning || 'default'}</span>`;
-  const readiness = $('brain-readiness');
-  if(runtime.web_brain_requires_mcp_client){
-    $('runtime').insertAdjacentHTML('beforeend','<span class="badge">GPT Web client required for brain turns</span>');
-    readiness.className='notice warning';
-    readiness.textContent=`Brain readiness: Web mode needs an MCP-capable ChatGPT client. ${runtime.brain_next_action || ''}`;
-    show('brain-readiness', true);
-  } else {
-    readiness.className = runtime.provider_ready ? 'notice' : 'notice error';
-    readiness.textContent = `Brain readiness: ${runtime.brain_next_action || (runtime.provider_ready ? 'Provider configured.' : 'Provider configuration required.')}`;
-    show('brain-readiness', true);
+  runtime=await api('/api/runtime');
+  $('runtime-badges').innerHTML=`<span class="badge">brain: ${esc(runtime.brain_mode||'—')}</span><span class="badge">model: ${esc(runtime.model||'default')}</span><span class="badge">reasoning: ${esc(runtime.reasoning||'default')}</span>`;
+  $('runtime-raw').textContent=JSON.stringify(runtime,null,2);
+  $('work-readiness').textContent=runtime.brain_next_action||'Kiểm tra tab Kết nối AI trước khi chạy task mới.';
+  $('connection-summary').textContent=runtime.brain_next_action||'';
+  renderConnections(runtime.connections||[]);
+}
+function renderConnections(items){
+  const host=$('connection-list'); host.innerHTML='';
+  for(const c of items){
+    const ready=c.status==='READY'; const local=c.status==='AVAILABLE_LOCAL';
+    const card=document.createElement('div');card.className='card';
+    const config=(c.command&&c.args)?JSON.stringify({command:c.command,args:c.args},null,2):'';
+    card.innerHTML=`<div class="card-head"><div><h3>${esc(c.name)}</h3><div class="muted">${esc(c.transport)}</div></div><span class="chip">${esc(c.status)}</span></div><p>${esc(c.summary)}</p>${config?`<details class="connection-command"><summary>Cấu hình local MCP</summary><pre>${esc(config)}</pre><button type="button" data-copy> Sao chép cấu hình </button></details>`:''}`;
+    if(ready||local) card.dataset.ready='true'; host.appendChild(card);
+    const copy=card.querySelector('[data-copy]'); if(copy) copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(config);copy.textContent='Đã sao chép';}catch{copy.textContent='Không thể sao chép tự động';}});
+  }
+  if(!items.length) host.innerHTML='<div class="empty">Không có connection metadata.</div>';
+}
+
+async function loadProjects(){const data=await api('/api/projects');projects=data.projects||[];renderProjects();}
+function renderProjects(){
+  const host=$('project-list'); host.innerHTML='';
+  if(!projects.length){host.innerHTML='<div class="empty">Chưa có dự án. Thêm Git repository local ở bên trái.</div>';return;}
+  for(const p of projects){
+    const card=document.createElement('div'); card.className='card';
+    const policy=p.policy||{}; const support=p.supported?'Sẵn sàng':'Chưa hỗ trợ';
+    card.innerHTML=`<div class="card-head"><div><h3>${esc(p.id)}</h3><div class="project-path muted">${esc(p.root)}</div></div><span class="chip">${support}</span></div><div class="muted" style="font-size:12px">${p.head?`HEAD ${esc(p.head.slice(0,12))}`:esc(p.support_reason||p.head_error||'HEAD unavailable')}</div><div class="policy"><label><input type="checkbox" data-file ${policy.local_file_write?'checked':''}> Cho phép sửa file local</label><label><input type="checkbox" data-git ${policy.local_git_write?'checked':''}> Cho phép local Git</label><span class="muted">Network / push / deploy: không hỗ trợ V1</span></div><div class="actions" style="margin-top:10px"><button type="button" data-save ${p.supported?'':'disabled'}>Lưu quyền</button></div>`;
+    host.appendChild(card);
+    card.querySelector('[data-save]').addEventListener('click',async e=>{e.currentTarget.disabled=true;try{await api(`/api/projects/${encodeURIComponent(p.id)}/policy`,{method:'POST',body:JSON.stringify({local_file_write:card.querySelector('[data-file]').checked,local_git_write:card.querySelector('[data-git]').checked})});await loadProjects();}catch(err){alert(err.message);}finally{e.currentTarget.disabled=false;}});
   }
 }
-async function loadProjects(){
-  const data = await api('/api/projects'); projects = data.projects || [];
-  $('project').innerHTML = projects.length ? '<option value="">Select a registered project</option>' + projects.map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('') : '<option value="">No registered projects</option>';
-  $('run').disabled = !projects.length;
-}
-function esc(v){ const d=document.createElement('div'); d.textContent=v ?? ''; return d.innerHTML; }
-$('project').addEventListener('change',()=>{
-  const p=projects.find(x=>x.id===$('project').value);
-  if(!p){ $('project-meta').textContent='The selected project’s current Git HEAD becomes the task base revision.'; return; }
-  $('project-meta').textContent = p.head ? `${p.root} · HEAD ${p.head.slice(0,12)}` : `${p.root} · HEAD unavailable: ${p.head_error || 'unknown error'}`;
-  $('run').disabled = !p.head;
-});
-$('goal-form').addEventListener('submit', async e=>{
-  e.preventDefault(); clearFail('form-error');
-  const p=projects.find(x=>x.id===$('project').value);
-  if(!p || !p.head) return fail('form-error','Select a registered project with a readable Git HEAD.');
-  const acceptance=lines($('acceptance').value); if(!acceptance.length) return fail('form-error','Add at least one observable acceptance criterion.');
-  $('run').disabled=true; $('run').textContent='Submitting…';
-  try{
-    const data=await api('/api/tasks',{method:'POST',body:JSON.stringify({
-      idempotency_key: crypto.randomUUID ? `owner-ui-${crypto.randomUUID()}` : '', project_id:p.id, base_revision:p.head,
-      goal:$('goal').value.trim(), acceptance, boundaries:lines($('boundaries').value), non_goals:lines($('non-goals').value),
-      verification_profile:$('verification').value, priority:$('priority').value,
-      local_file_write:$('local-file-write').checked, local_git_write:$('local-git-write').checked, network_allowed:false
-    })});
-    const task=data.task; if(!task?.id) throw new Error('MAR did not return a task id.');
-    taskId=task.id; $('task-id').textContent=taskId; show('idle',false); show('active',true); show('result',false); show('task-error',false); startPolling(); await refreshTask();
-  }catch(err){ fail('form-error',err.message); }
-  finally{ $('run').disabled=false; $('run').textContent='Run goal'; }
-});
-function startPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=setInterval(refreshTask,1200); }
-async function refreshTask(){
-  if(!taskId) return;
-  try{
-    const data=await api(`/api/tasks/${encodeURIComponent(taskId)}/status`); const s=data.status || {}; const t=s.task || {}; const state=(t.state || '').toUpperCase();
-    $('state-label').textContent=stateNames[state] || state || 'Unknown state'; $('state-raw').textContent=state;
-    const index=stateOrder[state] ?? 0; document.querySelectorAll('.timeline span').forEach((el,i)=>el.classList.toggle('on', i < Math.min(index+1,5)));
-    $('state-detail').textContent=s.detail || s.state_detail || s.next_action || 'MAR is progressing this task.';
-    $('cancel').disabled=terminalStates.has(state);
-    const brain=!!s.brain_turn_available;
-    show('brain-notice', brain);
-    if(brain){ $('brain-notice').textContent='This task is waiting for a GPT Web brain turn. Connect an MCP-capable ChatGPT client to this MAR database to answer it. This owner console will not fabricate or bypass GPT Web cognition.'; }
-    show('human-input', state==='INPUT_REQUIRED' && !brain);
-    if(terminalStates.has(state)){ if(pollTimer){clearInterval(pollTimer);pollTimer=null;} await loadOutcome(state); }
-  }catch(err){ fail('task-error',err.message); }
-}
-async function loadOutcome(state){
-  try{
-    const [r,i]=await Promise.all([api(`/api/tasks/${encodeURIComponent(taskId)}/result`),api(`/api/tasks/${encodeURIComponent(taskId)}/inspect`)]);
-    const result=r.result || null; show('result',true);
-    const grid=$('result-grid'); grid.innerHTML='';
-    const metrics = result ? [['Verdict',result.verdict],['Integration',result.integration_status],['Final revision',result.final_revision],['Workspace',result.workspace_disposition]] : [['Outcome',state],['Technical result','No result available']];
-    for(const [k,v] of metrics){ const d=document.createElement('div'); d.className='metric'; d.innerHTML=`<span class="muted">${esc(k)}</span><b>${esc(v || '—')}</b>`; grid.appendChild(d); }
-    $('changed').innerHTML=(result?.changed_areas || []).map(x=>`<li>${esc(x)}</li>`).join('') || '<li>None reported</li>';
-    $('evidence').innerHTML=(result?.pass_fail_evidence || []).map(x=>`<li><code>${esc(x)}</code></li>`).join('') || '<li>No result evidence available</li>';
-    $('inspect').textContent=JSON.stringify(i,null,2);
-  }catch(err){ fail('task-error',`Outcome inspection failed: ${err.message}`); }
-}
-$('refresh').addEventListener('click',refreshTask);
-$('cancel').addEventListener('click',async()=>{ if(!taskId || !confirm('Request cancellation for this task?')) return; try{await api(`/api/tasks/${encodeURIComponent(taskId)}/cancel`,{method:'POST',body:'{}'}); await refreshTask();}catch(err){fail('task-error',err.message);} });
-$('send-input').addEventListener('click',async()=>{ const message=$('input-message').value.trim(); if(!message) return; try{await api(`/api/tasks/${encodeURIComponent(taskId)}/input`,{method:'POST',body:JSON.stringify({message})}); $('input-message').value=''; await refreshTask();}catch(err){fail('task-error',err.message);} });
-Promise.all([loadRuntime(),loadProjects()]).catch(err=>fail('form-error',err.message));
+$('add-project-form').addEventListener('submit',async e=>{e.preventDefault();setError('project-error');const root=$('project-root').value.trim();const id=$('project-id').value.trim();try{await api('/api/projects',{method:'POST',body:JSON.stringify({root,id})});$('project-root').value='';$('project-id').value='';await loadProjects();await loadTasks();}catch(err){setError('project-error',err.message);}});
+$('refresh-projects').addEventListener('click',loadProjects);
+
+async function loadTasks(){const data=await api('/api/tasks');tasks=data.tasks||[];renderUsage();renderTasks();if(selectedTaskId&&!tasks.some(t=>t.id===selectedTaskId))selectedTaskId='';if(!selectedTaskId&&tasks.length){const first=tasks.find(t=>t.needs_attention)||tasks[0];selectedTaskId=first.id;}if(selectedTaskId)await refreshSelectedTask();}
+function renderUsage(){let input=0,output=0,total=0;for(const t of tasks){input+=Number(t.usage?.model_input_tokens||0);output+=Number(t.usage?.model_output_tokens||0);total+=Number(t.usage?.model_total_tokens||0);}$('usage-tasks').textContent=tasks.length;$('usage-input').textContent=fmtTokens(input);$('usage-output-total').textContent=`${fmtTokens(output)} / ${fmtTokens(total)}`;}
+function taskButton(t){const b=document.createElement('button');b.type='button';b.className=`task ${t.needs_attention?'status-attention':''} ${t.id===selectedTaskId?'selected':''}`;const fb=t.owner_feedback?.verdict?` · Owner ${t.owner_feedback.verdict}`:'';b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(t.goal||'Untitled goal')}</span><span class="chip">${esc(t.state)}</span></div><div class="task-meta muted"><span>${esc(t.project_id)}</span><span>${fmtTime(t.updated_at)}</span><span>${fmtTokens(t.usage?.model_total_tokens||0)} tokens${esc(fb)}</span></div>`;b.addEventListener('click',async()=>{selectedTaskId=t.id;renderTasks();await refreshSelectedTask();});return b;}
+function renderTasks(){const attention=tasks.filter(t=>t.needs_attention);$('attention-count').textContent=attention.length;const ah=$('attention-list');ah.innerHTML='';attention.forEach(t=>ah.appendChild(taskButton(t)));if(!attention.length)ah.innerHTML='<div class="muted">Không có việc nào cần bạn can thiệp.</div>';const rh=$('recent-list');rh.innerHTML='';tasks.forEach(t=>rh.appendChild(taskButton(t)));if(!tasks.length)rh.innerHTML='<div class="empty">Chưa có task. Hãy giao yêu cầu cho Tech Lead Web.</div>';}
+$('refresh-work').addEventListener('click',loadTasks);
+
+async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('task-detail');try{
+  const [statusRes,resultRes,inspectRes,feedbackRes]=await Promise.allSettled([api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/status`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/result`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/inspect`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/feedback`)]);
+  if(statusRes.status!=='fulfilled')throw statusRes.reason;const s=statusRes.value.status||{};const task=s.task||{};const state=(task.state||'').toUpperCase();const result=resultRes.status==='fulfilled'?(resultRes.value.result||null):null;const inspect=inspectRes.status==='fulfilled'?inspectRes.value:null;const feedback=feedbackRes.status==='fulfilled'?(feedbackRes.value.feedback||[]):[];if(inspect)$('advanced-inspect').textContent=JSON.stringify(inspect,null,2);
+  const resultBlock=result?`<div class="grid"><div class="metric card span-4"><span class="muted">Verification</span><b>${esc(result.verdict||'—')}</b></div><div class="metric card span-4"><span class="muted">Integration</span><b>${esc(result.integration_status||'—')}</b></div><div class="metric card span-4"><span class="muted">Revision</span><b style="font-size:13px">${esc((result.final_revision||'—').slice(0,16))}</b></div></div><details><summary>Evidence / changed areas</summary><pre>${esc(JSON.stringify({changed_areas:result.changed_areas,pass_fail_evidence:result.pass_fail_evidence,unresolved_risks:result.unresolved_risks,resource_summary:result.resource_summary},null,2))}</pre></details>`:'<div class="muted">Chưa có durable result.</div>';
+  const brain=!!s.brain_turn_available;const needsInput=state==='INPUT_REQUIRED'&&!brain;
+  detail.innerHTML=`<div class="card-head"><div><div class="muted" style="font-size:12px">${esc(task.contract?.project_id||'')}</div><h2>${esc(task.contract?.goal||selectedTaskId)}</h2><div class="project-path muted">${esc(selectedTaskId)}</div></div><span class="chip">${esc(state||'UNKNOWN')}</span></div><div class="notice ${brain?'warn':''}">${esc(brain?'Đang chờ brain turn từ MCP client/Tech Lead.':(s.detail||s.state_detail||s.next_action||'MAR đang xử lý task này.'))}</div>${resultBlock}${needsInput?`<div class="stack"><label>MAR cần thông tin từ bạn<textarea id="task-input" placeholder="Chỉ trả lời phần thông tin/quyết định còn thiếu."></textarea></label><button id="send-task-input" type="button">Gửi</button></div>`:''}<div class="actions"><button id="detail-refresh" type="button">Làm mới</button><button id="detail-cancel" type="button" ${terminalStates.has(state)?'disabled':''}>Hủy task</button></div>${result?`<div class="stack"><h3>Phản hồi của bạn</h3><textarea id="feedback-message" placeholder="Bạn thấy gì khi dùng thật? Có gì khó hiểu hoặc chưa đúng?"></textarea><div class="feedback-actions"><button type="button" data-feedback="ACCEPTED">Chấp nhận</button><button type="button" data-feedback="REJECTED">Chưa đạt</button><button type="button" data-feedback="COMMENT">Chỉ ghi chú</button></div><div id="feedback-error" class="notice error hidden"></div><div class="feedback-history">${feedback.map(f=>`<div class="feedback-item"><b>${esc(f.verdict)}</b> · ${fmtTime(f.created_at)}<div>${esc(f.message||'')}</div><div class="muted project-path">${esc((f.candidate_revision||'').slice(0,16))}</div></div>`).join('')||'<div class="muted">Chưa có feedback.</div>'}</div></div>`:''}`;
+  $('detail-refresh').addEventListener('click',refreshSelectedTask);$('detail-cancel').addEventListener('click',async()=>{if(!confirm('Yêu cầu MAR hủy task này?'))return;try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/cancel`,{method:'POST',body:'{}'});await loadTasks();}catch(err){alert(err.message);}});
+  if(needsInput)$('send-task-input').addEventListener('click',async()=>{const message=$('task-input').value.trim();if(!message)return;try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/input`,{method:'POST',body:JSON.stringify({message})});await loadTasks();}catch(err){alert(err.message);}});
+  detail.querySelectorAll('[data-feedback]').forEach(btn=>btn.addEventListener('click',async()=>{const verdict=btn.dataset.feedback;const message=$('feedback-message').value.trim();setError('feedback-error');try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/feedback`,{method:'POST',body:JSON.stringify({verdict,message})});await loadTasks();}catch(err){setError('feedback-error',err.message);}}));
+}catch(err){detail.innerHTML=`<div class="notice error">${esc(err.message)}</div>`;}}
+
+async function boot(){try{await Promise.all([loadRuntime(),loadProjects(),loadTasks()]);pollTimer=setInterval(async()=>{try{await loadTasks();}catch{}},2500);}catch(err){$('work-readiness').className='notice error';$('work-readiness').textContent=err.message;}}
+window.addEventListener('beforeunload',()=>{if(pollTimer)clearInterval(pollTimer);});boot();
 </script>
 </body>
 </html>

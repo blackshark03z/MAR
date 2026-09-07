@@ -223,9 +223,11 @@ func (r *TaskRunner) verifyAndIntegrate(ctx context.Context, outcome RunOutcome,
 		RunEpoch:  attempt.RunEpoch,
 		Runtime:   runtime,
 		ResourceSummary: domain.ResourceSummary{
-			AgentTurns:       outcome.Agent.Turns,
-			AgentToolCalls:   outcome.Agent.ToolCalls,
-			ModelTotalTokens: outcome.Agent.Usage.TotalTokens,
+			AgentTurns:        outcome.Agent.Turns,
+			AgentToolCalls:    outcome.Agent.ToolCalls,
+			ModelInputTokens:  outcome.Agent.Usage.InputTokens,
+			ModelOutputTokens: outcome.Agent.Usage.OutputTokens,
+			ModelTotalTokens:  outcome.Agent.Usage.TotalTokens,
 		},
 	})
 	if verifyErr != nil {

@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 10
+const latestSchemaVersion = 11
 
 type SQLite struct {
 	db *sql.DB
@@ -326,6 +326,36 @@ CREATE TABLE web_turns (
 );
 CREATE INDEX idx_web_turns_task_created ON web_turns(task_id, created_at DESC);
 CREATE INDEX idx_web_turns_task_pending ON web_turns(task_id, responded_at);
+`
+	case 11:
+		script = `
+CREATE TABLE project_policies (
+    project_id TEXT PRIMARY KEY,
+    local_file_write INTEGER NOT NULL DEFAULT 1,
+    local_git_write INTEGER NOT NULL DEFAULT 1,
+    network_allowed INTEGER NOT NULL DEFAULT 0,
+    remote_git_write INTEGER NOT NULL DEFAULT 0,
+    deploy_allowed INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+INSERT INTO project_policies(project_id, local_file_write, local_git_write, network_allowed, remote_git_write, deploy_allowed, updated_at)
+SELECT id, 1, 1, 0, 0, 0, created_at FROM projects;
+
+CREATE TABLE owner_feedback (
+    feedback_id TEXT PRIMARY KEY,
+    idempotency_key TEXT NOT NULL UNIQUE,
+    task_id TEXT NOT NULL,
+    result_id TEXT NOT NULL,
+    candidate_revision TEXT NOT NULL,
+    verdict TEXT NOT NULL,
+    message TEXT NOT NULL DEFAULT '',
+    integrity_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(result_id) REFERENCES task_results(result_id)
+);
+CREATE INDEX idx_owner_feedback_task_created ON owner_feedback(task_id, created_at DESC);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

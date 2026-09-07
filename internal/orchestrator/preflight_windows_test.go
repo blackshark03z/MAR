@@ -171,6 +171,27 @@ func TestPreflightInvalidBaseBlocksInsteadOfQueueing(t *testing.T) {
 	}
 }
 
+func TestPreflightProjectPolicyBlocksAuthorityWidening(t *testing.T) {
+	s, svc, task, root, profiles := preflightFixture(t, "go-standard")
+	if _, err := svc.UpdateProjectPolicy(context.Background(), task.Contract.ProjectID, false, true); err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := preflight.Drive(context.Background(), task.ID); err == nil {
+		t.Fatal("expected project-policy preflight failure")
+	}
+	got, err := s.GetTask(context.Background(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != domain.TaskBlocked {
+		t.Fatalf("project policy widening must block before queue, got=%s", got.State)
+	}
+}
+
 func TestPreflightUnknownVerificationProfileBlocks(t *testing.T) {
 	s, svc, task, root, profiles := preflightFixture(t, "missing-profile")
 	preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})

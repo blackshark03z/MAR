@@ -1,67 +1,72 @@
 # Goal
 
-Provide the smallest coherent owner-facing MAR surface needed for hands-on V1 acceptance: the owner can enter the product, choose the target project, submit one bounded Goal, understand what MAR is doing, inspect the verified/integrated result and evidence, and make the final accept/reject judgment without the UI bypassing MAR's frozen MCP/runtime authority.
+Close MAR V1 product usability after the Astra audit without reopening the frozen runtime architecture. The owner is non-IT and works primarily through a Tech Lead Web conversation. CADS helps the Tech Lead frame requirements, Critical User Journey, engineering concerns, acceptance criteria and verification oracles. MAR executes the accepted bounded work and preserves durable task/evidence/integration truth. The Owner Console is the local setup, connection, project, permission, continuity, usage/health and feedback surface; it is not the primary place where the owner authors engineering contracts.
 
-# Critical User Journey
+# Primary Product Journey
 
-Launch the local MAR owner surface -> select or identify a registered project -> enter/review one bounded Goal Contract -> start the task -> see meaningful task state and required action -> handle any real input/brain dependency without losing orientation -> inspect result/diff/evidence -> accept or reject the owner experience.
+Owner describes intent in normal language -> Tech Lead Web understands the product context and asks only owner-level questions -> Tech Lead applies CADS to produce a bounded Goal Contract with criterion-specific scenario/oracle checks -> Tech Lead submits through MAR MCP -> MAR executes autonomously in isolated workspaces, including safe parallelism where contracts permit -> MAR verifies criterion-specific evidence and serializes integration -> Tech Lead explains the result in normal language -> Owner uses the product and records accept/reject/feedback against the exact candidate/result.
 
-# Acceptance
+# Owner Console Journey
 
-1. A real rendered owner-facing surface exposes one obvious primary path from project selection to Goal submission.
-2. The surface uses MAR's bounded MCP/task control plane as authority; it does not create a parallel task database, direct coding loop, direct repository mutation path, or alternate integration authority.
-3. The owner can distinguish ready, running/waiting, input-required/blocked, verifying/integrating, complete and failed/cancelled outcomes when those states occur, with a clear next action.
-4. The final surface shows the task outcome, changed areas/revision, verification/integration status and evidence detail needed to judge the result.
-5. Web-brain/provider dependencies are explicit in the journey; the UI must not pretend autonomous cognition is available when the selected brain transport is not connected/configured.
-6. The representative Owner UAT uses a real MAR project/Goal on the identified product build and reaches a result or a concrete product blocker.
-7. Only explicit Owner real-use approval may establish PRODUCT_ACCEPTED / SELF_HOSTING_READY.
+Launch MAR Console -> see connection readiness -> add/select a local project and review supported permissions -> reopen current/recent work after restart -> inspect tasks that need attention -> inspect result/evidence when useful -> record Owner feedback. Advanced diagnostics may expose task IDs, revisions, verification profiles and raw evidence, but normal owner flow must not require that vocabulary.
 
-# Acceptance Fixture / Golden Input
+# Hard Product Acceptance
 
-Project: MAR itself on canonical `master`.
-Representative Goal: one bounded documentation or low-risk maintenance Goal that changes only explicitly allowed files and can be independently inspected after MAR verification/integration.
+1. Zero manual forwarding: the owner does not copy prompts/reports between Tech Lead Web and coding workers during the representative Goal.
+2. Zero required developer vocabulary in normal flow: the owner is not required to choose Git/worktree/base revision/verification profile/run epoch or construct engineering acceptance/oracles.
+3. Human attention only for human decisions: MAR/Tech Lead do not ask the owner for facts that can be derived from repository/runtime state.
+4. Criterion-specific evidence: no acceptance criterion may become PASS without a bound scenario/oracle and observation that actually proves it; otherwise it is UNVERIFIED.
+5. Safe integration: owner/editor work appearing during integration is preserved; uncertainty blocks instead of destructively synchronizing.
+6. Connection/setup truth: ChatGPT, Claude/local MCP and provider modes show their real capabilities/readiness and do not claim connected/autonomous state without evidence.
+7. Project continuity: the owner can add a supported project, see its readiness/permissions, and reopen current/recent tasks after MAR/Console restart without remembering task IDs.
+8. Owner feedback is durable and bound to the exact task/result candidate being judged.
+9. Technical release gate remains test/vet/build/diff-check plus the frozen T1-T17/recovery/security acceptance relevant to the current revision/environment.
+10. Only explicit Owner real-use approval may establish PRODUCT_ACCEPTED / SELF_HOSTING_READY.
+
+# P0 / P1 Remediation Status
+
+## Closed in safety checkpoint `fb4c8e94e1931941b076140dd8adfd646445270a`
+
+- P0 HTTP mutation boundary: loopback Host + startup-session token + Origin/Sec-Fetch-Site + JSON-only before MCP mutation.
+- P0 integration owner-work race: no destructive `reset --merge`; staged/unstaged/untracked owner work is preserved or integration blocks for safe sync/review.
+- P0 verification semantics: PASS / FAIL / UNVERIFIED with criterion-specific scenario/oracle observations; no blanket profile PASS.
+- `go-docs` admission is docs-only by candidate changed-path identity.
+- P1 capability admission: unsupported network/remote-Git/deploy authority and unsupported non-Go project/profile combinations fail before worker dispatch.
+- Full repository convergence gate passed before checkpoint.
+
+## Current P1 product work
+
+- Connection capability/readiness metadata implemented for local MCP, ChatGPT bridge requirement and provider mode without false connected state.
+- Add Project + project readiness + durable project-level local file/local Git policy implemented and enforced by preflight.
+- Current/recent task continuity + attention queue implemented from the same SQLite task truth.
+- Durable Owner feedback implemented and bound to exact result/candidate; acceptance is rejected before a verified integrated result exists.
+- Console normal flow no longer requires Owner-authored acceptance/profile/priority/authority; those remain engineering/MCP concerns.
+- MAR-measured input/output/total model usage is carried into durable result resource summaries; hidden client usage is not guessed.
+- Focused API/store/service/orchestrator tests PASS, including restart persistence, unauthorized mutation rejection, recent work continuity and premature acceptance rejection.
+- Real desktop/narrow rendered Console has been exercised on the actual MAR UI + SQLite/MCP runtime. Final live mutation probe, full repository gate and Owner real-use UAT remain.
 
 # Non-goals
 
-- No MAR V1 architecture redesign.
-- No new task lifecycle, coordination database, worker authority, integration path, or resource-governor design.
-- No multi-user/SaaS/cloud concerns.
-- No decorative dashboard, design-system project, or open-ended polish loop.
-- No claim of V1 stable before the owner personally runs the journey.
+- No MAR V1 architecture redesign unless evidence proves a frozen invariant insufficient.
+- No multi-user/SaaS/RBAC/cloud worker platform.
+- No automatic push/deploy by default.
+- No decorative dashboard or open-ended polish loop.
+- No fake token/client usage metrics where the client/provider does not expose measurement.
+- No second task/coordination database outside MAR SQLite.
 
 # Constraints
 
-- Frozen MAR architecture/invariants remain authoritative.
-- Owner UI is a client/surface over MAR, not a replacement runtime.
-- Prefer the minimum local implementation and existing Go/MCP dependencies before adding frameworks.
-- UI findings are limited to current-Goal BLOCKER/HIGH issues; cosmetic alternatives are deferred.
-- No push/deploy by default; Git/source and identified runtime evidence remain authoritative.
+- Frozen architecture under `docs/architecture/MAR_V1_Architecture_FROZEN/` remains canonical.
+- CADS is a development/Tech Lead standard, not a MAR runtime subsystem.
+- SQLite remains execution coordination truth; CADS `TASK.md` is intent/progress context only and must not duplicate runtime state as authority.
+- Owner Console setup/project/feedback mutations must use application-level validation and remain inside the single-owner local trust boundary.
+- UI review fixes BLOCKER/HIGH journey defects before cosmetic polish.
 
 # Material Decisions
 
-- CADS is adopted as MAR's development operating standard/routing layer; it does not become a MAR runtime subsystem.
-- For user-facing work: Product Goal -> Critical User Journey -> User-Facing Workflow -> Frontend Design -> rendered UI Quality Review -> Owner Product Acceptance.
-- The frozen architecture remains in `docs/architecture/MAR_V1_Architecture_FROZEN/`; do not create a second root architecture authority merely to satisfy a generic bootstrap template.
-- Owner-facing UI must stay on the MCP/task-control side of the frozen topology and must surface, not hide, cognition/brain transport dependencies.
+- DR-0001 remains valid for adopting CADS without changing runtime authority.
+- DR-0002 establishes the post-Astra responsibility boundary: Owner -> Tech Lead Web -> CADS -> MAR -> Worker/Product, with Owner Console as secondary operations surface.
 
-See `docs/decisions/0001-cads-owner-product-workflow.md`.
+# Current Safe Action
 
-# Progress
-
-- Technical self-hosting T1-T17 and a MAR-on-MAR engineering run have passed.
-- CADS routing, Product Goal/CUJ, Decision Record and the minimum loopback Owner Console are implemented locally.
-- Owner Console targeted tests and a full sequential repository test/vet/build gate pass; headless Chrome rendered checks pass at desktop 1440x1000 and narrow 390x844.
-- Brain readiness is surfaced before Run. This machine currently has neither a direct ChatGPT->MAR MCP bridge nor provider-mode environment configuration, so autonomous Owner UAT remains concretely blocked on brain transport setup rather than hidden UI behavior.
-- Owner hands-on UAT has not yet occurred; MAR V1 is not PRODUCT_ACCEPTED / SELF_HOSTING_READY.
-
-# Discoveries / Blockers
-
-- Current ChatGPT session is not directly connected to MAR's local MCP stdio endpoint; the previous Web-brain owner run used an internal ignored harness. This proves technical flow, not owner entry UX.
-- Provider-mode UAT is not currently configured on this machine (`OPENAI_API_KEY`, provider base URL and model are absent); the owner surface must show brain readiness before Run instead of allowing a hidden late stall.
-- A generic CADS bootstrap would create a second root `ARCHITECTURE.md`; MAR intentionally keeps its existing frozen architecture authority instead.
-- ChatCode raw-command jobs can retain descendant processes after `Start-Process`, and the cancellation supervisor may be unavailable. Render probes must therefore own launch + review + process-tree cleanup inside one bounded command; do not leave detached UI probes running.
-- Do not infer a usable browser automation dependency from `npm root`; Playwright was not actually installed. Prefer already-present headless Chrome/Edge for rendered checks unless the project explicitly carries a browser automation dependency.
-
-# Next Safe Action
-
-Run the full sequential repository gate on the bounded CADS/Owner UI slice, inspect the final diff, then commit/push only if clean. After that, launch the owner surface for the owner's first hands-on UAT; V1 acceptance remains pending until the owner personally completes or rejects the journey.
+Run one bounded live Console interaction probe covering Add Project -> policy update -> durable reload and work continuity, then execute full repository test/vet/build/diff-check. If clean, checkpoint the P1 product slice separately, build from the clean commit, and run the representative Owner real-use UAT through Tech Lead Web -> MAR -> result -> Owner feedback.

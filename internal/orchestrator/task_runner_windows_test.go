@@ -187,7 +187,7 @@ func readyTaskAndWorkspace() (domain.Task, domain.Workspace) {
 func TestCompletedCandidateVerifiesBeforeRecordingTerminationAndIntegratesAfter(t *testing.T) {
 	task, workspace := readyTaskAndWorkspace()
 	svc := &fakeTaskService{task: task}
-	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate, Turns: 3, ToolCalls: 5, Usage: model.Usage{TotalTokens: 144}}}
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate, Turns: 3, ToolCalls: 5, Usage: model.Usage{InputTokens: 80, OutputTokens: 64, TotalTokens: 144}}}
 	verifier := &fakeVerifier{service: svc, result: domain.TaskResult{Verdict: domain.ResultVerified}}
 	integrator := &fakeIntegrator{service: svc}
 	runner := testRunner(t, svc, workerProcess, verifier, integrator)
@@ -203,7 +203,7 @@ func TestCompletedCandidateVerifiesBeforeRecordingTerminationAndIntegratesAfter(
 	if !reflect.DeepEqual(svc.events, want) {
 		t.Fatalf("unexpected authoritative ordering: got=%v want=%v", svc.events, want)
 	}
-	if got := verifier.request.ResourceSummary; got.AgentTurns != 3 || got.AgentToolCalls != 5 || got.ModelTotalTokens != 144 {
+	if got := verifier.request.ResourceSummary; got.AgentTurns != 3 || got.AgentToolCalls != 5 || got.ModelInputTokens != 80 || got.ModelOutputTokens != 64 || got.ModelTotalTokens != 144 {
 		t.Fatalf("agent resource summary was not bound into verification result: %+v", got)
 	}
 }
