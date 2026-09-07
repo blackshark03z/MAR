@@ -85,6 +85,8 @@ Representative Owner UAT starts in the Tech Lead Web conversation: describe one 
 
 `go-docs` is intentionally narrower and is only for documentation-only Goals. It compiles every test package without executing tests (`go test -run '^$'`), then runs sequential `go vet` and `go build`. It exists because MAR's own host-security/integration tests intentionally require capabilities such as raw Git fixtures, sockets, or nested AppContainer setup that the candidate LPAC is forbidden to receive. `go-docs` never substitutes for the full host release/owner acceptance gate when MAR runtime or security behavior changes.
 
+Engineering acceptance is criterion-bound and machine-observed. V1 supports `output_contains:<literal>` for criterion-specific command observations and `file_contains:<relative-path>:<literal>` for direct sealed-candidate file observations. A green test/vet/build profile by itself never promotes an arbitrary criterion to PASS. If the declared observation is absent or unsupported, the criterion is `UNVERIFIED` and cannot integrate. Owner real-use acceptance remains separate durable feedback on the exact integrated candidate/result.
+
 ## MCP control surface
 
 The public task-oriented MCP surface is intentionally limited to:

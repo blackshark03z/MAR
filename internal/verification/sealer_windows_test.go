@@ -72,7 +72,7 @@ func newSealerHarnessWithAcceptanceChecks(t *testing.T, localGitWrite, withAccep
 		contract.AcceptanceChecks = []domain.AcceptanceCheck{{
 			CriterionIndex: 1,
 			Scenario:       "run the selected verification profile against the sealed candidate",
-			Oracle:         "the profile's primary test command succeeds on that candidate",
+			Oracle:         "output_contains:ok test",
 			CommandIndexes: []int{1},
 		}}
 	}

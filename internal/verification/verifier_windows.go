@@ -118,6 +118,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	}
 
 	commandEvidence := make([]domain.VerificationCommandEvidence, 0, len(profile.Commands))
+	commandOutputs := make([]string, 0, len(profile.Commands))
 	allCommandsPassed := true
 	for _, command := range profile.Commands {
 		if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
@@ -144,6 +145,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 		if !passed {
 			allCommandsPassed = false
 		}
+		commandOutputs = append(commandOutputs, observed)
 		commandEvidence = append(commandEvidence, domain.VerificationCommandEvidence{
 			Name:         strings.TrimSpace(command.Name),
 			Args:         append([]string(nil), command.Args...),
@@ -178,27 +180,12 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 			acceptance = append(acceptance, domain.AcceptanceEvidence{Criterion: criterion, Status: domain.AcceptanceUnverified, EvidenceRefs: []string{}})
 			continue
 		}
-		refs := make([]string, 0, len(check.CommandIndexes))
-		status := domain.AcceptancePass
-		valid := true
-		for _, commandIndex := range check.CommandIndexes {
-			if commandIndex < 1 || commandIndex > len(commandEvidence) {
-				valid = false
-				break
-			}
-			command := commandEvidence[commandIndex-1]
-			refs = append(refs, fmt.Sprintf("command:%d:%s", commandIndex, command.OutputSHA256))
-			if !command.Passed {
-				status = domain.AcceptanceFail
-			}
-		}
-		if !valid {
-			acceptanceUnverified = true
-			acceptance = append(acceptance, domain.AcceptanceEvidence{Criterion: criterion, Status: domain.AcceptanceUnverified, Scenario: strings.TrimSpace(check.Scenario), Oracle: strings.TrimSpace(check.Oracle), EvidenceRefs: []string{}})
-			continue
-		}
-		if status == domain.AcceptanceFail {
+		status, observation, refs := v.observeAcceptanceOracle(req.Runtime.Root(), check, commandEvidence, commandOutputs)
+		switch status {
+		case domain.AcceptanceFail:
 			acceptanceFailed = true
+		case domain.AcceptanceUnverified:
+			acceptanceUnverified = true
 		}
 		acceptance = append(acceptance, domain.AcceptanceEvidence{
 			Criterion:    criterion,
@@ -206,6 +193,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 			Status:       status,
 			Scenario:     strings.TrimSpace(check.Scenario),
 			Oracle:       strings.TrimSpace(check.Oracle),
+			Observation:  observation,
 			EvidenceRefs: refs,
 		})
 	}
@@ -245,6 +233,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 			if acceptance[i].EffectiveStatus() == domain.AcceptancePass {
 				acceptance[i].Passed = false
 				acceptance[i].Status = domain.AcceptanceUnverified
+				acceptance[i].Observation = "candidate or verification-environment identity drift invalidated the prior observation"
 				acceptance[i].EvidenceRefs = []string{}
 				acceptanceUnverified = true
 			}
@@ -487,6 +476,65 @@ func newVerificationID(prefix string) string {
 	buf[6] = (buf[6] & 0x0f) | 0x40
 	buf[8] = (buf[8] & 0x3f) | 0x80
 	return prefix + "-" + hex.EncodeToString(buf)
+}
+
+func (v *Verifier) observeAcceptanceOracle(root string, check domain.AcceptanceCheck, commands []domain.VerificationCommandEvidence, outputs []string) (domain.AcceptanceStatus, string, []string) {
+	oracle := strings.TrimSpace(check.Oracle)
+	if strings.HasPrefix(oracle, "output_contains:") {
+		literal := strings.TrimSpace(strings.TrimPrefix(oracle, "output_contains:"))
+		if literal == "" || len(check.CommandIndexes) == 0 {
+			return domain.AcceptanceUnverified, "output_contains oracle is incomplete", []string{}
+		}
+		matched := 0
+		for _, commandIndex := range check.CommandIndexes {
+			if commandIndex < 1 || commandIndex > len(commands) || commandIndex > len(outputs) {
+				return domain.AcceptanceUnverified, "referenced verification command index is unavailable", []string{}
+			}
+			command := commands[commandIndex-1]
+			if !command.Passed {
+				return domain.AcceptanceFail, fmt.Sprintf("referenced command %d failed before the required output observation could be established", commandIndex), []string{fmt.Sprintf("command:%d:%s", commandIndex, command.OutputSHA256)}
+			}
+			if strings.Contains(outputs[commandIndex-1], literal) {
+				matched = commandIndex
+				break
+			}
+		}
+		if matched == 0 {
+			return domain.AcceptanceUnverified, "referenced commands passed but did not emit the required output observation", []string{}
+		}
+		return domain.AcceptancePass, fmt.Sprintf("required literal observed in command %d output", matched), []string{fmt.Sprintf("command:%d:%s", matched, commands[matched-1].OutputSHA256)}
+	}
+	if strings.HasPrefix(oracle, "file_contains:") {
+		rest := strings.TrimPrefix(oracle, "file_contains:")
+		parts := strings.SplitN(rest, ":", 2)
+		if len(parts) != 2 {
+			return domain.AcceptanceUnverified, "file_contains oracle is incomplete", []string{}
+		}
+		rel := filepath.Clean(strings.TrimSpace(parts[0]))
+		literal := strings.TrimSpace(parts[1])
+		if rel == "." || rel == ".." || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || literal == "" {
+			return domain.AcceptanceUnverified, "file_contains oracle path/literal is invalid", []string{}
+		}
+		full := filepath.Join(root, rel)
+		relCheck, err := filepath.Rel(root, full)
+		if err != nil || relCheck == ".." || strings.HasPrefix(relCheck, ".."+string(filepath.Separator)) {
+			return domain.AcceptanceUnverified, "file_contains oracle escaped the verification root", []string{}
+		}
+		content, err := os.ReadFile(full)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return domain.AcceptanceFail, fmt.Sprintf("candidate file %q does not exist", filepath.ToSlash(rel)), []string{"file:" + filepath.ToSlash(rel) + ":missing"}
+			}
+			return domain.AcceptanceUnverified, "candidate file could not be observed: " + boundVerificationText(err.Error(), 512), []string{}
+		}
+		sum := sha256.Sum256(content)
+		ref := "file:" + filepath.ToSlash(rel) + ":" + hex.EncodeToString(sum[:])
+		if !strings.Contains(string(content), literal) {
+			return domain.AcceptanceFail, fmt.Sprintf("candidate file %q does not contain the required literal", filepath.ToSlash(rel)), []string{ref}
+		}
+		return domain.AcceptancePass, fmt.Sprintf("required literal observed in candidate file %q", filepath.ToSlash(rel)), []string{ref}
+	}
+	return domain.AcceptanceUnverified, "oracle is not machine-verifiable by MAR V1", []string{}
 }
 
 func formatVerificationCommand(name string, args []string) string {

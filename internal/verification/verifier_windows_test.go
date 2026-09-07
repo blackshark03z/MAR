@@ -129,7 +129,7 @@ func TestVerifierDocumentationOnlyProfileRejectsSourceCandidateBeforeCommands(t 
 	profile := verifierProfile()
 	profile.ChangeScope = ChangeScopeDocumentationOnly
 	verifier := verifierForHarness(t, h, profile)
-	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}}
+	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}}}
 
 	_, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
 	if err == nil || !strings.Contains(err.Error(), "only admits documentation changes") {
@@ -140,6 +140,51 @@ func TestVerifierDocumentationOnlyProfileRejectsSourceCandidateBeforeCommands(t 
 	}
 	if _, ok, loadErr := h.store.LatestTaskResult(context.Background(), h.task.ID); loadErr != nil || ok {
 		t.Fatalf("rejected docs-only candidate published a result: ok=%v err=%v", ok, loadErr)
+	}
+}
+
+func TestVerifierPassingCommandWithoutRequiredObservationRemainsUnverified(t *testing.T) {
+	h := newSealerHarness(t, true)
+	prepareVerifierCandidate(t, h)
+	verifier := verifierForHarness(t, h, verifierProfile())
+	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "all tests passed but no criterion marker", ExitCode: 0}, {Output: "ok vet", ExitCode: 0}}}
+
+	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Verdict != domain.ResultUnverified {
+		t.Fatalf("green unrelated command falsely verified acceptance: %+v", result)
+	}
+	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Acceptance[0].EffectiveStatus() != domain.AcceptanceUnverified || evidence.Acceptance[0].Observation == "" || len(evidence.Acceptance[0].EvidenceRefs) != 0 {
+		t.Fatalf("missing oracle observation was not represented fail-closed: %+v", evidence.Acceptance[0])
+	}
+}
+
+func TestObserveAcceptanceOracleFileContainsCandidateObservation(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("owner journey ready\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verifier := &Verifier{}
+	status, observation, refs := verifier.observeAcceptanceOracle(root, domain.AcceptanceCheck{
+		Scenario: "inspect the sealed candidate README",
+		Oracle:   "file_contains:README.md:owner journey ready",
+	}, nil, nil)
+	if status != domain.AcceptancePass || observation == "" || len(refs) != 1 || !strings.HasPrefix(refs[0], "file:README.md:") {
+		t.Fatalf("file_contains oracle did not produce revision-local observation: status=%s observation=%q refs=%v", status, observation, refs)
+	}
+
+	status, observation, refs = verifier.observeAcceptanceOracle(root, domain.AcceptanceCheck{
+		Scenario: "attempt an escaped file observation",
+		Oracle:   "file_contains:../outside.txt:anything",
+	}, nil, nil)
+	if status != domain.AcceptanceUnverified || observation == "" || len(refs) != 0 {
+		t.Fatalf("file_contains traversal did not fail closed: status=%s observation=%q refs=%v", status, observation, refs)
 	}
 }
 
@@ -238,7 +283,7 @@ func TestVerifierEnvironmentDriftProducesUnverifiedEvidence(t *testing.T) {
 		sum := sha256.Sum256(payload)
 		return payload, hex.EncodeToString(sum[:]), nil
 	}
-	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}}
+	runtime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}}}
 	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +303,7 @@ func TestVerifierCandidateDriftProducesUnverifiedEvidence(t *testing.T) {
 	verifier := verifierForHarness(t, h, verifierProfile())
 	runtime := &fakeVerificationRuntime{
 		root:    h.root,
-		results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}},
+		results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}},
 		hook: func(index int) {
 			if index == 0 {
 				if err := os.WriteFile(filepath.Join(h.root, "main.go"), []byte("package main\nfunc main() { println(\"drift\") }\n"), 0o644); err != nil {
@@ -282,7 +327,7 @@ func TestVerifierFreshnessRejectsProfileAndRevisionDrift(t *testing.T) {
 	verifier := verifierForHarness(t, h, verifierProfile())
 	result, err := verifier.Verify(context.Background(), VerifyRequest{
 		TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch,
-		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}},
+		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -321,7 +366,7 @@ func TestVerifierUntrackedSourceDriftProducesUnverifiedEvidence(t *testing.T) {
 	verifier := verifierForHarness(t, h, verifierProfile())
 	runtime := &fakeVerificationRuntime{
 		root:    h.root,
-		results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}},
+		results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}},
 		hook: func(index int) {
 			if index == 0 {
 				if err := os.WriteFile(filepath.Join(h.root, "untracked.go"), []byte("package main\nvar untracked = true\n"), 0o644); err != nil {
@@ -346,7 +391,7 @@ func TestVerifierFreshnessRejectsEnvironmentAndUntrackedWorkspaceDrift(t *testin
 	stableEnvironment := verifier.environment
 	result, err := verifier.Verify(context.Background(), VerifyRequest{
 		TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch,
-		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}},
+		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +418,7 @@ func TestVerificationResultPersistsAcrossSQLiteReopen(t *testing.T) {
 	verifier := verifierForHarness(t, h, verifierProfile())
 	result, err := verifier.Verify(context.Background(), VerifyRequest{
 		TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch,
-		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{ExitCode: 0}, {ExitCode: 0}}},
+		Runtime: &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {ExitCode: 0}}},
 	})
 	if err != nil {
 		t.Fatal(err)

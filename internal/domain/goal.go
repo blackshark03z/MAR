@@ -18,10 +18,12 @@ type Authority struct {
 	DeployAllowed  bool `json:"deploy_allowed"`
 }
 
-// AcceptanceCheck binds one immutable acceptance criterion to the scenario/oracle
-// and concrete verification commands intended to observe it. CommandIndexes are
-// one-based indexes into the selected verification profile. Missing checks are
-// allowed for backward-compatible durable contracts but remain UNVERIFIED.
+// AcceptanceCheck binds one immutable acceptance criterion to a machine-verifiable
+// scenario/oracle. V1 supports only output_contains:<literal> (with one-based
+// CommandIndexes into the selected verification profile) and
+// file_contains:<relative-path>:<literal> (observed directly on the sealed
+// candidate). Missing checks remain UNVERIFIED for backward-compatible durable
+// contracts.
 type AcceptanceCheck struct {
 	CriterionIndex int    `json:"criterion_index"`
 	Scenario       string `json:"scenario"`
@@ -71,8 +73,26 @@ func (g GoalContract) Validate() error {
 			if strings.TrimSpace(check.Scenario) == "" || strings.TrimSpace(check.Oracle) == "" {
 				return errors.New("acceptance check scenario and oracle are required")
 			}
-			if len(check.CommandIndexes) == 0 {
-				return errors.New("acceptance check requires at least one command index")
+			oracle := strings.TrimSpace(check.Oracle)
+			switch {
+			case strings.HasPrefix(oracle, "output_contains:"):
+				if strings.TrimSpace(strings.TrimPrefix(oracle, "output_contains:")) == "" {
+					return errors.New("output_contains acceptance oracle requires a non-blank literal")
+				}
+				if len(check.CommandIndexes) == 0 {
+					return errors.New("output_contains acceptance oracle requires at least one command index")
+				}
+			case strings.HasPrefix(oracle, "file_contains:"):
+				rest := strings.TrimPrefix(oracle, "file_contains:")
+				parts := strings.SplitN(rest, ":", 2)
+				if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+					return errors.New("file_contains acceptance oracle requires relative-path and non-blank literal")
+				}
+				if len(check.CommandIndexes) != 0 {
+					return errors.New("file_contains acceptance oracle must not declare command indexes")
+				}
+			default:
+				return errors.New("acceptance oracle is unsupported by MAR V1")
 			}
 			seenCommand := map[int]struct{}{}
 			for _, index := range check.CommandIndexes {

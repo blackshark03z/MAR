@@ -14,7 +14,7 @@ func TestGoStandardVerificationProfileUsesSequentialPackageBuilds(t *testing.T) 
 		t.Fatalf("unexpected profile id %q", profile.ID)
 	}
 	want := [][]string{
-		{"test", "-p", "1", "-count=1", "-timeout", "180s", "./..."},
+		{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."},
 		{"vet", "-p", "1", "./..."},
 		{"build", "-p", "1", "./..."},
 	}

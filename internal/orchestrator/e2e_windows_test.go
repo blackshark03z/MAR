@@ -49,7 +49,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeMarkerOracleTest(t, projectRoot, "MAR E2E OK\n")
+	writeMarkerOracleTest(t, projectRoot, "MAR E2E OK\n", "MAR_ACCEPTANCE_E2E_MARKER")
 	runGitTest(t, projectRoot, "init", "-b", "main")
 	runGitTest(t, projectRoot, "config", "user.name", "MAR E2E")
 	runGitTest(t, projectRoot, "config", "user.email", "mar-e2e@local.invalid")
@@ -158,7 +158,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		VerificationProfiles: []verification.Profile{{
 			ID: "go-standard",
 			Commands: []verification.Command{
-				{Name: goExe, Args: []string{"test", "-count=1", "./..."}, Cwd: "."},
+				{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 				{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
 				{Name: goExe, Args: []string{"build", "./..."}, Cwd: "."},
 			},
@@ -234,7 +234,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 			"acceptance_checks": []any{map[string]any{
 				"criterion_index": 1,
 				"scenario":        "run the project acceptance test against the sealed candidate",
-				"oracle":          "TestMarkerAcceptance passes only when marker.txt exists with exactly MAR E2E OK content",
+				"oracle":          "output_contains:MAR_ACCEPTANCE_E2E_MARKER",
 				"command_indexes": []int{1},
 			}},
 			"boundaries":           []string{"Only create marker.txt; do not change existing source files."},
@@ -386,7 +386,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	}
 }
 
-func writeMarkerOracleTest(t *testing.T, projectRoot, want string) {
+func writeMarkerOracleTest(t *testing.T, projectRoot, want, observationMarker string) {
 	t.Helper()
 	source := fmt.Sprintf(`package smoke
 
@@ -403,8 +403,9 @@ func TestMarkerAcceptance(t *testing.T) {
 	if string(got) != %q {
 		t.Fatalf("marker content = %%q", got)
 	}
+	t.Log(%q)
 }
-`, want)
+`, want, observationMarker)
 	if err := os.WriteFile(filepath.Join(projectRoot, "main_test.go"), []byte(source), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +428,7 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeMarkerOracleTest(t, projectRoot, "MAR WEB BRAIN OK\n")
+	writeMarkerOracleTest(t, projectRoot, "MAR WEB BRAIN OK\n", "MAR_ACCEPTANCE_WEB_E2E_MARKER")
 	runGitTest(t, projectRoot, "init", "-b", "main")
 	runGitTest(t, projectRoot, "config", "user.name", "MAR Web E2E")
 	runGitTest(t, projectRoot, "config", "user.email", "mar-web-e2e@local.invalid")
@@ -455,7 +456,7 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 		Provider:     worker.ProviderConfig{BrainMode: worker.BrainWeb},
 		AgentProfile: agent.Profile{Model: "gpt-5.6-sol", ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
 		VerificationProfiles: []verification.Profile{{ID: "go-standard", Commands: []verification.Command{
-			{Name: goExe, Args: []string{"test", "-count=1", "./..."}, Cwd: "."},
+			{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 			{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
 			{Name: goExe, Args: []string{"build", "./..."}, Cwd: "."},
 		}}},
@@ -506,7 +507,7 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 			"acceptance_checks": []any{map[string]any{
 				"criterion_index": 1,
 				"scenario":        "run the project acceptance test against the sealed candidate",
-				"oracle":          "TestMarkerAcceptance passes only when marker.txt exists with exactly MAR WEB BRAIN OK content",
+				"oracle":          "output_contains:MAR_ACCEPTANCE_WEB_E2E_MARKER",
 				"command_indexes": []int{1},
 			}},
 			"boundaries": []string{"Only create marker.txt; do not change existing source files."},

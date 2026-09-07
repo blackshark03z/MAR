@@ -416,7 +416,7 @@ func goStandardVerificationProfile(goExecutable string) verification.Profile {
 	return verification.Profile{
 		ID: "go-standard",
 		Commands: []verification.Command{
-			{Name: goExecutable, Args: []string{"test", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
 		},

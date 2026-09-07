@@ -42,6 +42,7 @@ type AcceptanceEvidence struct {
 	Status       AcceptanceStatus `json:"status,omitempty"`
 	Scenario     string           `json:"scenario,omitempty"`
 	Oracle       string           `json:"oracle,omitempty"`
+	Observation  string           `json:"observation,omitempty"`
 	EvidenceRefs []string         `json:"evidence_refs"`
 }
 
@@ -135,8 +136,8 @@ func (e VerificationEvidence) ValidateIdentity() error {
 		if len(criterion.EvidenceRefs) == 0 {
 			return errors.New("verified acceptance evidence requires evidence_refs")
 		}
-		if criterion.Status != "" && (strings.TrimSpace(criterion.Scenario) == "" || strings.TrimSpace(criterion.Oracle) == "") {
-			return errors.New("criterion-specific acceptance evidence requires scenario and oracle")
+		if criterion.Status != "" && (strings.TrimSpace(criterion.Scenario) == "" || strings.TrimSpace(criterion.Oracle) == "" || strings.TrimSpace(criterion.Observation) == "") {
+			return errors.New("criterion-specific acceptance evidence requires scenario, oracle and observation")
 		}
 		allAcceptancePassed = allAcceptancePassed && status == AcceptancePass
 	}
