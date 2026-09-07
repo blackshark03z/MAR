@@ -102,13 +102,14 @@ type ownerTaskView struct {
 }
 
 type ownerConnectionView struct {
-	ID        string   `json:"id"`
-	Name      string   `json:"name"`
-	Status    string   `json:"status"`
-	Transport string   `json:"transport"`
-	Summary   string   `json:"summary"`
-	Command   string   `json:"command,omitempty"`
-	Args      []string `json:"args,omitempty"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Status      string   `json:"status"`
+	Transport   string   `json:"transport"`
+	Summary     string   `json:"summary"`
+	Command     string   `json:"command,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	SetupAction string   `json:"setup_action,omitempty"`
 }
 
 type ownerSubmitRequest struct {
@@ -248,6 +249,7 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", b.serveIndex)
 	mux.HandleFunc("GET /api/runtime", b.serveRuntime)
+	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
 	mux.HandleFunc("POST /api/projects", b.addProject)
 	mux.HandleFunc("POST /api/projects/{projectID}/policy", b.updateProjectPolicy)
@@ -338,18 +340,34 @@ func (b *ownerUIBackend) serveIndex(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(html))
 }
 
+func (b *ownerUIBackend) webStdioArgs() []string {
+	return []string{"mcp-stdio", "-db", b.dbPath, "-data-root", b.dataRoot, "-brain", "web", "-model", "gpt-5.6-sol", "-reasoning", "high", "-go", b.goPath, "-max-workers", fmt.Sprint(b.maxWorkers)}
+}
+
+func (b *ownerUIBackend) downloadClaudeDesktopPackage(w http.ResponseWriter, _ *http.Request) {
+	payload, err := buildClaudeDesktopPackage(b.executable, b.webStdioArgs())
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+claudeDesktopPackageName+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(payload)
+}
+
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "Use an MCP-capable client. Local desktop clients can launch MAR over stdio; cloud ChatWeb clients require a supported remote MCP/tunnel path."
+		nextAction = "Use an MCP-capable client. Claude Desktop can install the local MAR MCP package; cloud ChatWeb clients require a supported remote MCP/tunnel path."
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
 	}
-	stdioArgs := []string{"mcp-stdio", "-db", b.dbPath, "-data-root", b.dataRoot, "-brain", "web", "-model", "gpt-5.6-sol", "-reasoning", "high", "-go", b.goPath, "-max-workers", fmt.Sprint(b.maxWorkers)}
+	stdioArgs := b.webStdioArgs()
 	connections := []ownerConnectionView{
-		{ID: "claude-desktop", Name: "Claude Desktop / local MCP client", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Runs MAR locally with the current OS user. Configure the client to launch this executable and arguments.", Command: b.executable, Args: stdioArgs},
-		{ID: "chatgpt", Name: "ChatGPT", Status: "REMOTE_BRIDGE_REQUIRED", Transport: "remote-mcp", Summary: "This MAR build is local/stdio. ChatGPT cloud cannot be labeled connected until a supported remote MCP or secure tunnel path is configured and observed."},
+		{ID: "claude-desktop", Name: "Claude Desktop / local MCP client", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Download the candidate-bound MCPB package and install it in Claude Desktop. No API key is embedded in the package.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"},
+		{ID: "chatgpt", Name: "ChatGPT", Status: "REMOTE_BRIDGE_REQUIRED", Transport: "remote-mcp", Summary: "This MAR build is local/stdio. ChatGPT cloud cannot be labeled connected until a supported remote MCP or Secure MCP Tunnel path is configured and observed. Full write MCP also depends on the ChatGPT plan/workspace capability."},
 	}
 	providerStatus := "NOT_CONFIGURED"
 	if providerReady {

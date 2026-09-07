@@ -38,15 +38,15 @@ mar init -db <data-root>/mar.db
 mar project-add -db <data-root>/mar.db -id <project-id> -root <project-root>
 ```
 
-3. Start the MCP edge with GPT Web as the coding brain:
+3. Start the MCP edge with a Web/desktop Tech Lead client as the coding brain:
 
 ```text
 mar mcp-stdio -db <data-root>/mar.db -data-root <data-root> -brain web
 ```
 
-`-brain web` does not require a model-provider API key. For fully unattended cognition, use provider mode with the configured provider URL, API-key environment variable, and model.
+`-brain web` does not require a model-provider API key. The canonical V1 transport is local MCP stdio. Claude Desktop can use it directly; the Owner Console can generate a candidate-bound `.mcpb` package so the owner does not have to author MCP JSON manually. Cloud ChatWeb clients require their own supported remote MCP/tunnel capability and must never be labeled connected merely because MAR is running. For fully unattended cognition, use provider mode with the configured provider URL, API-key environment variable, and model.
 
-4. In ChatGPT, submit one bounded Goal Contract. Use `status` to follow the durable task. When `brain_turn_available` is true, call `brain_turn`, reason over the exact messages and offered tools, and answer that exact `turn_id` with `brain_respond`. Coding tool calls are executed by the isolated worker, not by the MCP process.
+4. In an MCP-capable Tech Lead client, submit one bounded Goal Contract. Use `status` to follow the durable task. When `brain_turn_available` is true, call `brain_turn`, reason over the exact messages and offered tools, and answer that exact `turn_id` with `brain_respond`. Coding tool calls are executed by the isolated worker, not by the MCP process.
 
 5. After completion, use `result` for the revision-bound verification/integration result and `inspect` for the full task, workspace, attempt, checkpoint, control, evidence, and pending-brain state.
 
@@ -66,7 +66,7 @@ The Console exposes four normal surfaces:
 
 - **Work** — current/recent durable tasks, attention queue, result/evidence, MAR-measured token usage and Owner feedback;
 - **Projects** — add a supported local repository and narrow project-level local file/local Git permissions;
-- **Connections** — capability/readiness for local MCP clients, ChatGPT bridge requirements and provider mode without pretending configuration means a live connection;
+- **Connections** — capability/readiness for local MCP clients, a one-click candidate-bound Claude Desktop `.mcpb` package, ChatGPT remote/tunnel requirements and provider mode without pretending configuration means a live connection;
 - **Advanced** — raw task/runtime diagnostics for Tech Lead/debug use.
 
 For unattended provider-backed cognition, configure provider URL, API-key environment variable and model, then launch:

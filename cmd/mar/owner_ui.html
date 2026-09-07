@@ -186,11 +186,22 @@ function renderConnections(items){
     const ready=c.status==='READY'; const local=c.status==='AVAILABLE_LOCAL';
     const card=document.createElement('div');card.className='card';
     const config=(c.command&&c.args)?JSON.stringify({command:c.command,args:c.args},null,2):'';
-    card.innerHTML=`<div class="card-head"><div><h3>${esc(c.name)}</h3><div class="muted">${esc(c.transport)}</div></div><span class="chip">${esc(c.status)}</span></div><p>${esc(c.summary)}</p>${config?`<details class="connection-command"><summary>Cấu hình local MCP</summary><pre>${esc(config)}</pre><button type="button" data-copy> Sao chép cấu hình </button></details>`:''}`;
+    const packageAction=c.setup_action==='DOWNLOAD_MCPB'?`<div class="actions" style="margin-top:10px"><button type="button" data-package class="primary">Tải gói cài Claude Desktop (.mcpb)</button></div>`:'';
+    card.innerHTML=`<div class="card-head"><div><h3>${esc(c.name)}</h3><div class="muted">${esc(c.transport)}</div></div><span class="chip">${esc(c.status)}</span></div><p>${esc(c.summary)}</p>${packageAction}${config?`<details class="connection-command"><summary>Cấu hình local MCP nâng cao</summary><pre>${esc(config)}</pre><button type="button" data-copy>Sao chép cấu hình</button></details>`:''}`;
     if(ready||local) card.dataset.ready='true'; host.appendChild(card);
+    const packageButton=card.querySelector('[data-package]'); if(packageButton) packageButton.addEventListener('click',()=>downloadClaudePackage(packageButton));
     const copy=card.querySelector('[data-copy]'); if(copy) copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(config);copy.textContent='Đã sao chép';}catch{copy.textContent='Không thể sao chép tự động';}});
   }
   if(!items.length) host.innerHTML='<div class="empty">Không có connection metadata.</div>';
+}
+
+async function downloadClaudePackage(button){
+  const original=button.textContent; button.disabled=true; button.textContent='Đang tạo gói…';
+  try{
+    const res=await fetch('/api/connections/claude-desktop/package',{method:'POST',headers:{'Content-Type':'application/json','X-MAR-Owner-Token':ownerSessionToken},body:'{}'});
+    if(!res.ok){let data={};try{data=await res.json();}catch{};throw new Error(data.error||`${res.status} ${res.statusText}`);}
+    const blob=await res.blob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='mar-claude-desktop.mcpb'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); button.textContent='Đã tạo gói cài đặt';
+  }catch(err){button.textContent='Tạo gói thất bại'; alert(err.message);}finally{setTimeout(()=>{button.disabled=false;button.textContent=original;},1800);}
 }
 
 async function loadProjects(){const data=await api('/api/projects');projects=data.projects||[];renderProjects();}
