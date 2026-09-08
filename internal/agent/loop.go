@@ -323,7 +323,7 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		}
 		maxOutput := min64(l.cfg.MaxOutputTokensPerTurn, remainingTokens)
 		turnReq := model.TurnRequest{
-			RequestID:       fmt.Sprintf("%s-agent-turn-%03d", req.TaskID, turn),
+			RequestID:       agentTurnRequestID(req.TaskID, req.RunEpoch, turn),
 			Model:           l.profile.Model,
 			Messages:        cloneMessages(messages),
 			Tools:           cloneToolDefinitions(pinnedTools),
@@ -941,6 +941,10 @@ func truncateUTF8(value string, maxBytes int) string {
 		end--
 	}
 	return value[:end]
+}
+
+func agentTurnRequestID(taskID string, runEpoch int64, turn int) string {
+	return fmt.Sprintf("%s-epoch-%03d-agent-turn-%03d", taskID, runEpoch, turn)
 }
 
 func min64(a, b int64) int64 {

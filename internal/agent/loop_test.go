@@ -157,6 +157,20 @@ func (f fakeContextBuilder) Build(ctx context.Context, req contextengine.Request
 	return pack, nil
 }
 
+func TestAgentTurnRequestIDFencesReplacementEpochs(t *testing.T) {
+	first := agentTurnRequestID("task-1", 1, 1)
+	retry := agentTurnRequestID("task-1", 2, 1)
+	if first == retry {
+		t.Fatalf("replacement epoch reused web turn request id: %q", first)
+	}
+	if first != agentTurnRequestID("task-1", 1, 1) {
+		t.Fatal("same attempt/turn request id is not deterministic")
+	}
+	if !strings.Contains(first, "epoch-001") || !strings.Contains(retry, "epoch-002") {
+		t.Fatalf("request ids do not encode run_epoch: first=%q retry=%q", first, retry)
+	}
+}
+
 func TestLoopExecutesToolTurnsAndRequiresExplicitFinish(t *testing.T) {
 	gateway := &scriptedGateway{responses: []model.TurnResponse{
 		assistantResponse(70, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-write", Name: "write_file", Arguments: `{"path":"a.txt","expected_sha256":"ABSENT","content":"hello"}`}}}),
