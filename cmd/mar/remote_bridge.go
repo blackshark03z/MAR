@@ -20,121 +20,304 @@ import (
 	"time"
 
 	"mar/internal/mcpedge"
+	"mar/internal/store"
 )
 
-type remoteBridgeState struct {
+const (
+	remoteBridgeListen       = "127.0.0.1:8788"
+	remoteConnectedWindow    = 45 * time.Second
+	remoteStableProbeEvery   = 5 * time.Second
+	remoteStableProbeTimeout = 3 * time.Second
+)
+
+type remoteConnectorState struct {
+	ID            string     `json:"id"`
 	Status        string     `json:"status"`
-	Provider      string     `json:"provider"`
+	PreferredMode string     `json:"preferred_mode"`
 	PublicURL     string     `json:"public_url,omitempty"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
+	StableBaseURL string     `json:"stable_base_url,omitempty"`
+	StableURL     string     `json:"stable_url,omitempty"`
+	TemporaryURL  string     `json:"temporary_url,omitempty"`
+	LocalTarget   string     `json:"local_target,omitempty"`
 	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
+	LastHealthAt  *time.Time `json:"last_health_at,omitempty"`
 	Initialized   bool       `json:"initialized"`
 	ToolsListed   bool       `json:"tools_listed"`
 	Requests      int64      `json:"requests"`
-	Dependency    string     `json:"dependency,omitempty"`
+	RouteReady    bool       `json:"route_ready"`
 	LastError     string     `json:"last_error,omitempty"`
-	TemporaryLink bool       `json:"temporary_link"`
+}
+
+type remoteBridgeState struct {
+	Status        string                 `json:"status"`
+	Provider      string                 `json:"provider"`
+	PublicURL     string                 `json:"public_url,omitempty"` // compatibility: Claude active URL.
+	StartedAt     *time.Time             `json:"started_at,omitempty"`
+	LastSeenAt    *time.Time             `json:"last_seen_at,omitempty"`
+	Initialized   bool                   `json:"initialized"`
+	ToolsListed   bool                   `json:"tools_listed"`
+	Requests      int64                  `json:"requests"`
+	Dependency    string                 `json:"dependency,omitempty"`
+	LastError     string                 `json:"last_error,omitempty"`
+	TemporaryLink bool                   `json:"temporary_link"`
+	LocalTarget   string                 `json:"local_target,omitempty"`
+	Connectors    []remoteConnectorState `json:"connectors"`
 }
 
 type remoteTunnelStartFunc func(context.Context, string, string) (string, func() error, <-chan error, error)
+
+type remoteConnectorTelemetry struct {
+	lastSeenAt   time.Time
+	initialized  bool
+	toolsListed  bool
+	requests     int64
+	stableReady  bool
+	lastHealthAt time.Time
+	stableError  string
+}
 
 type remoteBridgeManager struct {
 	ctx      context.Context
 	backend  mcpedge.Backend
 	dataRoot string
 
-	mu          sync.Mutex
-	server      *http.Server
-	listener    net.Listener
-	publicURL   string
-	localURL    string
-	startedAt   time.Time
-	lastSeenAt  time.Time
-	initialized bool
-	toolsListed bool
-	requests    int64
-	lastError   string
-	tunnelStop  func() error
-	tunnelDone  <-chan error
+	mu             sync.Mutex
+	server         *http.Server
+	listener       net.Listener
+	localBaseURL   string
+	routes         map[string]http.Handler
+	profiles       map[string]store.RemoteConnectorProfile
+	telemetry      map[string]*remoteConnectorTelemetry
+	quickBaseURL   string
+	startedAt      time.Time
+	lastError      string
+	tunnelStop     func() error
+	tunnelDone     <-chan error
+	healthWake     chan struct{}
+	healthLoopOnce sync.Once
 
 	findTunnel  func() (string, error)
 	startTunnel remoteTunnelStartFunc
 }
 
 func newRemoteBridgeManager(ctx context.Context, backend mcpedge.Backend, dataRoot string) *remoteBridgeManager {
-	m := &remoteBridgeManager{ctx: ctx, backend: backend, dataRoot: filepath.Clean(dataRoot)}
+	m := &remoteBridgeManager{
+		ctx: ctx, backend: backend, dataRoot: filepath.Clean(dataRoot),
+		routes: make(map[string]http.Handler), profiles: make(map[string]store.RemoteConnectorProfile),
+		telemetry: make(map[string]*remoteConnectorTelemetry), healthWake: make(chan struct{}, 1),
+	}
 	m.findTunnel = m.findCloudflared
 	m.startTunnel = startCloudflaredQuickTunnel
 	return m
 }
 
+func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnectorProfile) error {
+	if len(profiles) == 0 {
+		return errors.New("remote connector profiles are required")
+	}
+	newProfiles := make(map[string]store.RemoteConnectorProfile, len(profiles))
+	newRoutes := make(map[string]http.Handler, len(profiles)*2)
+	for _, profile := range profiles {
+		if err := profile.Validate(); err != nil {
+			return err
+		}
+		profile.StableBaseURL = strings.TrimRight(strings.TrimSpace(profile.StableBaseURL), "/")
+		connectorID := profile.ID
+		allowed := []string{"claude.ai"}
+		if connectorID == store.RemoteConnectorChatGPTWeb {
+			allowed = []string{"chatgpt.com", "openai.com"}
+		}
+		handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
+			PathToken: profile.PathToken, AllowedOriginHosts: allowed,
+			Observe: func(event mcpedge.RemoteHTTPEvent) { m.observe(connectorID, event) },
+		})
+		if err != nil {
+			return fmt.Errorf("build %s remote MCP handler: %w", connectorID, err)
+		}
+		newProfiles[connectorID] = profile
+		newRoutes["/mcp/"+profile.PathToken] = handler
+		newRoutes["/health/"+profile.PathToken] = handler
+	}
+
+	m.mu.Lock()
+	for id, profile := range newProfiles {
+		previous, existed := m.profiles[id]
+		if !existed || previous.PathToken != profile.PathToken || previous.StableBaseURL != profile.StableBaseURL || previous.PreferredMode != profile.PreferredMode {
+			m.telemetry[id] = &remoteConnectorTelemetry{}
+		} else if m.telemetry[id] == nil {
+			m.telemetry[id] = &remoteConnectorTelemetry{}
+		}
+	}
+	m.profiles = newProfiles
+	m.routes = newRoutes
+	m.mu.Unlock()
+
+	if err := m.ensureLocalServer(); err != nil {
+		m.setError(err)
+		return err
+	}
+	m.healthLoopOnce.Do(func() { go m.stableHealthLoop() })
+	m.signalHealthRefresh()
+	return nil
+}
+
 func (m *remoteBridgeManager) State() remoteBridgeState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	state := remoteBridgeState{Provider: "cloudflare-quick-tunnel", Initialized: m.initialized, ToolsListed: m.toolsListed, Requests: m.requests, TemporaryLink: true, LastError: m.lastError}
-	if m.publicURL != "" && m.server != nil {
-		state.Status = "LINK_READY"
-		if m.initialized {
-			state.Status = "CONNECTED"
-		}
-		state.PublicURL = m.publicURL
+	return m.stateLocked()
+}
+
+func (m *remoteBridgeManager) stateLocked() remoteBridgeState {
+	state := remoteBridgeState{Provider: "streamable-http", TemporaryLink: m.quickBaseURL != "", LocalTarget: m.localBaseURL, LastError: m.lastError}
+	if !m.startedAt.IsZero() {
 		started := m.startedAt
 		state.StartedAt = &started
-		if !m.lastSeenAt.IsZero() {
-			last := m.lastSeenAt
+	}
+	ids := []string{store.RemoteConnectorClaudeWeb, store.RemoteConnectorChatGPTWeb}
+	for _, id := range ids {
+		profile, ok := m.profiles[id]
+		if !ok {
+			continue
+		}
+		telemetry := m.telemetry[id]
+		if telemetry == nil {
+			telemetry = &remoteConnectorTelemetry{}
+		}
+		connector := m.connectorStateLocked(profile, telemetry)
+		state.Connectors = append(state.Connectors, connector)
+		state.Requests += connector.Requests
+		state.Initialized = state.Initialized || connector.Initialized
+		state.ToolsListed = state.ToolsListed || connector.ToolsListed
+		if connector.LastSeenAt != nil && (state.LastSeenAt == nil || connector.LastSeenAt.After(*state.LastSeenAt)) {
+			last := *connector.LastSeenAt
 			state.LastSeenAt = &last
 		}
-		return state
-	}
-	if path, err := m.findTunnel(); err != nil {
-		state.Status = "BRIDGE_RUNTIME_MISSING"
-		state.Dependency = "cloudflared"
-		if state.LastError == "" {
-			state.LastError = err.Error()
+		if id == store.RemoteConnectorClaudeWeb {
+			state.PublicURL = connector.PublicURL
 		}
-	} else {
-		state.Status = "READY_TO_START"
-		state.Dependency = path
+	}
+	state.Status = "READY_TO_START"
+	for _, connector := range state.Connectors {
+		switch connector.Status {
+		case "CONNECTED":
+			state.Status = "CONNECTED"
+			return state
+		case "IDLE":
+			if state.Status != "CONNECTED" {
+				state.Status = "IDLE"
+			}
+		case "LINK_READY":
+			if state.Status != "IDLE" {
+				state.Status = "LINK_READY"
+			}
+		case "ROUTE_OFFLINE", "STABLE_URL_REQUIRED":
+			if state.Status == "READY_TO_START" {
+				state.Status = connector.Status
+			}
+		}
+	}
+	if len(state.Connectors) == 0 {
+		state.Status = "NOT_CONFIGURED"
+	}
+	if m.quickBaseURL == "" {
+		if path, err := m.findTunnel(); err != nil {
+			state.Dependency = "cloudflared"
+			if state.LastError == "" {
+				state.LastError = err.Error()
+			}
+			for i := range state.Connectors {
+				if state.Connectors[i].PreferredMode == store.RemoteConnectorModeTemporary && state.Connectors[i].Status == "READY_TO_START" {
+					state.Connectors[i].Status = "BRIDGE_RUNTIME_MISSING"
+					state.Connectors[i].LastError = err.Error()
+				}
+			}
+			if state.Status == "READY_TO_START" {
+				state.Status = "BRIDGE_RUNTIME_MISSING"
+			}
+		} else {
+			state.Dependency = path
+		}
 	}
 	return state
 }
 
-func (m *remoteBridgeManager) Start() (remoteBridgeState, error) {
-	m.mu.Lock()
-	if m.publicURL != "" && m.server != nil {
-		state := m.stateLocked()
-		m.mu.Unlock()
-		return state, nil
+func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnectorProfile, telemetry *remoteConnectorTelemetry) remoteConnectorState {
+	state := remoteConnectorState{
+		ID: profile.ID, PreferredMode: profile.PreferredMode, StableBaseURL: profile.StableBaseURL,
+		LocalTarget: m.localBaseURL, Initialized: telemetry.initialized, ToolsListed: telemetry.toolsListed,
+		Requests: telemetry.requests, LastError: telemetry.stableError,
 	}
-	m.lastError = ""
+	if !telemetry.lastSeenAt.IsZero() {
+		last := telemetry.lastSeenAt
+		state.LastSeenAt = &last
+	}
+	if !telemetry.lastHealthAt.IsZero() {
+		checked := telemetry.lastHealthAt
+		state.LastHealthAt = &checked
+	}
+	if profile.StableBaseURL != "" {
+		state.StableURL = connectorPublicURL(profile.StableBaseURL, profile.PathToken)
+	}
+	if m.quickBaseURL != "" {
+		state.TemporaryURL = connectorPublicURL(m.quickBaseURL, profile.PathToken)
+	}
+
+	if profile.PreferredMode == store.RemoteConnectorModeStable {
+		state.PublicURL = state.StableURL
+		if profile.StableBaseURL == "" {
+			state.Status = "STABLE_URL_REQUIRED"
+			return state
+		}
+		state.RouteReady = telemetry.stableReady
+		if !telemetry.stableReady {
+			if telemetry.lastHealthAt.IsZero() {
+				state.Status = "CHECKING"
+			} else {
+				state.Status = "ROUTE_OFFLINE"
+			}
+			return state
+		}
+	} else {
+		state.PublicURL = state.TemporaryURL
+		state.RouteReady = m.quickBaseURL != ""
+		if m.quickBaseURL == "" {
+			state.Status = "READY_TO_START"
+			return state
+		}
+	}
+
+	if telemetry.initialized {
+		if !telemetry.lastSeenAt.IsZero() && time.Since(telemetry.lastSeenAt) <= remoteConnectedWindow {
+			state.Status = "CONNECTED"
+		} else {
+			state.Status = "IDLE"
+		}
+		return state
+	}
+	state.Status = "LINK_READY"
+	return state
+}
+
+func (m *remoteBridgeManager) Profile(id string) (store.RemoteConnectorProfile, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.profiles[id]
+	return p, ok
+}
+
+func (m *remoteBridgeManager) ensureLocalServer() error {
+	m.mu.Lock()
+	if m.server != nil && m.listener != nil {
+		m.mu.Unlock()
+		return nil
+	}
 	m.mu.Unlock()
 
-	cloudflared, err := m.findTunnel()
+	listener, err := net.Listen("tcp", remoteBridgeListen)
 	if err != nil {
-		m.setError(err)
-		return m.State(), err
+		return fmt.Errorf("listen for stable remote MCP bridge on %s: %w", remoteBridgeListen, err)
 	}
-	token, err := newRemoteBridgeToken()
-	if err != nil {
-		m.setError(err)
-		return m.State(), err
-	}
-	handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
-		PathToken:          token,
-		AllowedOriginHosts: []string{"claude.ai"},
-		Observe:            m.observe,
-	})
-	if err != nil {
-		m.setError(err)
-		return m.State(), err
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		m.setError(err)
-		return m.State(), err
-	}
-	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
-	localURL := "http://" + listener.Addr().String()
+	server := &http.Server{Handler: http.HandlerFunc(m.serveRemoteHTTP), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	serveDone := make(chan error, 1)
 	go func() {
 		err := server.Serve(listener)
@@ -144,74 +327,134 @@ func (m *remoteBridgeManager) Start() (remoteBridgeState, error) {
 		serveDone <- err
 	}()
 
-	baseURL, stopTunnel, tunnelDone, err := m.startTunnel(m.ctx, cloudflared, localURL)
-	if err != nil {
-		_ = server.Shutdown(context.Background())
+	m.mu.Lock()
+	if m.server != nil {
+		m.mu.Unlock()
 		_ = listener.Close()
-		<-serveDone
+		return nil
+	}
+	m.server = server
+	m.listener = listener
+	m.localBaseURL = "http://" + listener.Addr().String()
+	m.lastError = ""
+	m.mu.Unlock()
+	go m.watchServer(serveDone)
+	return nil
+}
+
+func (m *remoteBridgeManager) serveRemoteHTTP(w http.ResponseWriter, r *http.Request) {
+	m.mu.Lock()
+	handler := m.routes[r.URL.Path]
+	m.mu.Unlock()
+	if handler == nil {
+		http.NotFound(w, r)
+		return
+	}
+	handler.ServeHTTP(w, r)
+}
+
+func (m *remoteBridgeManager) Start() (remoteBridgeState, error) { return m.StartTemporary() }
+
+func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
+	if err := m.ensureLocalServer(); err != nil {
 		m.setError(err)
 		return m.State(), err
 	}
-	if err := waitRemoteBridgeReady(m.ctx, baseURL, token); err != nil {
+	m.mu.Lock()
+	if m.quickBaseURL != "" {
+		state := m.stateLocked()
+		m.mu.Unlock()
+		return state, nil
+	}
+	localURL := m.localBaseURL
+	var probeToken string
+	for _, id := range []string{store.RemoteConnectorClaudeWeb, store.RemoteConnectorChatGPTWeb} {
+		if p, ok := m.profiles[id]; ok {
+			probeToken = p.PathToken
+			break
+		}
+	}
+	m.lastError = ""
+	m.mu.Unlock()
+	if probeToken == "" {
+		return m.State(), errors.New("no remote connector profile is configured")
+	}
+
+	cloudflared, err := m.findTunnel()
+	if err != nil {
+		m.setError(err)
+		return m.State(), err
+	}
+	baseURL, stopTunnel, tunnelDone, err := m.startTunnel(m.ctx, cloudflared, localURL)
+	if err != nil {
+		m.setError(err)
+		return m.State(), err
+	}
+	if err := waitRemoteBridgeReady(m.ctx, baseURL, probeToken); err != nil {
 		if stopTunnel != nil {
 			_ = stopTunnel()
 		}
-		_ = server.Shutdown(context.Background())
-		_ = listener.Close()
-		<-serveDone
 		m.setError(err)
 		return m.State(), err
 	}
-	publicURL := strings.TrimRight(baseURL, "/") + "/mcp/" + token
 	now := time.Now().UTC()
-
 	m.mu.Lock()
-	m.server = server
-	m.listener = listener
-	m.publicURL = publicURL
-	m.localURL = localURL + "/mcp/" + token
+	m.quickBaseURL = strings.TrimRight(baseURL, "/")
 	m.startedAt = now
-	m.lastSeenAt = time.Time{}
-	m.initialized = false
-	m.toolsListed = false
-	m.requests = 0
 	m.tunnelStop = stopTunnel
 	m.tunnelDone = tunnelDone
+	for id, profile := range m.profiles {
+		if profile.PreferredMode == store.RemoteConnectorModeTemporary {
+			m.telemetry[id] = &remoteConnectorTelemetry{}
+		}
+	}
 	m.lastError = ""
 	m.mu.Unlock()
-
-	go m.watchTunnel(tunnelDone, serveDone)
+	go m.watchTunnel(tunnelDone)
 	return m.State(), nil
 }
 
-func (m *remoteBridgeManager) Stop() error {
+func (m *remoteBridgeManager) StopTemporary() error {
 	m.mu.Lock()
-	server := m.server
 	stopTunnel := m.tunnelStop
-	m.server = nil
-	m.listener = nil
-	m.publicURL = ""
-	m.localURL = ""
+	m.quickBaseURL = ""
 	m.tunnelStop = nil
 	m.tunnelDone = nil
-	m.initialized = false
-	m.toolsListed = false
-	m.requests = 0
-	m.lastSeenAt = time.Time{}
-	m.mu.Unlock()
-
-	var errs []error
-	if stopTunnel != nil {
-		if err := stopTunnel(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			errs = append(errs, err)
+	for id, profile := range m.profiles {
+		if profile.PreferredMode == store.RemoteConnectorModeTemporary {
+			m.telemetry[id] = &remoteConnectorTelemetry{}
 		}
 	}
+	m.mu.Unlock()
+	if stopTunnel != nil {
+		if err := stopTunnel(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *remoteBridgeManager) Stop() error {
+	var errs []error
+	if err := m.StopTemporary(); err != nil {
+		errs = append(errs, err)
+	}
+	m.mu.Lock()
+	server := m.server
+	listener := m.listener
+	m.server = nil
+	m.listener = nil
+	m.localBaseURL = ""
+	m.mu.Unlock()
 	if server != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if listener != nil {
+		_ = listener.Close()
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)
@@ -222,37 +465,33 @@ func (m *remoteBridgeManager) Stop() error {
 func (m *remoteBridgeManager) Close() error { return m.Stop() }
 
 func (m *remoteBridgeManager) localEndpoint() string {
+	return m.localEndpointFor(store.RemoteConnectorClaudeWeb)
+}
+func (m *remoteBridgeManager) localEndpointFor(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.localURL
+	profile, ok := m.profiles[id]
+	if !ok || m.localBaseURL == "" {
+		return ""
+	}
+	return m.localBaseURL + "/mcp/" + profile.PathToken
 }
 
-func (m *remoteBridgeManager) stateLocked() remoteBridgeState {
-	state := remoteBridgeState{Status: "LINK_READY", Provider: "cloudflare-quick-tunnel", PublicURL: m.publicURL, Initialized: m.initialized, ToolsListed: m.toolsListed, Requests: m.requests, TemporaryLink: true, LastError: m.lastError}
-	if m.initialized {
-		state.Status = "CONNECTED"
-	}
-	if !m.startedAt.IsZero() {
-		started := m.startedAt
-		state.StartedAt = &started
-	}
-	if !m.lastSeenAt.IsZero() {
-		last := m.lastSeenAt
-		state.LastSeenAt = &last
-	}
-	return state
-}
-
-func (m *remoteBridgeManager) observe(event mcpedge.RemoteHTTPEvent) {
+func (m *remoteBridgeManager) observe(connectorID string, event mcpedge.RemoteHTTPEvent) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.requests++
-	m.lastSeenAt = event.At
+	telemetry := m.telemetry[connectorID]
+	if telemetry == nil {
+		telemetry = &remoteConnectorTelemetry{}
+		m.telemetry[connectorID] = telemetry
+	}
+	telemetry.requests++
+	telemetry.lastSeenAt = event.At
 	if event.JSONRPCMethod == "initialize" {
-		m.initialized = true
+		telemetry.initialized = true
 	}
 	if event.JSONRPCMethod == "tools/list" {
-		m.toolsListed = true
+		telemetry.toolsListed = true
 	}
 }
 
@@ -264,21 +503,99 @@ func (m *remoteBridgeManager) setError(err error) {
 	}
 }
 
-func (m *remoteBridgeManager) watchTunnel(tunnelDone <-chan error, serveDone <-chan error) {
+func (m *remoteBridgeManager) watchTunnel(tunnelDone <-chan error) {
 	select {
 	case err := <-tunnelDone:
 		if err != nil {
 			m.setError(fmt.Errorf("remote tunnel exited: %w", err))
 		}
-		_ = m.Stop()
+		_ = m.StopTemporary()
+	case <-m.ctx.Done():
+		_ = m.StopTemporary()
+	}
+}
+
+func (m *remoteBridgeManager) watchServer(serveDone <-chan error) {
+	select {
 	case err := <-serveDone:
 		if err != nil {
 			m.setError(fmt.Errorf("remote MCP HTTP server exited: %w", err))
 		}
-		_ = m.Stop()
 	case <-m.ctx.Done():
-		_ = m.Stop()
 	}
+}
+
+func (m *remoteBridgeManager) stableHealthLoop() {
+	ticker := time.NewTicker(remoteStableProbeEvery)
+	defer ticker.Stop()
+	for {
+		m.refreshStableHealth()
+		select {
+		case <-m.ctx.Done():
+			return
+		case <-ticker.C:
+		case <-m.healthWake:
+		}
+	}
+}
+
+func (m *remoteBridgeManager) signalHealthRefresh() {
+	select {
+	case m.healthWake <- struct{}{}:
+	default:
+	}
+}
+
+func (m *remoteBridgeManager) refreshStableHealth() {
+	m.mu.Lock()
+	profiles := make([]store.RemoteConnectorProfile, 0, len(m.profiles))
+	for _, p := range m.profiles {
+		if p.StableBaseURL != "" {
+			profiles = append(profiles, p)
+		}
+	}
+	m.mu.Unlock()
+	for _, p := range profiles {
+		ctx, cancel := context.WithTimeout(m.ctx, remoteStableProbeTimeout)
+		err := probeRemoteBridgeReady(ctx, p.StableBaseURL, p.PathToken)
+		cancel()
+		now := time.Now().UTC()
+		m.mu.Lock()
+		telemetry := m.telemetry[p.ID]
+		if telemetry == nil {
+			telemetry = &remoteConnectorTelemetry{}
+			m.telemetry[p.ID] = telemetry
+		}
+		telemetry.lastHealthAt = now
+		telemetry.stableReady = err == nil
+		telemetry.stableError = ""
+		if err != nil {
+			telemetry.stableError = sanitizeRemoteBridgeReadyError(err, p.PathToken)
+		}
+		m.mu.Unlock()
+	}
+}
+
+func connectorPublicURL(baseURL, token string) string {
+	return strings.TrimRight(baseURL, "/") + "/mcp/" + token
+}
+
+func probeRemoteBridgeReady(ctx context.Context, baseURL, token string) error {
+	healthURL := strings.TrimRight(baseURL, "/") + "/health/" + token
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: remoteStableProbeTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("public bridge health returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (m *remoteBridgeManager) findCloudflared() (string, error) {
@@ -294,7 +611,7 @@ func (m *remoteBridgeManager) findCloudflared() (string, error) {
 		}
 		return filepath.Clean(path), nil
 	}
-	return "", errors.New("cloudflared is not installed; remote MCP quick link cannot start")
+	return "", errors.New("cloudflared is not installed; temporary remote MCP link cannot start")
 }
 
 func newRemoteBridgeToken() (string, error) {
@@ -308,27 +625,17 @@ func newRemoteBridgeToken() (string, error) {
 const remoteBridgeReadyTimeout = 90 * time.Second
 
 func waitRemoteBridgeReady(ctx context.Context, baseURL, token string) error {
-	healthURL := strings.TrimRight(baseURL, "/") + "/health/" + token
-	client := &http.Client{Timeout: 3 * time.Second}
 	deadline := time.NewTimer(remoteBridgeReadyTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	var lastErr error
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusNoContent {
-				return nil
-			}
-			lastErr = fmt.Errorf("public bridge health returned HTTP %d", resp.StatusCode)
-		} else {
-			lastErr = errors.New(sanitizeRemoteBridgeReadyError(err, token))
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		lastErr = probeRemoteBridgeReady(probeCtx, baseURL, token)
+		cancel()
+		if lastErr == nil {
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -386,7 +693,6 @@ func startCloudflaredQuickTunnel(ctx context.Context, executable, localURL strin
 	go readURLs(stderr)
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	select {

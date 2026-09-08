@@ -3,8 +3,8 @@
 **Architecture:** FROZEN
 **Branch:** `master`
 **Verified Slice 016 implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
-**Current pushed base HEAD:** `11de3cb2fb1e186ffce796be11b2103697921563`
-**V1 candidate:** uncommitted Slice 017 Project Brain + Slice 018 Web Brain/multi-client/UX changes; final runtime regression pending host sandbox preparation.
+**Current pushed base HEAD:** `f83506b00938875ae560655ddd32633278897b57`
+**V1 candidate:** committed locally on current `master` (not yet pushed): durable Claude Web + ChatGPT Web connector profiles, independent secret paths/telemetry, stable/temporary modes, copy/rotate UX; full regression + candidate build + HTTP/UI smoke PASS; live owner cutover/reconnect pending.
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -88,6 +88,15 @@ Latest repository-wide verification on the Slice 016 runtime checkpoint:
 `VerificationEvidence` and `TaskResult` are durable technical truth. The MCP edge is now a bounded task control plane over that durable kernel; it is not the coding inner loop and owns no independent coordination truth.
 
 MAR as a product is **not** yet `SELF_HOSTING_READY`.
+
+## Latest connector checkpoint — 2026-09-08
+
+- Current live owner UAT on `127.0.0.1:8787` is still the pre-split binary. It uses one shared Web-bridge telemetry stream, so Claude traffic can make both `claude-web` and `chatgpt-web` appear CONNECTED. Treat that GPT status as a legacy false positive, not proof of a ChatGPT MCP session.
+- Non-disruptive cutover sidecar is now live on `127.0.0.1:8897` against the same owner-UAT DB/data root. Its Quick Tunnel is started, Claude and ChatGPT each have a distinct MCP URL, and both correctly report `LINK_READY` until their own client sends MCP traffic. Legacy `8787` remains CONNECTED so the existing Claude session is not interrupted during migration. The sidecar is hosted by durable ChatCode Job `job-18d34be6fed5aa58-117`; retire it only after final cutover or explicit rollback.
+- Candidate state adds durable schema v12 `remote_connector_profiles` for separate Claude Web and ChatGPT Web capability paths. Each connector keeps its own secret token, preferred mode, stable base, telemetry, health state, request count and last-seen time.
+- Console now renders independent Claude/GPT cards with stable/temporary mode switching, saved stable HTTPS base, active MCP URL copy, secret-link rotation/revocation, route health and realtime MCP traffic status. Polling updates reuse the existing card and do not overwrite a mode/base field while the owner is actively editing it.
+- Stable mode is intentionally honest: MAR preserves the connector token across restart, but the public base must be a persistent HTTPS route owned by the user/environment. Quick Tunnel remains explicitly temporary and its hostname may change after restart. A one-time connector reconnect is expected when cutting over from the legacy Quick Tunnel.
+- Verification completed on the current local connector candidate: targeted `mar/cmd/mar` tests PASS; full repository `go test ./...` PASS; `go vet ./...` PASS; build PASS; `git diff --check` PASS; owner UI JavaScript syntax PASS; candidate HTTP smoke on an isolated DB confirmed exactly two Web connector rows and the expected stable/copy/rotate/realtime controls.
 
 ## Next gate
 

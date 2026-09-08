@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -114,8 +115,19 @@ type ownerConnectionView struct {
 	Args          []string   `json:"args,omitempty"`
 	SetupAction   string     `json:"setup_action,omitempty"`
 	ConnectionURL string     `json:"connection_url,omitempty"`
+	StableBaseURL string     `json:"stable_base_url,omitempty"`
+	StableURL     string     `json:"stable_url,omitempty"`
+	TemporaryURL  string     `json:"temporary_url,omitempty"`
+	PreferredMode string     `json:"preferred_mode,omitempty"`
+	LocalTarget   string     `json:"local_target,omitempty"`
 	TemporaryLink bool       `json:"temporary_link,omitempty"`
+	RouteReady    bool       `json:"route_ready,omitempty"`
+	Initialized   bool       `json:"initialized,omitempty"`
+	ToolsListed   bool       `json:"tools_listed,omitempty"`
+	Requests      int64      `json:"requests,omitempty"`
 	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
+	LastHealthAt  *time.Time `json:"last_health_at,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
 }
 
 type ownerSubmitRequest struct {
@@ -135,6 +147,11 @@ type ownerSubmitRequest struct {
 
 type ownerInputRequest struct {
 	Message string `json:"message"`
+}
+
+type ownerConnectorConfigRequest struct {
+	StableBaseURL string `json:"stable_base_url"`
+	PreferredMode string `json:"preferred_mode"`
 }
 
 func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
@@ -203,6 +220,11 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		sandboxCheck:    checkSandboxHostReadiness,
 	}
 	backend.bridge = newRemoteBridgeManager(ctx, backend.svc, opts.DataRoot)
+	profiles, err := ensureRemoteConnectorProfiles(ctx, db)
+	if err != nil {
+		return fmt.Errorf("initialize remote connector profiles: %w", err)
+	}
+	_ = backend.bridge.ConfigureProfiles(profiles)
 	defer backend.bridge.Close()
 	mux := backend.routes()
 	listener, err := net.Listen("tcp", opts.Listen)
@@ -262,6 +284,8 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/runtime/sandbox/prepare", b.prepareSandboxHost)
 	mux.HandleFunc("POST /api/connections/web-bridge/start", b.startWebBridge)
 	mux.HandleFunc("POST /api/connections/web-bridge/stop", b.stopWebBridge)
+	mux.HandleFunc("POST /api/connections/{connectorID}/config", b.updateRemoteConnectorConfig)
+	mux.HandleFunc("POST /api/connections/{connectorID}/rotate", b.rotateRemoteConnectorLink)
 	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
 	mux.HandleFunc("POST /api/projects", b.addProject)
@@ -374,7 +398,7 @@ func (b *ownerUIBackend) startWebBridge(w http.ResponseWriter, _ *http.Request) 
 		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
 		return
 	}
-	state, err := b.bridge.Start()
+	state, err := b.bridge.StartTemporary()
 	if err != nil {
 		writeOwnerError(w, http.StatusServiceUnavailable, err)
 		return
@@ -387,8 +411,139 @@ func (b *ownerUIBackend) stopWebBridge(w http.ResponseWriter, _ *http.Request) {
 		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
 		return
 	}
-	if err := b.bridge.Stop(); err != nil {
+	if err := b.bridge.StopTemporary(); err != nil {
 		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
+}
+
+func ensureRemoteConnectorProfiles(ctx context.Context, db *store.SQLite) ([]store.RemoteConnectorProfile, error) {
+	if db == nil {
+		return nil, errors.New("remote connector profile store is unavailable")
+	}
+	for _, id := range []string{store.RemoteConnectorClaudeWeb, store.RemoteConnectorChatGPTWeb} {
+		if _, err := db.GetRemoteConnectorProfile(ctx, id); err == nil {
+			continue
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		token, err := newRemoteBridgeToken()
+		if err != nil {
+			return nil, err
+		}
+		profile := store.RemoteConnectorProfile{ID: id, PathToken: token, PreferredMode: store.RemoteConnectorModeTemporary, UpdatedAt: time.Now().UTC()}
+		if err := db.UpsertRemoteConnectorProfile(ctx, profile); err != nil {
+			return nil, err
+		}
+	}
+	return db.ListRemoteConnectorProfiles(ctx)
+}
+
+func normalizeStableConnectorBase(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(u.Scheme, "https") || strings.TrimSpace(u.Hostname()) == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("stable base URL must be a clean HTTPS URL without credentials, query, or fragment")
+	}
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if strings.HasSuffix(host, ".trycloudflare.com") {
+		return "", errors.New("Quick Tunnel hostnames are temporary and cannot be saved as a stable base URL")
+	}
+	u.Path = strings.TrimRight(u.Path, "/")
+	u.RawPath = ""
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+func validRemoteConnectorID(id string) bool {
+	return id == store.RemoteConnectorClaudeWeb || id == store.RemoteConnectorChatGPTWeb
+}
+
+func (b *ownerUIBackend) updateRemoteConnectorConfig(w http.ResponseWriter, r *http.Request) {
+	if b.db == nil || b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote connector configuration is unavailable"))
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("connectorID"))
+	if !validRemoteConnectorID(id) {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web or chatgpt-web"))
+		return
+	}
+	var req ownerConnectorConfigRequest
+	if err := decodeOwnerJSON(r, &req); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	base, err := normalizeStableConnectorBase(req.StableBaseURL)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(req.PreferredMode))
+	if mode != store.RemoteConnectorModeStable && mode != store.RemoteConnectorModeTemporary {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("preferred_mode must be stable or temporary"))
+		return
+	}
+	profile, err := b.db.GetRemoteConnectorProfile(r.Context(), id)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profile.StableBaseURL = base
+	profile.PreferredMode = mode
+	profile.UpdatedAt = time.Now().UTC()
+	if err := b.db.UpsertRemoteConnectorProfile(r.Context(), profile); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profiles, err := b.db.ListRemoteConnectorProfiles(r.Context())
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.bridge.ConfigureProfiles(profiles); err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
+}
+
+func (b *ownerUIBackend) rotateRemoteConnectorLink(w http.ResponseWriter, r *http.Request) {
+	if b.db == nil || b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote connector configuration is unavailable"))
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("connectorID"))
+	if !validRemoteConnectorID(id) {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web or chatgpt-web"))
+		return
+	}
+	profile, err := b.db.GetRemoteConnectorProfile(r.Context(), id)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	token, err := newRemoteBridgeToken()
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profile.PathToken = token
+	profile.UpdatedAt = time.Now().UTC()
+	if err := b.db.UpsertRemoteConnectorProfile(r.Context(), profile); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	profiles, err := b.db.ListRemoteConnectorProfiles(r.Context())
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.bridge.ConfigureProfiles(profiles); err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
 		return
 	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
@@ -396,7 +551,10 @@ func (b *ownerUIBackend) stopWebBridge(w http.ResponseWriter, _ *http.Request) {
 
 func (b *ownerUIBackend) currentBridgeState() remoteBridgeState {
 	if b.bridge == nil {
-		return remoteBridgeState{Status: "REMOTE_BRIDGE_REQUIRED", Provider: "external", TemporaryLink: true}
+		return remoteBridgeState{Status: "REMOTE_BRIDGE_REQUIRED", Provider: "external", Connectors: []remoteConnectorState{
+			{ID: store.RemoteConnectorClaudeWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
+			{ID: store.RemoteConnectorChatGPTWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
+		}}
 	}
 	return b.bridge.State()
 }
@@ -463,17 +621,12 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		switch bridge.Status {
-		case "CONNECTED":
-			nextAction = "A remote MCP session has initialized successfully. Tech Lead Web can submit and control bounded MAR tasks."
-		case "LINK_READY":
-			nextAction = "Temporary remote MCP link is ready. Add it as a custom connector in Claude Web, then enable it in the conversation."
-		case "READY_TO_START":
-			nextAction = "Start a temporary Web MCP link from Connections, then add that URL to Claude Web as a custom connector."
-		case "BRIDGE_RUNTIME_MISSING":
-			nextAction = "Remote MCP needs the cloudflared tunnel runtime before MAR can generate a temporary Claude Web link."
-		default:
-			nextAction = "Cloud ChatWeb needs a supported remote MCP bridge. Local stdio remains available for desktop MCP clients."
+		nextAction = "Configure Claude Web or ChatGPT Web in Connections. Stable mode uses your persistent HTTPS route; temporary mode uses Quick Tunnel."
+		for _, connector := range bridge.Connectors {
+			if connector.Status == "CONNECTED" {
+				nextAction = connector.ID + " is actively exchanging MCP traffic with MAR."
+				break
+			}
 		}
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
@@ -481,17 +634,26 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	if !sandboxReady {
 		nextAction = "Windows sandbox protection needs preparation for this boot before MAR can run coding workers. Use Prepare sandbox in Connections and approve the Windows UAC prompt."
 	}
+
 	stdioArgs := b.webStdioArgs()
-	remoteStatus := bridge.Status
-	remoteAction := "START_WEB_LINK"
-	if bridge.PublicURL != "" {
-		remoteAction = "STOP_WEB_LINK"
+	connections := make([]ownerConnectionView, 0, 4)
+	for _, connector := range bridge.Connectors {
+		name := "Claude Web"
+		summary := "Dedicated Claude Web connector. Stable and temporary links use a Claude-only capability path and independent realtime telemetry."
+		if connector.ID == store.RemoteConnectorChatGPTWeb {
+			name = "ChatGPT Web"
+			summary = "Dedicated ChatGPT Web connector. Availability of custom write-capable MCP tools still depends on the ChatGPT account/workspace capability."
+		}
+		connections = append(connections, ownerConnectionView{
+			ID: connector.ID, Name: name, Status: connector.Status, Transport: "streamable-http", Summary: summary,
+			ConnectionURL: connector.PublicURL, StableBaseURL: connector.StableBaseURL, StableURL: connector.StableURL,
+			TemporaryURL: connector.TemporaryURL, PreferredMode: connector.PreferredMode, LocalTarget: connector.LocalTarget,
+			TemporaryLink: connector.PreferredMode == store.RemoteConnectorModeTemporary, RouteReady: connector.RouteReady,
+			Initialized: connector.Initialized, ToolsListed: connector.ToolsListed, Requests: connector.Requests,
+			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
+		})
 	}
-	connections := []ownerConnectionView{
-		{ID: "claude-web", Name: "Claude Web", Status: remoteStatus, Transport: "streamable-http", Summary: "Primary Web path. Start a temporary capability URL, add it under Claude Customize → Connectors → Add custom connector, then enable it for the conversation. The URL is a secret and is revoked when the bridge stops.", SetupAction: remoteAction, ConnectionURL: bridge.PublicURL, TemporaryLink: bridge.TemporaryLink, LastSeenAt: bridge.LastSeenAt},
-		{ID: "chatgpt-web", Name: "ChatGPT Web", Status: remoteStatus, Transport: "streamable-http", Summary: "Uses the same remote MCP endpoint when the ChatGPT account/workspace supports custom remote MCP write tools. MAR does not label plan capability as connected without an observed MCP session.", ConnectionURL: bridge.PublicURL, TemporaryLink: bridge.TemporaryLink, LastSeenAt: bridge.LastSeenAt},
-		{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web. A candidate-bound MCPB package is available for desktop use.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"},
-	}
+	connections = append(connections, ownerConnectionView{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"})
 	providerStatus := "NOT_CONFIGURED"
 	if providerReady {
 		providerStatus = "READY"

@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 11
+const latestSchemaVersion = 12
 
 type SQLite struct {
 	db *sql.DB
@@ -356,6 +356,16 @@ CREATE TABLE owner_feedback (
     FOREIGN KEY(result_id) REFERENCES task_results(result_id)
 );
 CREATE INDEX idx_owner_feedback_task_created ON owner_feedback(task_id, created_at DESC);
+`
+	case 12:
+		script = `
+CREATE TABLE remote_connector_profiles (
+    connector_id TEXT PRIMARY KEY,
+    stable_base_url TEXT NOT NULL DEFAULT '',
+    path_token TEXT NOT NULL,
+    preferred_mode TEXT NOT NULL DEFAULT 'temporary',
+    updated_at TEXT NOT NULL
+);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

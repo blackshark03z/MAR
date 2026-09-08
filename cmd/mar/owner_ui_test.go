@@ -80,7 +80,7 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 	if payload["provider_ready"] != true {
 		t.Fatalf("expected configured provider alternative, got %#v", payload)
 	}
-	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "remote MCP bridge") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "REMOTE_BRIDGE_REQUIRED") {
+	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "Configure Claude Web or ChatGPT Web") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "chatgpt-web") || !strings.Contains(rec.Body.String(), "REMOTE_BRIDGE_REQUIRED") {
 		t.Fatalf("missing actionable Web MCP guidance: %#v", payload)
 	}
 	if strings.Contains(rec.Body.String(), "super-secret-value") {
@@ -236,6 +236,8 @@ func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
 		{name: "missing token feedback", method: http.MethodPost, path: "/api/tasks/task-ui-test/feedback", body: `{"verdict":"COMMENT","message":"note"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token sandbox prepare", method: http.MethodPost, path: "/api/runtime/sandbox/prepare", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token web bridge start", method: http.MethodPost, path: "/api/connections/web-bridge/start", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
+		{name: "missing token connector config", method: http.MethodPost, path: "/api/connections/claude-web/config", body: `{"stable_base_url":"https://mar.example.com","preferred_mode":"stable"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
+		{name: "missing token connector rotate", method: http.MethodPost, path: "/api/connections/chatgpt-web/rotate", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -282,6 +284,9 @@ func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	manager.startTunnel = func(_ context.Context, _ string, localURL string) (string, func() error, <-chan error, error) {
 		return localURL, func() error { stopped.Store(true); return nil }, fakeDone, nil
 	}
+	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
+		t.Fatal(err)
+	}
 	defer manager.Close()
 	backend := &ownerUIBackend{db: db, svc: service.NewTaskService(db), bridge: manager, brainMode: "web", sessionToken: "test-owner-token"}
 
@@ -309,6 +314,69 @@ func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	stop := post("/api/connections/web-bridge/stop")
 	if stop.Code != http.StatusOK || !stopped.Load() || strings.Contains(stop.Body.String(), "public_url\":\"http") {
 		t.Fatalf("stop bridge did not revoke public URL: status=%d stopped=%v body=%s", stop.Code, stopped.Load(), stop.Body.String())
+	}
+}
+
+func TestOwnerUIStableConnectorConfigAndRotationAreIndependent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	profiles, err := ensureRemoteConnectorProfiles(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(db), t.TempDir())
+	if err := manager.ConfigureProfiles(profiles); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	backend := &ownerUIBackend{db: db, svc: service.NewTaskService(db), bridge: manager, sessionToken: "test-owner-token"}
+
+	post := func(path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Host = "127.0.0.1:8787"
+		req.Header.Set("Origin", "http://127.0.0.1:8787")
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set(ownerSessionHeader, "test-owner-token")
+		rec := httptest.NewRecorder()
+		backend.routes().ServeHTTP(rec, req)
+		return rec
+	}
+	beforeClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	beforeGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
+	config := post("/api/connections/claude-web/config", `{"stable_base_url":"https://mar.example.com/base","preferred_mode":"stable"}`)
+	if config.Code != http.StatusOK {
+		t.Fatalf("stable config failed: %d %s", config.Code, config.Body.String())
+	}
+	afterClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	afterGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
+	if afterClaude.StableBaseURL != "https://mar.example.com/base" || afterClaude.PreferredMode != store.RemoteConnectorModeStable || afterClaude.PathToken != beforeClaude.PathToken {
+		t.Fatalf("Claude config mismatch: %+v", afterClaude)
+	}
+	if afterGPT.PathToken != beforeGPT.PathToken || afterGPT.StableBaseURL != beforeGPT.StableBaseURL || afterGPT.PreferredMode != beforeGPT.PreferredMode {
+		t.Fatalf("Claude config contaminated GPT: before=%+v after=%+v", beforeGPT, afterGPT)
+	}
+
+	rotate := post("/api/connections/claude-web/rotate", `{}`)
+	if rotate.Code != http.StatusOK {
+		t.Fatalf("rotate failed: %d %s", rotate.Code, rotate.Body.String())
+	}
+	rotatedClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	rotatedGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
+	if rotatedClaude.PathToken == afterClaude.PathToken {
+		t.Fatal("Claude rotate kept old capability token")
+	}
+	if rotatedGPT.PathToken != afterGPT.PathToken {
+		t.Fatal("Claude rotate changed ChatGPT capability token")
+	}
+
+	bad := post("/api/connections/chatgpt-web/config", `{"stable_base_url":"https://random.trycloudflare.com","preferred_mode":"stable"}`)
+	if bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "temporary") {
+		t.Fatalf("Quick Tunnel hostname was accepted as stable: %d %s", bad.Code, bad.Body.String())
 	}
 }
 
