@@ -109,7 +109,7 @@ func normalizeOriginHosts(values []string) []string {
 func remoteOriginAllowed(raw string, allowed []string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		// Claude remote connectors are server-to-server and normally omit Origin.
+		// Remote MCP connectors are server-to-server and normally omit Origin.
 		// If a browser-style Origin is present it must match the explicit allowlist.
 		return true
 	}

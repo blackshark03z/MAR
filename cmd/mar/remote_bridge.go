@@ -118,10 +118,10 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 	newProfiles := make(map[string]store.RemoteConnectorProfile, len(profiles))
 	newRoutes := make(map[string]http.Handler, len(profiles)*2)
 	for _, profile := range profiles {
-		// GPT/OpenAI uses its dedicated outbound-only Secure MCP Tunnel. Keep the
-		// public Web bridge exclusively for Claude, including when a v12 database
-		// still contains the retired chatgpt-web profile for audit/backward data.
-		if profile.ID != store.RemoteConnectorClaudeWeb {
+		// GPT and Claude share the same hardened Streamable HTTP bridge engine but
+		// keep independent capability paths and telemetry. OpenAI Secure MCP Tunnel
+		// remains available as an optional transport; it is not required for MCP Link.
+		if profile.ID != store.RemoteConnectorClaudeWeb && profile.ID != store.RemoteConnectorChatGPTWeb {
 			continue
 		}
 		if err := profile.Validate(); err != nil {
@@ -130,6 +130,9 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 		profile.StableBaseURL = strings.TrimRight(strings.TrimSpace(profile.StableBaseURL), "/")
 		connectorID := profile.ID
 		allowed := []string{"claude.ai"}
+		if connectorID == store.RemoteConnectorChatGPTWeb {
+			allowed = []string{"openai.com", "chatgpt.com"}
+		}
 		handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
 			PathToken: profile.PathToken, AllowedOriginHosts: allowed,
 			Observe: func(event mcpedge.RemoteHTTPEvent) { m.observe(connectorID, event) },
@@ -142,7 +145,7 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 		newRoutes["/health/"+profile.PathToken] = handler
 	}
 	if len(newProfiles) == 0 {
-		return errors.New("Claude remote connector profile is required")
+		return errors.New("at least one remote connector profile is required")
 	}
 
 	m.mu.Lock()
@@ -179,7 +182,7 @@ func (m *remoteBridgeManager) stateLocked() remoteBridgeState {
 		started := m.startedAt
 		state.StartedAt = &started
 	}
-	ids := []string{store.RemoteConnectorClaudeWeb}
+	ids := []string{store.RemoteConnectorChatGPTWeb, store.RemoteConnectorClaudeWeb}
 	for _, id := range ids {
 		profile, ok := m.profiles[id]
 		if !ok {
@@ -374,7 +377,7 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 	}
 	localURL := m.localBaseURL
 	var probeToken string
-	for _, id := range []string{store.RemoteConnectorClaudeWeb} {
+	for _, id := range []string{store.RemoteConnectorChatGPTWeb, store.RemoteConnectorClaudeWeb} {
 		if p, ok := m.profiles[id]; ok {
 			probeToken = p.PathToken
 			break

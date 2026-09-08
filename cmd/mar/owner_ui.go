@@ -326,7 +326,7 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/connections/web-bridge/start", b.startWebBridge)
 	mux.HandleFunc("POST /api/connections/web-bridge/stop", b.stopWebBridge)
 	mux.HandleFunc("POST /api/connections/web-bridge/restart", b.restartWebBridge)
-	mux.HandleFunc("POST /api/connections/claude-web/diagnose", b.diagnoseClaudeBridge)
+	mux.HandleFunc("POST /api/connections/{connectorID}/diagnose", b.diagnoseRemoteBridge)
 	mux.HandleFunc("POST /api/connections/{connectorID}/config", b.updateRemoteConnectorConfig)
 	mux.HandleFunc("POST /api/connections/{connectorID}/rotate", b.rotateRemoteConnectorLink)
 	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
@@ -468,7 +468,7 @@ func (b *ownerUIBackend) stopWebBridge(w http.ResponseWriter, _ *http.Request) {
 
 func (b *ownerUIBackend) restartWebBridge(w http.ResponseWriter, _ *http.Request) {
 	if b.bridge == nil {
-		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("Claude remote MCP bridge is unavailable"))
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
 		return
 	}
 	if err := b.bridge.StopTemporary(); err != nil {
@@ -483,9 +483,14 @@ func (b *ownerUIBackend) restartWebBridge(w http.ResponseWriter, _ *http.Request
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": state})
 }
 
-func (b *ownerUIBackend) diagnoseClaudeBridge(w http.ResponseWriter, _ *http.Request) {
+func (b *ownerUIBackend) diagnoseRemoteBridge(w http.ResponseWriter, r *http.Request) {
 	if b.bridge == nil {
-		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("Claude remote MCP bridge is unavailable"))
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("remote MCP bridge is unavailable"))
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("connectorID"))
+	if !validRemoteConnectorID(id) {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be chatgpt-web or claude-web"))
 		return
 	}
 	b.bridge.refreshStableHealth()
@@ -496,7 +501,7 @@ func ensureRemoteConnectorProfiles(ctx context.Context, db *store.SQLite) ([]sto
 	if db == nil {
 		return nil, errors.New("remote connector profile store is unavailable")
 	}
-	for _, id := range []string{store.RemoteConnectorClaudeWeb} {
+	for _, id := range []string{store.RemoteConnectorChatGPTWeb, store.RemoteConnectorClaudeWeb} {
 		if _, err := db.GetRemoteConnectorProfile(ctx, id); err == nil {
 			continue
 		} else if !errors.Is(err, store.ErrNotFound) {
@@ -533,7 +538,7 @@ func normalizeStableConnectorBase(raw string) (string, error) {
 }
 
 func validRemoteConnectorID(id string) bool {
-	return id == store.RemoteConnectorClaudeWeb
+	return id == store.RemoteConnectorChatGPTWeb || id == store.RemoteConnectorClaudeWeb
 }
 
 func (b *ownerUIBackend) updateRemoteConnectorConfig(w http.ResponseWriter, r *http.Request) {
@@ -543,7 +548,7 @@ func (b *ownerUIBackend) updateRemoteConnectorConfig(w http.ResponseWriter, r *h
 	}
 	id := strings.TrimSpace(r.PathValue("connectorID"))
 	if !validRemoteConnectorID(id) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web"))
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be chatgpt-web or claude-web"))
 		return
 	}
 	var req ownerConnectorConfigRequest
@@ -592,7 +597,7 @@ func (b *ownerUIBackend) rotateRemoteConnectorLink(w http.ResponseWriter, r *htt
 	}
 	id := strings.TrimSpace(r.PathValue("connectorID"))
 	if !validRemoteConnectorID(id) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web"))
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be chatgpt-web or claude-web"))
 		return
 	}
 	profile, err := b.db.GetRemoteConnectorProfile(r.Context(), id)
@@ -626,6 +631,7 @@ func (b *ownerUIBackend) rotateRemoteConnectorLink(w http.ResponseWriter, r *htt
 func (b *ownerUIBackend) currentBridgeState() remoteBridgeState {
 	if b.bridge == nil {
 		return remoteBridgeState{Status: "REMOTE_BRIDGE_REQUIRED", Provider: "external", Connectors: []remoteConnectorState{
+			{ID: store.RemoteConnectorChatGPTWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
 			{ID: store.RemoteConnectorClaudeWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
 		}}
 	}
@@ -846,18 +852,22 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = tunnel.NextAction
-		if nextAction == "" {
-			nextAction = "Thiết lập GPT Secure MCP Tunnel hoặc Claude Remote MCP trong Kết nối AI."
-		}
-		if tunnel.Connected {
-			nextAction = "GPT/OpenAI Secure MCP Tunnel đã sẵn sàng nhận MCP traffic."
-		}
+		nextAction = "Tạo hoặc cấu hình MCP Link cho GPT/ChatGPT trong Kết nối AI, sau đó sao chép URL vào client."
 		for _, connector := range bridge.Connectors {
-			if connector.Status == "CONNECTED" {
-				nextAction = "Claude Remote MCP đang trao đổi traffic với MAR."
-				break
+			if connector.ID == store.RemoteConnectorChatGPTWeb {
+				switch connector.Status {
+				case "CONNECTED":
+					nextAction = "GPT MCP Link đang trao đổi traffic với MAR."
+				case "LINK_READY", "IDLE":
+					nextAction = "GPT MCP Link đã sẵn sàng; sao chép MCP URL vào ChatGPT để bắt đầu dùng MAR."
+				}
 			}
+			if connector.ID == store.RemoteConnectorClaudeWeb && connector.Status == "CONNECTED" && !strings.HasPrefix(nextAction, "GPT MCP Link") {
+				nextAction = "Claude MCP Link đang trao đổi traffic với MAR."
+			}
+		}
+		if tunnel.Connected && !strings.HasPrefix(nextAction, "GPT MCP Link") {
+			nextAction = "OpenAI Secure MCP Tunnel (tùy chọn) đang kết nối; MCP Link vẫn là đường V1 hiện tại."
 		}
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
@@ -867,20 +877,14 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stdioArgs := b.webStdioArgs()
-	connections := make([]ownerConnectionView, 0, 4)
-	connections = append(connections, ownerConnectionView{
-		ID: "openai-tunnel", Name: "OpenAI / GPT", Status: tunnel.Status, Transport: tunnel.Transport,
-		Summary:    "Secure MCP Tunnel outbound-only; MAR MCP vẫn riêng tư trên localhost.",
-		Configured: tunnel.Configured, Running: tunnel.Running, Healthy: tunnel.Healthy, Ready: tunnel.Ready, Connected: tunnel.Connected,
-		Identifier: tunnel.Identifier, ProfileName: tunnel.ProfileName, APIKeyEnv: tunnel.APIKeyEnv, AuthConfigured: tunnel.AuthConfigured,
-		ClientFound: tunnel.ClientFound, ClientPath: tunnel.ClientPath, InstallURL: tunnel.InstallURL, LocalTarget: tunnel.LocalTarget,
-		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
-		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
-		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
-	})
+	connections := make([]ownerConnectionView, 0, 5)
 	for _, connector := range bridge.Connectors {
 		name := "Claude"
-		summary := "Claude Remote MCP có URL riêng và telemetry traffic realtime độc lập."
+		summary := "Claude MCP Link có capability URL và telemetry traffic riêng."
+		if connector.ID == store.RemoteConnectorChatGPTWeb {
+			name = "OpenAI / GPT"
+			summary = "GPT MCP Link có capability URL và telemetry traffic riêng; đây là đường V1 hiện tại."
+		}
 		connections = append(connections, ownerConnectionView{
 			ID: connector.ID, Name: name, Status: connector.Status, Transport: "streamable-http", Summary: summary,
 			ConnectionURL: connector.PublicURL, StableBaseURL: connector.StableBaseURL, StableURL: connector.StableURL,
@@ -890,6 +894,16 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
 		})
 	}
+	connections = append(connections, ownerConnectionView{
+		ID: "openai-tunnel", Name: "OpenAI Secure Tunnel (optional)", Status: tunnel.Status, Transport: tunnel.Transport,
+		Summary:    "Tùy chọn nâng cao/future path; không còn chặn MCP Link V1 hiện tại.",
+		Configured: tunnel.Configured, Running: tunnel.Running, Healthy: tunnel.Healthy, Ready: tunnel.Ready, Connected: tunnel.Connected,
+		Identifier: tunnel.Identifier, ProfileName: tunnel.ProfileName, APIKeyEnv: tunnel.APIKeyEnv, AuthConfigured: tunnel.AuthConfigured,
+		ClientFound: tunnel.ClientFound, ClientPath: tunnel.ClientPath, InstallURL: tunnel.InstallURL, LocalTarget: tunnel.LocalTarget,
+		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
+		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
+		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
+	})
 	connections = append(connections, ownerConnectionView{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"})
 	providerStatus := "NOT_CONFIGURED"
 	if providerReady {

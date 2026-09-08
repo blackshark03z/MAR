@@ -25,7 +25,11 @@ If the record is missing, stale, or failing, final release confirmation remains
 UNVERIFIED. Do not infer a current full-suite PASS from the historical section.
 
 `PRODUCT_ACCEPTED`, `MAR_V1_STABLE`, and `MAR_SELF_HOSTING_READY` remain unclaimed.
-OpenAI account/workspace configuration and the real Web journey are still pending.
+The real Web journey is still pending. Owner configuration for OpenAI Secure MCP Tunnel remains optional/backlog for this checkpoint and no longer blocks V1 while the owner uses MCP Link.
+
+### Current transport decision — 2026-09-08
+
+Owner selected **MCP LINK** as the temporary/current GPT path instead of requiring OpenAI Secure MCP Tunnel. The existing hardened Streamable HTTP bridge now treats `chatgpt-web` and `claude-web` as peer connector profiles with independent capability URLs, stable/temporary settings, secret-link rotation and telemetry. The public Quick Tunnel process may be shared infrastructure, but traffic/state cannot promote the other connector. Secure MCP Tunnel implementation remains intact as an optional advanced/future path.
 
 ### Takeover and completed corrections
 
@@ -40,19 +44,19 @@ OpenAI account/workspace configuration and the real Web journey are still pendin
 - Corrected sandbox regression: RED then GREEN. Corrected candidate vet/build and real root-workspace sandbox check: PASS.
 - Explicit `MAR_RUN_SELF_HOSTING_ACCEPTANCE=1` T1-T4 at `89a99d4`: all PASS, 182.20 seconds total. Log: `D:\MAR\.mar\runtime\v1-taskclasses-89a99d4.log`. These exercise real isolated worker edits, a failing-test repair loop, sealed verification with typed observations, and authoritative local integration using a fixture model provider. They are not a live ChatGPT Goal or Owner acceptance.
 - The final-head release record covers vet, build to `D:\MAR\.mar\runtime\mar-v1-stable.exe`, full default regression, real sandbox check, diff-check, clean Git identity, and executable SHA256. The default suite intentionally skips the separately executed opt-in T1-T4 benchmark; helper-process skips are not product acceptance.
-- `project_read`, `project_context`, recovery/fencing/isolation, OpenAI local MCP/health/activity/lifecycle/redaction, Claude-only separation, and Connection Hub regression are covered by the full suite. Earlier rendered UI evidence remains applicable: this takeover changed no UI source. No live Claude connection is claimed from those tests.
+- `project_read`, `project_context`, recovery/fencing/isolation, OpenAI local MCP/health/activity/lifecycle/redaction, GPT/Claude MCP-Link separation, and Connection Hub regression are covered by the relevant suite. No live GPT or Claude Web connection is claimed from engineering tests alone.
 - Installed `tunnel-client` executable SHA256 `FCC85A69EC0AD82518E4F8964F60C45E31787957782A0FC9C1B0C44E82D61B9B` still matches the extracted verified v0.0.14 artifact; ZIP checksum also matches the saved official checksum file. `help quickstart`: PASS. No reinstall was needed.
 - Official `tunnel-client doctor --profile mar-openai --explain` stops at missing profile (`profile_load`). No runtime profile exists. `CONTROL_PLANE_API_KEY` is absent in process/user/machine environments (presence-only inspection). The only nonempty persisted preview tunnel ID has a sequential fixture marker and is not verified Owner configuration. No secret value was printed, stored, or committed.
-- Real tunnel healthz/readyz, authenticated lifecycle/activity, Platform association, ChatGPT workspace association, Tunnels Read + Use, and ChatGPT discovery are PENDING_OWNER_CONFIG. The current Codex tool inventory exposes no MAR connector. No fake profile or new transport was introduced.
+- Real Secure MCP Tunnel healthz/readyz, authenticated lifecycle/activity, Platform association, ChatGPT workspace association, and Tunnels Read + Use remain PENDING_OWNER_CONFIG for the optional tunnel path. They are no longer release blockers for the current MCP-Link path. No fake profile or second coordinator was introduced.
 
 ### Next action and self-hosting transition
 
-1. Supply a real tunnel ID, associate the intended Platform organization and ChatGPT workspace, and grant Tunnels Read + Use. Supply `CONTROL_PLANE_API_KEY` only in the MAR process environment; do not put the value in chat, files, Git, or MAR settings.
-2. Use the existing GPT Connection Hub to configure, diagnose, and start the official tunnel. Confirm actual health/readiness/activity, then discover MAR tools in ChatGPT and execute one simple read.
-3. Run one small real Goal through Web Brain -> MAR MCP -> MAR worker -> verify -> integrate; preserve its durable evidence. Obtain explicit Owner real-use acceptance separately.
-4. Immediately perform the first bounded V1.1 task through MAR itself. Only after its Goal, isolated edits, verification, integration, and handoff evidence pass may `MAR_SELF_HOSTING_READY` be declared. Direct Codex coordination then remains bootstrap/emergency recovery only.
+1. Start or configure the existing Remote MCP bridge and confirm both GPT and Claude receive different capability URLs with `LINK_READY`/route truth in the Connection Hub.
+2. Add the GPT MCP URL to the supported ChatGPT MCP connection surface, discover MAR tools, and execute one simple read. This is now the current real-Web connection gate.
+3. Run one small real Goal through Web Brain -> MAR MCP Link -> MAR worker -> verify -> integrate; preserve its durable evidence. Obtain explicit Owner real-use acceptance separately.
+4. Immediately perform the first bounded V1.1 task through MAR itself. Only after its Goal, isolated edits, verification, integration, and handoff evidence pass may `MAR_SELF_HOSTING_READY` be declared. Direct Codex/ChatCode coordination then remains bootstrap/emergency recovery only.
 
-No remaining code blocker is proven by this pass; final engineering confirmation is subject to the revision-bound release record above. The unavailable authenticated OpenAI configuration prevents the real MAR task and self-hosting transition. No V1.1 work has started. Backlog: first small diagnostics/docs task through MAR after that gate; no new product scope.
+No remaining code blocker is proven by this pass; final engineering confirmation remains subject to the revision-bound release record after the MCP-Link change. Missing Secure MCP Tunnel owner credentials do not prevent the current real MAR task. No V1.1 work has started. Backlog: first small diagnostics/docs task through MAR after that gate; no new product scope.
 
 ## Historical checkpoint — 2026-09-08, before takeover (superseded above)
 

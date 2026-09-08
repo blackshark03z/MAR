@@ -71,9 +71,21 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 
 # Current Safe Action
 
-Ship MAR V1 Stable from checkpoint `bc0ae69`. Keep Claude on its existing dedicated remote MCP transport. Replace the experimental public ChatGPT connector path with the official outbound-only OpenAI Secure MCP Tunnel, backed by typed local state, safe process ownership, actionable diagnostics, restart reconciliation, and a compact owner-facing Connection Hub. Then run the full release gates and the real smoke checks that the current machine configuration permits. Do not claim Owner acceptance from engineering evidence.
+Ship MAR V1 Stable using **MCP Link as the current Web transport for both GPT and Claude**. Reuse the existing hardened token-bound Streamable HTTP bridge; give `chatgpt-web` and `claude-web` independent 256-bit capability paths, configuration, rotation and telemetry while sharing only the underlying public route process. Keep OpenAI Secure MCP Tunnel implemented as an optional advanced/future transport, but do not let missing tunnel owner configuration block the current stable gate. Run the full release gates, then execute one real GPT Web Goal through the GPT MCP Link. Do not claim Owner acceptance from engineering evidence.
 
-## Secure MCP Tunnel UX contract
+## MCP Link UX contract — current V1 path
+
+```text
+UX_CONTRACT
+PRIMARY_USER=The single owner connecting GPT or Claude to MAR without networking vocabulary.
+PRIMARY_JOURNEY=Open Connections -> create/configure the public route -> copy the provider-specific MCP URL -> add it to GPT/Claude -> see route and actual MCP activity separately.
+SCOPE_MODEL=GPT and Claude have independent capability URLs, stable/temporary settings, secret rotation and telemetry; Quick Tunnel lifecycle may be shared infrastructure.
+STATES=Ready to start, Link ready, Connected, Idle, Route offline, Stable URL required, Bridge runtime missing.
+SECURITY=Each full capability URL is secret; rotating one provider revokes only that provider path.
+ACCEPTANCE=GPT traffic cannot promote Claude state and Claude traffic cannot promote GPT state.
+```
+
+## Optional Secure MCP Tunnel UX contract
 
 ```text
 UX_CONTRACT
@@ -93,7 +105,7 @@ OWNER_PREFERENCE=NONE; the requested transport split and hierarchy are explicit.
 
 ```text
 CREATE_FLOW_CONTRACT
-TASK_GOAL=Connect GPT to private MAR MCP through OpenAI Secure MCP Tunnel.
+TASK_GOAL=Optionally connect GPT to private MAR MCP through OpenAI Secure MCP Tunnel when the owner chooses that advanced transport.
 LINEAR_OR_NONLINEAR=Linear onboarding until configured; routine lifecycle controls become direct after setup.
 STEPS=Enter tunnel ID -> verify tunnel-client and local MAR MCP -> run Doctor -> Start tunnel -> confirm Connected -> copy tunnel ID into the supported OpenAI surface.
 STEP_DEPENDENCIES=Tunnel ID, runtime control-plane credential, tunnel-client, and local MCP readiness must pass before Start can report Connected.

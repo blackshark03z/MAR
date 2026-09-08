@@ -20,8 +20,6 @@ func testRemoteProfiles(t *testing.T) []store.RemoteConnectorProfile {
 	now := time.Now().UTC()
 	return []store.RemoteConnectorProfile{
 		{ID: store.RemoteConnectorClaudeWeb, PathToken: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", PreferredMode: store.RemoteConnectorModeTemporary, UpdatedAt: now},
-		// A pre-v13 database may retain this retired row. The Claude bridge must
-		// ignore it so there is no second GPT transport or status authority.
 		{ID: store.RemoteConnectorChatGPTWeb, PathToken: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", PreferredMode: store.RemoteConnectorModeTemporary, UpdatedAt: now},
 	}
 }
@@ -37,7 +35,7 @@ func connectorState(t *testing.T, state remoteBridgeState, id string) remoteConn
 	return remoteConnectorState{}
 }
 
-func TestRemoteBridgeIsClaudeOnlyAndIgnoresLegacyChatGPTProfile(t *testing.T) {
+func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s, err := store.Open(t.TempDir() + `\mar.db`)
@@ -61,9 +59,10 @@ func TestRemoteBridgeIsClaudeOnlyAndIgnoresLegacyChatGPTProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	gpt := connectorState(t, state, store.RemoteConnectorChatGPTWeb)
 	claude := connectorState(t, state, store.RemoteConnectorClaudeWeb)
-	if claude.Status != "LINK_READY" || claude.PublicURL == "" || len(state.Connectors) != 1 {
-		t.Fatalf("Claude-only connector state is wrong: %+v", state)
+	if gpt.Status != "LINK_READY" || claude.Status != "LINK_READY" || gpt.PublicURL == "" || claude.PublicURL == "" || gpt.PublicURL == claude.PublicURL || len(state.Connectors) != 2 {
+		t.Fatalf("independent connector state is wrong: %+v", state)
 	}
 
 	client := mcp.NewClient(&mcp.Implementation{Name: "claude-like-test", Version: "1"}, nil)
@@ -85,8 +84,30 @@ func TestRemoteBridgeIsClaudeOnlyAndIgnoresLegacyChatGPTProfile(t *testing.T) {
 	if claude.Status != "CONNECTED" || !claude.Initialized || !claude.ToolsListed || claude.Requests < 2 || claude.LastSeenAt == nil {
 		t.Fatalf("Claude telemetry missing: %+v", claude)
 	}
-	if manager.localEndpointFor(store.RemoteConnectorChatGPTWeb) != "" {
-		t.Fatal("legacy public ChatGPT MCP endpoint remained active")
+	gpt = connectorState(t, state, store.RemoteConnectorChatGPTWeb)
+	if gpt.Status != "LINK_READY" || gpt.Requests != 0 || gpt.Initialized || gpt.ToolsListed {
+		t.Fatalf("Claude traffic contaminated GPT telemetry: %+v", gpt)
+	}
+	if manager.localEndpointFor(store.RemoteConnectorChatGPTWeb) == "" || manager.localEndpointFor(store.RemoteConnectorChatGPTWeb) == manager.localEndpointFor(store.RemoteConnectorClaudeWeb) {
+		t.Fatal("GPT and Claude capability endpoints are not independent")
+	}
+
+	gptClient := mcp.NewClient(&mcp.Implementation{Name: "chatgpt-like-test", Version: "1"}, nil)
+	gptSession, err := gptClient.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: manager.localEndpointFor(store.RemoteConnectorChatGPTWeb), DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gptListed, err := gptSession.ListTools(ctx, &mcp.ListToolsParams{})
+	_ = gptSession.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gptListed.Tools) != 11 {
+		t.Fatalf("GPT link leaked or lost MCP tools: count=%d", len(gptListed.Tools))
+	}
+	gpt = connectorState(t, manager.State(), store.RemoteConnectorChatGPTWeb)
+	if gpt.Status != "CONNECTED" || !gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil {
+		t.Fatalf("GPT telemetry missing: %+v", gpt)
 	}
 
 	if err := manager.StopTemporary(); err != nil {
@@ -96,10 +117,10 @@ func TestRemoteBridgeIsClaudeOnlyAndIgnoresLegacyChatGPTProfile(t *testing.T) {
 		t.Fatal("stopping temporary bridge did not terminate tunnel")
 	}
 	state = manager.State()
-	if connectorState(t, state, store.RemoteConnectorClaudeWeb).PublicURL != "" {
+	if connectorState(t, state, store.RemoteConnectorClaudeWeb).PublicURL != "" || connectorState(t, state, store.RemoteConnectorChatGPTWeb).PublicURL != "" {
 		t.Fatalf("temporary URLs survived tunnel stop: %+v", state)
 	}
-	if manager.localEndpointFor(store.RemoteConnectorClaudeWeb) == "" {
+	if manager.localEndpointFor(store.RemoteConnectorClaudeWeb) == "" || manager.localEndpointFor(store.RemoteConnectorChatGPTWeb) == "" {
 		t.Fatal("stopping temporary tunnel incorrectly destroyed stable local bridge")
 	}
 }
@@ -177,7 +198,7 @@ func TestRemoteBridgeStateReportsMissingTunnelDependencyTruthfully(t *testing.T)
 	if state.Status != "BRIDGE_RUNTIME_MISSING" || state.Dependency != "cloudflared" || state.LastError == "" {
 		t.Fatalf("missing tunnel dependency was hidden: %+v", state)
 	}
-	if connectorState(t, state, store.RemoteConnectorClaudeWeb).Status != "BRIDGE_RUNTIME_MISSING" {
-		t.Fatalf("Claude missing dependency was hidden: %+v", state)
+	if connectorState(t, state, store.RemoteConnectorClaudeWeb).Status != "BRIDGE_RUNTIME_MISSING" || connectorState(t, state, store.RemoteConnectorChatGPTWeb).Status != "BRIDGE_RUNTIME_MISSING" {
+		t.Fatalf("connector missing dependency was hidden: %+v", state)
 	}
 }

@@ -81,7 +81,7 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 	if payload["provider_ready"] != true {
 		t.Fatalf("expected configured provider alternative, got %#v", payload)
 	}
-	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "OpenAI tunnel") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "openai-tunnel") || !strings.Contains(rec.Body.String(), "secure-mcp-tunnel") {
+	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "MCP Link") || !strings.Contains(rec.Body.String(), "chatgpt-web") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "openai-tunnel") {
 		t.Fatalf("missing actionable Web MCP guidance: %#v", payload)
 	}
 	if strings.Contains(rec.Body.String(), "super-secret-value") {
@@ -341,14 +341,11 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 	}
 }
 
-func TestOwnerUIConnectionHubSeparatesGPTTunnelFromClaudeRemoteMCP(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · outbound-only", "data-web-connector", "Remote MCP · HTTPS", "data-tunnel-diagnose", "data-copy-id", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
+func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
+	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
 		if !strings.Contains(ownerUIHTML, required) {
 			t.Fatalf("Connection Hub is missing %q", required)
 		}
-	}
-	if strings.Contains(ownerUIHTML, "chatgpt-web") {
-		t.Fatal("retired public ChatGPT connector remains in owner UI")
 	}
 }
 
@@ -391,12 +388,16 @@ func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	runtimeReq.Host = "127.0.0.1:8787"
 	runtimeRec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(runtimeRec, runtimeReq)
-	if runtimeRec.Code != http.StatusOK || !strings.Contains(runtimeRec.Body.String(), "claude-web") || !strings.Contains(runtimeRec.Body.String(), "LINK_READY") || !strings.Contains(runtimeRec.Body.String(), "/mcp/") {
+	if runtimeRec.Code != http.StatusOK || !strings.Contains(runtimeRec.Body.String(), "chatgpt-web") || !strings.Contains(runtimeRec.Body.String(), "claude-web") || !strings.Contains(runtimeRec.Body.String(), "LINK_READY") || !strings.Contains(runtimeRec.Body.String(), "/mcp/") {
 		t.Fatalf("active bridge missing from runtime metadata: status=%d body=%s", runtimeRec.Code, runtimeRec.Body.String())
 	}
-	diagnose := post("/api/connections/claude-web/diagnose")
-	if diagnose.Code != http.StatusOK {
-		t.Fatalf("Claude diagnostics failed: status=%d body=%s", diagnose.Code, diagnose.Body.String())
+	gptDiagnose := post("/api/connections/chatgpt-web/diagnose")
+	if gptDiagnose.Code != http.StatusOK {
+		t.Fatalf("GPT diagnostics failed: status=%d body=%s", gptDiagnose.Code, gptDiagnose.Body.String())
+	}
+	claudeDiagnose := post("/api/connections/claude-web/diagnose")
+	if claudeDiagnose.Code != http.StatusOK {
+		t.Fatalf("Claude diagnostics failed: status=%d body=%s", claudeDiagnose.Code, claudeDiagnose.Body.String())
 	}
 	restart := post("/api/connections/web-bridge/restart")
 	if restart.Code != http.StatusOK || !strings.Contains(restart.Body.String(), "LINK_READY") {
@@ -437,14 +438,19 @@ func TestOwnerUIStableConnectorConfigAndRotationAreIndependent(t *testing.T) {
 		backend.routes().ServeHTTP(rec, req)
 		return rec
 	}
+	beforeGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
 	beforeClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
 	config := post("/api/connections/claude-web/config", `{"stable_base_url":"https://mar.example.com/base","preferred_mode":"stable"}`)
 	if config.Code != http.StatusOK {
 		t.Fatalf("stable config failed: %d %s", config.Code, config.Body.String())
 	}
 	afterClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	afterGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
 	if afterClaude.StableBaseURL != "https://mar.example.com/base" || afterClaude.PreferredMode != store.RemoteConnectorModeStable || afterClaude.PathToken != beforeClaude.PathToken {
 		t.Fatalf("Claude config mismatch: %+v", afterClaude)
+	}
+	if afterGPT != beforeGPT {
+		t.Fatalf("Claude config contaminated GPT profile: before=%+v after=%+v", beforeGPT, afterGPT)
 	}
 
 	rotate := post("/api/connections/claude-web/rotate", `{}`)
@@ -452,9 +458,39 @@ func TestOwnerUIStableConnectorConfigAndRotationAreIndependent(t *testing.T) {
 		t.Fatalf("rotate failed: %d %s", rotate.Code, rotate.Body.String())
 	}
 	rotatedClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	rotatedGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
 	if rotatedClaude.PathToken == afterClaude.PathToken {
 		t.Fatal("Claude rotate kept old capability token")
 	}
+	if rotatedGPT != beforeGPT {
+		t.Fatalf("Claude rotate contaminated GPT profile: before=%+v after=%+v", beforeGPT, rotatedGPT)
+	}
+
+	gptConfig := post("/api/connections/chatgpt-web/config", `{"stable_base_url":"https://gpt.mar.example.com","preferred_mode":"stable"}`)
+	if gptConfig.Code != http.StatusOK {
+		t.Fatalf("GPT stable config failed: %d %s", gptConfig.Code, gptConfig.Body.String())
+	}
+	configuredGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
+	claudeAfterGPTConfig, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	if configuredGPT.StableBaseURL != "https://gpt.mar.example.com" || configuredGPT.PreferredMode != store.RemoteConnectorModeStable || configuredGPT.PathToken != beforeGPT.PathToken {
+		t.Fatalf("GPT config mismatch: %+v", configuredGPT)
+	}
+	if claudeAfterGPTConfig != rotatedClaude {
+		t.Fatalf("GPT config contaminated Claude profile: before=%+v after=%+v", rotatedClaude, claudeAfterGPTConfig)
+	}
+	gptRotate := post("/api/connections/chatgpt-web/rotate", `{}`)
+	if gptRotate.Code != http.StatusOK {
+		t.Fatalf("GPT rotate failed: %d %s", gptRotate.Code, gptRotate.Body.String())
+	}
+	finalGPT, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorChatGPTWeb)
+	finalClaude, _ := db.GetRemoteConnectorProfile(ctx, store.RemoteConnectorClaudeWeb)
+	if finalGPT.PathToken == configuredGPT.PathToken {
+		t.Fatal("GPT rotate kept old capability token")
+	}
+	if finalClaude != rotatedClaude {
+		t.Fatalf("GPT rotate contaminated Claude profile: before=%+v after=%+v", rotatedClaude, finalClaude)
+	}
+
 	bad := post("/api/connections/claude-web/config", `{"stable_base_url":"https://random.trycloudflare.com","preferred_mode":"stable"}`)
 	if bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "temporary") {
 		t.Fatalf("Quick Tunnel hostname was accepted as stable: %d %s", bad.Code, bad.Body.String())

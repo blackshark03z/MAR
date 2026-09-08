@@ -44,15 +44,16 @@ mar project-add -db <data-root>/mar.db -id <project-id> -root <project-root>
 mar mcp-stdio -db <data-root>/mar.db -data-root <data-root> -brain web
 ```
 
-`-brain web` does not require a model-provider API key. Local MCP stdio remains the canonical process-local transport. GPT/OpenAI and Claude use separate remote transports:
+`-brain web` does not require a model-provider API key. Local MCP stdio remains the canonical process-local transport. For current V1 Web use, GPT/OpenAI and Claude each receive a separate token-bound **MCP Link** on MAR's Streamable HTTP bridge:
 
-- **GPT / OpenAI** uses the official outbound-only [OpenAI Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). MAR gives `tunnel-client` a loopback-only Streamable HTTP MCP target; MAR MCP does not need a public listener.
-- **Claude Web** keeps the existing token-bound Remote MCP path. Start a temporary Web link in **Connections**, copy the generated MCP URL into Claude `Customize -> Connectors -> Add custom connector`, then enable that connector in the conversation. A persistent HTTPS route can be configured instead of Quick Tunnel.
+- **GPT / OpenAI** gets its own capability URL and realtime telemetry. Start the temporary bridge in **Connections**, copy the GPT MCP URL into the supported ChatGPT MCP connection surface, or configure a persistent HTTPS base route instead of Quick Tunnel.
+- **Claude Web** gets a different capability URL on the same hardened bridge engine. Copy the Claude MCP URL into `Customize -> Connectors -> Add custom connector`, then enable that connector in the conversation.
+- **OpenAI Secure MCP Tunnel** remains implemented and available as an optional advanced/future transport; it is not required for the current MCP Link V1 gate.
 - **Claude Desktop** remains an optional local stdio client, not a prerequisite for Claude Web.
 
 For fully unattended cognition, use provider mode with the configured provider URL, API-key environment variable, and model.
 
-## GPT / OpenAI Secure MCP Tunnel
+## Optional GPT / OpenAI Secure MCP Tunnel
 
 1. Create or select a tunnel in OpenAI Platform tunnel settings and associate it with the Platform organization and ChatGPT workspace that should use MAR. Copy its `tunnel_id`.
 2. Install `tunnel-client` from the Platform download link or the [official latest release](https://github.com/openai/tunnel-client/releases/latest). MAR searches `<data-root>/runtime/tunnel-client.exe` first, then `PATH`; an absolute path can also be entered under **Connections -> OpenAI / GPT -> Thiết lập & chi tiết**.
@@ -84,7 +85,7 @@ The Console exposes four normal surfaces:
 
 - **Work** — current/recent durable tasks, attention queue, result/evidence, MAR-measured token usage and Owner feedback;
 - **Projects** — add a supported local repository and narrow project-level local file/local Git permissions;
-- **Connections** — compare GPT/OpenAI Secure MCP Tunnel and Claude Remote MCP at a glance. Each card has independent status, identifier, lifecycle actions, last activity, concise recovery guidance, and collapsed diagnostics. Provider mode and Claude Desktop `.mcpb` remain secondary options.
+- **Connections** — compare GPT and Claude MCP Links at a glance. Each has its own capability URL, status, last activity, route/MCP telemetry, stable/temporary mode and secret-link rotation. OpenAI Secure MCP Tunnel, provider mode and Claude Desktop `.mcpb` remain secondary options.
 - **Advanced** — raw task/runtime diagnostics for Tech Lead/debug use.
 
 For unattended provider-backed cognition, configure provider URL, API-key environment variable and model, then launch:
@@ -95,7 +96,7 @@ mar ui -db <data-root>/mar.db -data-root <data-root> -brain provider -provider-b
 
 The API key value remains only in the named environment variable; the Console never returns it. Token counters show only usage MAR actually receives/measures. They do not estimate hidden ChatWeb conversation usage.
 
-The temporary **Claude** Web link uses a 256-bit random capability token in the URL path and a loopback-only Streamable HTTP endpoint behind an outbound Quick Tunnel. The link is session-scoped; treat the full URL like a password. MAR waits for a token-bound public health round trip before showing the link as ready, and only actual MCP traffic promotes it to connected. This Claude capability URL is not used for GPT/OpenAI; GPT has exactly one owner-facing remote transport authority: Secure MCP Tunnel.
+The temporary **GPT** and **Claude** Web links each use a different 256-bit random capability token in the URL path and the same loopback-only Streamable HTTP bridge behind an outbound Quick Tunnel. Treat each full URL like a password. MAR waits for a token-bound public health round trip before showing a link as ready, and only traffic observed on that connector promotes that connector to connected. Rotating one connector revokes only its old capability path; the other connector profile and telemetry remain independent.
 
 Representative Owner UAT starts in the Tech Lead Web conversation: describe one real product need in normal language, allow the Tech Lead to frame the bounded Goal/acceptance/oracles, let MAR execute it without manual prompt/report forwarding, then use the product and record accept/reject/comment against the exact durable candidate/result in the Console. Engineering PASS alone is not Owner Product Acceptance.
 

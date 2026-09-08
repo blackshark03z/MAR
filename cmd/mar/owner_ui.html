@@ -162,7 +162,7 @@
   </section>
 
   <section id="view-connections" class="view">
-    <div class="intro"><h2>Kết nối AI</h2><p class="muted">GPT dùng OpenAI Secure MCP Tunnel outbound-only; Claude dùng Remote MCP riêng. Hai kết nối có lifecycle, identifier và trạng thái độc lập. MAR chỉ báo Đang kết nối khi có readiness hoặc traffic thật.</p></div>
+    <div class="intro"><h2>Kết nối AI</h2><p class="muted">GPT và Claude dùng MCP Link HTTPS với capability URL và telemetry riêng. Secure MCP Tunnel của OpenAI vẫn có sẵn như tùy chọn nâng cao. MAR chỉ báo Đang kết nối khi có readiness hoặc traffic thật.</p></div>
     <div id="connection-summary" class="notice warn"></div>
     <div id="connection-list" class="connection-list" style="margin-top:16px"></div>
     <div id="sandbox-readiness" class="card" style="margin-top:16px"></div>
@@ -259,10 +259,10 @@ function ensureWebConnectorCard(c){
   const host=$('connection-list'); let card=host.querySelector(`[data-web-connector="${c.id}"]`);
   if(card)return card;
   card=document.createElement('article');card.className='card provider-card';card.dataset.webConnector=c.id;
-  card.innerHTML=`<div class="card-head"><div><div class="provider-title"><span class="status-dot" data-dot></span><h3 data-name></h3></div><div class="muted provider-transport">Remote MCP · HTTPS</div></div><span class="chip" data-status aria-live="polite"></span></div>
+  card.innerHTML=`<div class="card-head"><div><div class="provider-title"><span class="status-dot" data-dot></span><h3 data-name></h3></div><div class="muted provider-transport">MCP Link · HTTPS</div></div><span class="chip" data-status aria-live="polite"></span></div>
     <p data-summary></p>
     <div class="identifier-row"><div class="connection-url" data-active-url>Chưa có MCP URL</div><button type="button" data-copy-url>Sao chép</button></div>
-    <div class="actions"><button type="button" class="primary" data-bridge-start>Tạo Quick Tunnel</button><button type="button" data-bridge-restart>Khởi động lại</button><button type="button" data-bridge-stop>Dừng Claude tunnel</button><button type="button" data-bridge-diagnose>Chẩn đoán</button></div>
+    <div class="actions"><button type="button" class="primary" data-bridge-start>Tạo link tạm</button><button type="button" data-bridge-restart>Khởi động lại link tạm</button><button type="button" data-bridge-stop>Dừng link tạm</button><button type="button" data-bridge-diagnose>Chẩn đoán</button></div>
     <div class="provider-meta muted"><span data-last-seen-summary>Hoạt động gần nhất: —</span><span data-route-summary>Route: —</span></div>
     <div class="muted secret-note" data-error></div>
     <details class="provider-details"><summary>Thiết lập & chi tiết</summary><div class="stack" style="margin-top:12px">
@@ -276,9 +276,9 @@ function ensureWebConnectorCard(c){
   card.querySelector('[data-copy-url]').addEventListener('click',e=>copyValue(connectionById(card.dataset.webConnector)?.connection_url,e.currentTarget,'Sao chép MCP URL'));
   card.querySelector('[data-rotate-link]').addEventListener('click',async()=>{const id=card.dataset.webConnector;if(!confirm('Đổi secret link? Connector URL cũ sẽ bị thu hồi ngay và bạn phải cập nhật URL trong AI client.'))return;try{await api(`/api/connections/${encodeURIComponent(id)}/rotate`,{method:'POST',body:'{}'});await loadRuntime();}catch(err){alert(err.message);}});
   card.querySelector('[data-bridge-start]').addEventListener('click',e=>startWebBridge(e.currentTarget));
-  card.querySelector('[data-bridge-restart]').addEventListener('click',e=>runClaudeBridgeAction('restart',e.currentTarget,'Đang khởi động lại…'));
+  card.querySelector('[data-bridge-restart]').addEventListener('click',e=>runRemoteBridgeAction(card.dataset.webConnector,'restart',e.currentTarget,'Đang khởi động lại…'));
   card.querySelector('[data-bridge-stop]').addEventListener('click',e=>stopWebBridge(e.currentTarget));
-  card.querySelector('[data-bridge-diagnose]').addEventListener('click',e=>runClaudeBridgeAction('diagnose',e.currentTarget,'Đang chẩn đoán…'));
+  card.querySelector('[data-bridge-diagnose]').addEventListener('click',e=>runRemoteBridgeAction(card.dataset.webConnector,'diagnose',e.currentTarget,'Đang chẩn đoán…'));
   return card;
 }
 function updateWebConnectorCard(card,c){
@@ -309,7 +309,7 @@ function renderConnections(items){
   const host=$('connection-list'); const wanted=new Set();
   for(const c of items){
     if(c.id==='openai-tunnel'){wanted.add(c.id);const card=ensureOpenAITunnelCard(c);updateOpenAITunnelCard(card,c);continue;}
-    if(c.id==='claude-web'){
+    if(c.id==='chatgpt-web'||c.id==='claude-web'){
       wanted.add(c.id);const card=ensureWebConnectorCard(c);updateWebConnectorCard(card,c);continue;
     }
     const key=`other-${c.id}`;wanted.add(key);let card=host.querySelector(`[data-other-connector="${c.id}"]`);if(!card){card=document.createElement('div');card.className='card secondary-connection';card.dataset.otherConnector=c.id;host.appendChild(card);}
@@ -334,7 +334,7 @@ async function stopWebBridge(button){
   try{await api('/api/connections/web-bridge/stop',{method:'POST',body:'{}'});await loadRuntime();}
   catch(err){alert(err.message);button.disabled=false;button.textContent=original;}
 }
-async function runClaudeBridgeAction(action,button,busy){const original=button.textContent;button.disabled=true;button.textContent=busy;try{await api(`/api/connections/${action==='restart'?'web-bridge/restart':'claude-web/diagnose'}`,{method:'POST',body:'{}'});await loadRuntime();}catch(err){alert(err.message);}finally{button.disabled=false;button.textContent=original;}}
+async function runRemoteBridgeAction(connectorId,action,button,busy){const original=button.textContent;button.disabled=true;button.textContent=busy;const path=action==='restart'?'/api/connections/web-bridge/restart':`/api/connections/${encodeURIComponent(connectorId)}/diagnose`;try{await api(path,{method:'POST',body:'{}'});await loadRuntime();}catch(err){alert(err.message);}finally{button.disabled=false;button.textContent=original;}}
 
 async function downloadClaudePackage(button){
   const original=button.textContent; button.disabled=true; button.textContent='Đang tạo gói…';
