@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"mar/internal/pathidentity"
 )
 
 type IsolationLevel string
@@ -157,7 +159,7 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve shared Go module cache: %w", err)
 		}
-		cache, err = filepath.EvalSymlinks(cache)
+		cache, err = pathidentity.ResolveExisting(cache)
 		if err != nil {
 			return nil, fmt.Errorf("resolve shared Go module cache identity: %w", err)
 		}

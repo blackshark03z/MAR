@@ -16,6 +16,7 @@ import (
 )
 
 func TestWindowsSandboxExecutorReturnsPromptlyForFailingGoTest(t *testing.T) {
+	testsupport.RequireExecutable(t, "git")
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module sandboxfailprobe\n\ngo 1.27.0\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -53,6 +54,7 @@ func TestWindowsSandboxExecutorReturnsPromptlyForFailingGoTest(t *testing.T) {
 }
 
 func TestWindowsSandboxPortableGoSharedCacheReturnsPromptlyForFailingTest(t *testing.T) {
+	testsupport.RequireExecutable(t, "git")
 	root := t.TempDir()
 	files := map[string]string{
 		"go.mod":      "module portablefailprobe\n\ngo 1.27\n",

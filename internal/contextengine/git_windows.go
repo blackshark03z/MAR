@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"mar/internal/pathidentity"
 	"mar/internal/processctl"
 )
 
@@ -37,11 +38,7 @@ func (g *GitRepository) Snapshot(ctx context.Context, root string) (RepositorySn
 	if g == nil || g.gitPath == "" {
 		return RepositorySnapshot{}, errors.New("Git context repository is not initialized")
 	}
-	root, err := filepath.Abs(root)
-	if err != nil {
-		return RepositorySnapshot{}, err
-	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := pathidentity.ResolveExisting(root)
 	if err != nil {
 		return RepositorySnapshot{}, fmt.Errorf("resolve Git context root: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"mar/internal/domain"
+	"mar/internal/pathidentity"
 )
 
 const maxProjectReadBytes int64 = 512 << 10
@@ -57,7 +58,7 @@ func (s *TaskService) ReadProjectFile(ctx context.Context, projectID, requestedP
 	if bytes.IndexByte(payload, 0) >= 0 || !utf8.Valid(payload) {
 		return ProjectReadResult{}, errors.New("project read supports UTF-8 text files only")
 	}
-	root, err := filepath.EvalSymlinks(project.Root)
+	root, err := pathidentity.ResolveExisting(project.Root)
 	if err != nil {
 		return ProjectReadResult{}, fmt.Errorf("resolve project root: %w", err)
 	}
@@ -135,23 +136,32 @@ func resolveProjectReadTarget(projects []domain.Project, projectID, requestedPat
 }
 
 func safeProjectReadTarget(project domain.Project, requestedPath string) (string, error) {
-	root, err := filepath.EvalSymlinks(project.Root)
+	rootAbs, err := filepath.Abs(project.Root)
 	if err != nil {
 		return "", fmt.Errorf("resolve project root: %w", err)
 	}
-	root, err = filepath.Abs(root)
+	rootAbs = filepath.Clean(rootAbs)
+	root, err := pathidentity.ResolveExisting(rootAbs)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve project root: %w", err)
 	}
 	candidate := requestedPath
 	if !filepath.IsAbs(candidate) {
-		candidate = filepath.Join(root, candidate)
+		candidate = filepath.Join(rootAbs, candidate)
 	}
 	candidate, err = filepath.Abs(candidate)
 	if err != nil {
 		return "", err
 	}
-	real, err := filepath.EvalSymlinks(candidate)
+	candidate = filepath.Clean(candidate)
+	// Reject lexical traversal before opening a path outside the registered
+	// root. This preserves fail-closed behavior even when the caller lacks
+	// authority to inspect the escaped location.
+	lexicalRel, lexicalErr := filepath.Rel(rootAbs, candidate)
+	if lexicalErr != nil || lexicalRel == ".." || strings.HasPrefix(lexicalRel, ".."+string(filepath.Separator)) || filepath.IsAbs(lexicalRel) {
+		return "", errors.New("project file path escapes the registered project root")
+	}
+	real, err := pathidentity.ResolveExisting(candidate)
 	if err != nil {
 		return "", err
 	}

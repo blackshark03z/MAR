@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mar/internal/testsupport"
 )
 
 func TestWindowsSandboxExecutorIsSelfHostingSafeAndRunsGit(t *testing.T) {
@@ -63,6 +65,7 @@ func TestWindowsSandboxExecutorIsSelfHostingSafeAndRunsGit(t *testing.T) {
 }
 
 func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
+	testsupport.RequireExecutable(t, "git")
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module sandboxprobe\n\ngo 1.27.0\n"), 0o644); err != nil {
 		t.Fatal(err)

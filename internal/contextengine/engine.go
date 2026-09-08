@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"mar/internal/domain"
+	"mar/internal/pathidentity"
 )
 
 var ErrRevisionMismatch = errors.New("context snapshot revision does not match expected revision")
@@ -152,11 +153,7 @@ func (e *Engine) Build(ctx context.Context, req Request) (Pack, error) {
 	if strings.TrimSpace(req.Root) == "" {
 		return Pack{}, errors.New("context root is required")
 	}
-	root, err := filepath.Abs(req.Root)
-	if err != nil {
-		return Pack{}, err
-	}
-	root, err = filepath.EvalSymlinks(root)
+	root, err := pathidentity.ResolveExisting(req.Root)
 	if err != nil {
 		return Pack{}, fmt.Errorf("resolve context root: %w", err)
 	}
@@ -369,12 +366,11 @@ func readContextFile(root, rel string, maxBytes int64) ([]byte, int64, bool, err
 		return nil, 0, true, err
 	}
 	candidate := filepath.Join(root, clean)
-	resolved, err := filepath.EvalSymlinks(candidate)
+	resolved, err := pathidentity.ResolveExisting(candidate)
 	if err != nil {
 		return nil, 0, true, err
 	}
-	resolved, err = filepath.Abs(resolved)
-	if err != nil || !insideRoot(root, resolved) {
+	if !insideRoot(root, resolved) {
 		return nil, 0, true, errors.New("context file resolves outside root")
 	}
 	info, err := os.Stat(resolved)
