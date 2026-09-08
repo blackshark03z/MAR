@@ -253,7 +253,12 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 	if err != nil {
 		return fmt.Errorf("initialize remote connector profiles: %w", err)
 	}
-	_ = backend.bridge.ConfigureProfiles(profiles)
+	if err := backend.bridge.ConfigureProfiles(profiles); err != nil {
+		return fmt.Errorf("configure remote MCP bridge: %w", err)
+	}
+	if shouldAutoStartRemoteBridge(profiles) {
+		go func() { _, _ = backend.bridge.StartTemporary() }()
+	}
 	defer backend.bridge.Close()
 	backend.openAITunnel = newOpenAITunnelManager(ctx, backend.svc, opts.DataRoot)
 	tunnelConfig, err := db.EnsureOpenAITunnelConfig(ctx)
@@ -517,6 +522,15 @@ func ensureRemoteConnectorProfiles(ctx context.Context, db *store.SQLite) ([]sto
 		}
 	}
 	return db.ListRemoteConnectorProfiles(ctx)
+}
+
+func shouldAutoStartRemoteBridge(profiles []store.RemoteConnectorProfile) bool {
+	for _, profile := range profiles {
+		if (profile.ID == store.RemoteConnectorChatGPTWeb || profile.ID == store.RemoteConnectorClaudeWeb) && profile.PreferredMode == store.RemoteConnectorModeTemporary {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeStableConnectorBase(raw string) (string, error) {
@@ -852,10 +866,12 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "Tạo hoặc cấu hình MCP Link cho GPT/ChatGPT trong Kết nối AI, sau đó sao chép URL vào client."
+		nextAction = "MAR tự chuẩn bị MCP Link cho GPT/ChatGPT khi khởi động; mở Kết nối AI để sao chép URL khi route sẵn sàng."
 		for _, connector := range bridge.Connectors {
 			if connector.ID == store.RemoteConnectorChatGPTWeb {
 				switch connector.Status {
+				case "CONNECTING":
+					nextAction = "MAR đang tự chuẩn bị GPT MCP Link; không cần bấm tạo link."
 				case "CONNECTED":
 					nextAction = "GPT MCP Link đang trao đổi traffic với MAR."
 				case "LINK_READY", "IDLE":

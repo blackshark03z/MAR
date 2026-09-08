@@ -34,7 +34,7 @@ Local stdio remains supported. Claude Desktop is optional and is not required fo
 
 ## Truthful readiness
 
-The tunnel may print a public hostname before DNS/edge propagation completes. MAR therefore performs a token-bound `/health/<token>` round trip through the public URL before returning `LINK_READY`. V1 allows a bounded 90-second readiness window because observed Quick Tunnel DNS propagation can exceed 30 seconds after a cold start. Network diagnostics retain the useful DNS/connect cause but redact the capability token and never persist the secret health/MCP URL as an error string.
+The tunnel may print a public hostname before DNS/edge propagation completes. MAR therefore performs a token-bound `/health/<token>` round trip through the public URL before returning `LINK_READY`. The Owner UI now starts a temporary MCP Link automatically at boot when either web connector prefers temporary mode. A dead/unresolvable Quick Tunnel hostname is not allowed to consume the whole startup window: MAR gives each published route a bounded readiness attempt and automatically rotates to a fresh Quick Tunnel, with at most three attempts. Network diagnostics retain the useful DNS/connect cause but redact the capability token and never persist the secret health/MCP URL as an error string.
 
 `LINK_READY` means only that the public route reaches the local bridge.
 

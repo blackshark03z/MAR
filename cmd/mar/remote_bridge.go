@@ -24,10 +24,12 @@ import (
 )
 
 const (
-	remoteBridgeListen       = "127.0.0.1:8788"
-	remoteConnectedWindow    = 45 * time.Second
-	remoteStableProbeEvery   = 5 * time.Second
-	remoteStableProbeTimeout = 3 * time.Second
+	remoteBridgeListen           = "127.0.0.1:8788"
+	remoteConnectedWindow        = 45 * time.Second
+	remoteStableProbeEvery       = 5 * time.Second
+	remoteStableProbeTimeout     = 3 * time.Second
+	remoteQuickProbeAttemptLimit = 15 * time.Second
+	remoteQuickStartAttempts     = 3
 )
 
 type remoteConnectorState struct {
@@ -81,6 +83,7 @@ type remoteBridgeManager struct {
 	backend  mcpedge.Backend
 	dataRoot string
 
+	lifecycleMu    sync.Mutex
 	mu             sync.Mutex
 	server         *http.Server
 	listener       net.Listener
@@ -89,6 +92,7 @@ type remoteBridgeManager struct {
 	profiles       map[string]store.RemoteConnectorProfile
 	telemetry      map[string]*remoteConnectorTelemetry
 	quickBaseURL   string
+	starting       bool
 	startedAt      time.Time
 	lastError      string
 	tunnelStop     func() error
@@ -98,6 +102,7 @@ type remoteBridgeManager struct {
 
 	findTunnel  func() (string, error)
 	startTunnel remoteTunnelStartFunc
+	waitReady   func(context.Context, string, string) error
 }
 
 func newRemoteBridgeManager(ctx context.Context, backend mcpedge.Backend, dataRoot string) *remoteBridgeManager {
@@ -108,6 +113,7 @@ func newRemoteBridgeManager(ctx context.Context, backend mcpedge.Backend, dataRo
 	}
 	m.findTunnel = m.findCloudflared
 	m.startTunnel = startCloudflaredQuickTunnel
+	m.waitReady = waitRemoteBridgeReady
 	return m
 }
 
@@ -211,6 +217,10 @@ func (m *remoteBridgeManager) stateLocked() remoteBridgeState {
 		case "CONNECTED":
 			state.Status = "CONNECTED"
 			return state
+		case "CONNECTING":
+			if state.Status == "READY_TO_START" {
+				state.Status = "CONNECTING"
+			}
 		case "IDLE":
 			if state.Status != "CONNECTED" {
 				state.Status = "IDLE"
@@ -290,7 +300,11 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 		state.PublicURL = state.TemporaryURL
 		state.RouteReady = m.quickBaseURL != ""
 		if m.quickBaseURL == "" {
-			state.Status = "READY_TO_START"
+			if m.starting {
+				state.Status = "CONNECTING"
+			} else {
+				state.Status = "READY_TO_START"
+			}
 			return state
 		}
 	}
@@ -365,6 +379,8 @@ func (m *remoteBridgeManager) serveRemoteHTTP(w http.ResponseWriter, r *http.Req
 func (m *remoteBridgeManager) Start() (remoteBridgeState, error) { return m.StartTemporary() }
 
 func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	if err := m.ensureLocalServer(); err != nil {
 		m.setError(err)
 		return m.State(), err
@@ -384,7 +400,13 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 		}
 	}
 	m.lastError = ""
+	m.starting = true
 	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.starting = false
+		m.mu.Unlock()
+	}()
 	if probeToken == "" {
 		return m.State(), errors.New("no remote connector profile is configured")
 	}
@@ -394,15 +416,39 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 		m.setError(err)
 		return m.State(), err
 	}
-	baseURL, stopTunnel, tunnelDone, err := m.startTunnel(m.ctx, cloudflared, localURL)
-	if err != nil {
-		m.setError(err)
-		return m.State(), err
-	}
-	if err := waitRemoteBridgeReady(m.ctx, baseURL, probeToken); err != nil {
+	var baseURL string
+	var stopTunnel func() error
+	var tunnelDone <-chan error
+	var lastErr error
+	for attempt := 1; attempt <= remoteQuickStartAttempts; attempt++ {
+		baseURL, stopTunnel, tunnelDone, err = m.startTunnel(m.ctx, cloudflared, localURL)
+		if err == nil {
+			probeCtx, cancel := context.WithTimeout(m.ctx, remoteQuickProbeAttemptLimit)
+			ready := m.waitReady
+			if ready == nil {
+				ready = waitRemoteBridgeReady
+			}
+			err = ready(probeCtx, baseURL, probeToken)
+			cancel()
+		}
+		if err == nil {
+			lastErr = nil
+			break
+		}
+		lastErr = err
 		if stopTunnel != nil {
 			_ = stopTunnel()
 		}
+		baseURL, stopTunnel, tunnelDone = "", nil, nil
+		if m.ctx.Err() != nil {
+			break
+		}
+	}
+	if lastErr != nil || baseURL == "" {
+		if lastErr == nil {
+			lastErr = errors.New("temporary remote MCP route did not start")
+		}
+		err = fmt.Errorf("temporary remote MCP link failed after %d bounded attempts: %s", remoteQuickStartAttempts, sanitizeRemoteBridgeReadyError(lastErr, probeToken))
 		m.setError(err)
 		return m.State(), err
 	}
@@ -424,6 +470,8 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 }
 
 func (m *remoteBridgeManager) StopTemporary() error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	m.mu.Lock()
 	stopTunnel := m.tunnelStop
 	m.quickBaseURL = ""

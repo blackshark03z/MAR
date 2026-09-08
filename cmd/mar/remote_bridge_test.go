@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -122,6 +123,91 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	}
 	if manager.localEndpointFor(store.RemoteConnectorClaudeWeb) == "" || manager.localEndpointFor(store.RemoteConnectorChatGPTWeb) == "" {
 		t.Fatal("stopping temporary tunnel incorrectly destroyed stable local bridge")
+	}
+}
+
+func TestRemoteBridgeSerializesConcurrentTemporaryStartAndReportsConnecting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := store.Open(t.TempDir() + `\\mar.db`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var starts atomic.Int32
+	manager.startTunnel = func(_ context.Context, _ string, localURL string) (string, func() error, <-chan error, error) {
+		if starts.Add(1) == 1 {
+			close(entered)
+		}
+		<-release
+		return localURL, func() error { return nil }, make(chan error), nil
+	}
+	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			if _, err := manager.StartTemporary(); err != nil {
+				t.Errorf("StartTemporary: %v", err)
+			}
+		}()
+	}
+	<-entered
+	state := manager.State()
+	if connectorState(t, state, store.RemoteConnectorChatGPTWeb).Status != "CONNECTING" || connectorState(t, state, store.RemoteConnectorClaudeWeb).Status != "CONNECTING" {
+		t.Fatalf("concurrent startup did not report CONNECTING: %+v", state)
+	}
+	close(release)
+	wg.Wait()
+	if starts.Load() != 1 {
+		t.Fatalf("concurrent startup launched %d tunnels, want 1", starts.Load())
+	}
+}
+
+func TestRemoteBridgeRetriesDeadTemporaryRouteWithinBoundedStartup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := store.Open(t.TempDir() + `\\mar.db`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
+	var starts atomic.Int32
+	var stops atomic.Int32
+	manager.startTunnel = func(_ context.Context, _ string, localURL string) (string, func() error, <-chan error, error) {
+		starts.Add(1)
+		return localURL, func() error { stops.Add(1); return nil }, make(chan error), nil
+	}
+	var probes atomic.Int32
+	manager.waitReady = func(_ context.Context, _, _ string) error {
+		if probes.Add(1) == 1 {
+			return errors.New("lookup dead.trycloudflare.com: no such host")
+		}
+		return nil
+	}
+	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	state, err := manager.StartTemporary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if starts.Load() != 2 || probes.Load() != 2 || stops.Load() != 1 {
+		t.Fatalf("bounded retry counts wrong: starts=%d probes=%d stops=%d", starts.Load(), probes.Load(), stops.Load())
+	}
+	if connectorState(t, state, store.RemoteConnectorChatGPTWeb).Status != "LINK_READY" || connectorState(t, state, store.RemoteConnectorClaudeWeb).Status != "LINK_READY" {
+		t.Fatalf("retry did not recover link: %+v", state)
 	}
 }
 

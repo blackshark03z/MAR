@@ -214,7 +214,7 @@ function renderSandboxReadiness(data){
 }
 
 function connectionById(id){return (runtime?.connections||[]).find(c=>c.id===id)||null;}
-function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTING:'Đang ngắt…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Đã kết nối · đang rảnh',LINK_READY:'Link sẵn sàng',READY_TO_START:'Chưa tạo link tạm',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng'})[status]||status||'—';}
+function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTING:'Đang ngắt…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Đã kết nối · đang rảnh',LINK_READY:'Link sẵn sàng',READY_TO_START:'Đang chờ tự khôi phục link',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng'})[status]||status||'—';}
 function statusClass(status){return String(status||'').toLowerCase().replace(/_/g,'-');}
 async function copyValue(value,button,label){if(!value)return;try{await navigator.clipboard.writeText(value);button.textContent='Đã sao chép';setTimeout(()=>button.textContent=label,1200);}catch{button.textContent='Không sao chép được';setTimeout(()=>button.textContent=label,1600);}}
 function ensureOpenAITunnelCard(c){
@@ -262,7 +262,7 @@ function ensureWebConnectorCard(c){
   card.innerHTML=`<div class="card-head"><div><div class="provider-title"><span class="status-dot" data-dot></span><h3 data-name></h3></div><div class="muted provider-transport">MCP Link · HTTPS</div></div><span class="chip" data-status aria-live="polite"></span></div>
     <p data-summary></p>
     <div class="identifier-row"><div class="connection-url" data-active-url>Chưa có MCP URL</div><button type="button" data-copy-url>Sao chép</button></div>
-    <div class="actions"><button type="button" class="primary" data-bridge-start>Tạo link tạm</button><button type="button" data-bridge-restart>Khởi động lại link tạm</button><button type="button" data-bridge-stop>Dừng link tạm</button><button type="button" data-bridge-diagnose>Chẩn đoán</button></div>
+    <div class="actions"><button type="button" class="primary" data-bridge-start>Khôi phục link</button><button type="button" data-bridge-restart>Khởi động lại link</button><button type="button" data-bridge-stop>Dừng link phiên này</button><button type="button" data-bridge-diagnose>Chẩn đoán</button></div>
     <div class="provider-meta muted"><span data-last-seen-summary>Hoạt động gần nhất: —</span><span data-route-summary>Route: —</span></div>
     <div class="muted secret-note" data-error></div>
     <details class="provider-details"><summary>Thiết lập & chi tiết</summary><div class="stack" style="margin-top:12px">
@@ -299,9 +299,9 @@ function updateWebConnectorCard(card,c){
   card.querySelector('[data-route-summary]').textContent=`Route: ${c.route_ready?'sẵn sàng':'chưa xác nhận'}`;
   card.querySelector('[data-error]').textContent=c.last_error||'';
   const local=c.local_target||runtime?.remote_bridge?.local_target||'http://127.0.0.1:8788';
-  card.querySelector('[data-help]').textContent=c.preferred_mode==='stable'?`Stable URL giữ nguyên qua restart nhờ token bền vững. Public HTTPS route của bạn phải forward tới ${local}.`:'Quick Tunnel là fallback tạm thời; hostname sẽ đổi sau khi tunnel dừng/restart.';
-  const tempActive=!!c.temporary_url;
-  card.querySelector('[data-bridge-start]').classList.toggle('hidden',tempActive);
+  card.querySelector('[data-help]').textContent=c.preferred_mode==='stable'?`Stable URL giữ nguyên qua restart nhờ token bền vững. Public HTTPS route của bạn phải forward tới ${local}.`:'MAR tự tạo Quick Tunnel khi khởi động để link có sẵn; hostname vẫn có thể đổi sau khi MAR/tunnel restart.';
+  const tempActive=!!c.temporary_url, tempStarting=c.status==='CONNECTING';
+  card.querySelector('[data-bridge-start]').classList.toggle('hidden',tempActive||tempStarting);
   card.querySelector('[data-bridge-restart]').classList.toggle('hidden',!tempActive);
   card.querySelector('[data-bridge-stop]').classList.toggle('hidden',!tempActive);
 }
@@ -325,7 +325,7 @@ function renderConnections(items){
 }
 
 async function startWebBridge(button){
-  const original=button.textContent; button.disabled=true; button.textContent='Đang tạo link…';
+  const original=button.textContent; button.disabled=true; button.textContent='Đang khôi phục link…';
   try{await api('/api/connections/web-bridge/start',{method:'POST',body:'{}'});await loadRuntime();}
   catch(err){alert(err.message);button.disabled=false;button.textContent=original;}
 }

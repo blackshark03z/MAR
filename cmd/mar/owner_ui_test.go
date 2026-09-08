@@ -349,6 +349,20 @@ func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) 
 	}
 }
 
+func TestShouldAutoStartRemoteBridgeOnlyForTemporaryWebProfiles(t *testing.T) {
+	profiles := testRemoteProfiles(t)
+	if !shouldAutoStartRemoteBridge(profiles) {
+		t.Fatal("temporary GPT/Claude profiles should auto-start the remote bridge")
+	}
+	for i := range profiles {
+		profiles[i].PreferredMode = store.RemoteConnectorModeStable
+		profiles[i].StableBaseURL = "https://mar.example.com"
+	}
+	if shouldAutoStartRemoteBridge(profiles) {
+		t.Fatal("all-stable connector profiles should not start a Quick Tunnel")
+	}
+}
+
 func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
