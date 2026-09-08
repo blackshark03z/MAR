@@ -674,9 +674,10 @@ func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http
 		writeOwnerError(w, http.StatusBadRequest, err)
 		return
 	}
-	wasRunning := b.openAITunnel.State().Running
+	stateBefore := b.openAITunnel.State()
+	wasActive := stateBefore.Running || stateBefore.Status == "CONNECTING"
 	changed := current.TunnelID != next.TunnelID || current.ProfileName != next.ProfileName || current.APIKeyEnv != next.APIKeyEnv || current.ClientPath != next.ClientPath || current.AdminBaseURL != next.AdminBaseURL
-	if changed && wasRunning {
+	if changed && wasActive {
 		if err := b.openAITunnel.Stop(); err != nil {
 			writeOwnerError(w, http.StatusInternalServerError, err)
 			return
@@ -690,7 +691,7 @@ func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http
 		writeOwnerError(w, http.StatusBadRequest, err)
 		return
 	}
-	if changed && wasRunning {
+	if changed && wasActive {
 		if _, err := b.openAITunnel.Start(); err != nil {
 			writeOwnerError(w, http.StatusServiceUnavailable, err)
 			return

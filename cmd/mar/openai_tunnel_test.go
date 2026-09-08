@@ -22,6 +22,7 @@ type fakeTunnelProcess struct {
 	mu      sync.Mutex
 	done    chan struct{}
 	err     error
+	stopErr error
 	stopped bool
 }
 
@@ -44,7 +45,16 @@ func (p *fakeTunnelProcess) finish(err error) {
 	close(p.done)
 	p.mu.Unlock()
 }
-func (p *fakeTunnelProcess) Stop(context.Context) error { p.finish(nil); return nil }
+func (p *fakeTunnelProcess) Stop(context.Context) error {
+	p.mu.Lock()
+	err := p.stopErr
+	p.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	p.finish(nil)
+	return nil
+}
 
 func testOpenAITunnelManager(t *testing.T) (*openAITunnelManager, *fakeTunnelProcess, *[]string) {
 	t.Helper()
@@ -250,30 +260,58 @@ func TestOpenAITunnelRestartRequiresFreshReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.refreshHealth()
-	if !m.State().Connected {
-		t.Fatalf("first connection never became ready: %+v", m.State())
+	firstState := m.State()
+	if !firstState.Connected || firstState.LastSuccessAt == nil {
+		t.Fatalf("first connection never became ready: %+v", firstState)
 	}
 	state, err := m.Restart()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if state.Connected || state.Ready || state.Healthy || starts != 2 {
-		t.Fatalf("restart reused stale readiness: state=%+v starts=%d", state, starts)
+	if starts != 2 {
+		t.Fatalf("restart did not start a fresh process: state=%+v starts=%d", state, starts)
 	}
-	m.refreshHealth()
+	if state.Connected && (state.StartedAt == nil || state.ConnectedSince == nil || state.LastHealthAt == nil || state.ConnectedSince.Before(*state.StartedAt)) {
+		t.Fatalf("restart reused stale readiness: first=%+v restarted=%+v", firstState, state)
+	}
+	if !state.Connected {
+		m.refreshHealth()
+	}
 	if !m.State().Connected {
 		t.Fatalf("fresh readiness did not reconnect: %+v", m.State())
+	}
+}
+
+func TestOpenAITunnelRejectsIdentityChangeWhileActive(t *testing.T) {
+	m, _, _ := testOpenAITunnelManager(t)
+	config := validOpenAITunnelConfig()
+	t.Setenv(config.APIKeyEnv, "test-secret")
+	if err := m.Configure(config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	changed := config
+	changed.TunnelID = "tunnel_fedcba9876543210"
+	if err := m.Configure(changed); err == nil {
+		t.Fatal("active tunnel accepted a new identity without an explicit stop/restart")
+	}
+	state := m.State()
+	if state.Identifier != config.TunnelID || !state.Running {
+		t.Fatalf("rejected configuration changed active truth: %+v", state)
 	}
 }
 
 func TestOpenAITunnelDoctorFailureBlocksProcessStart(t *testing.T) {
 	m, _, _ := testOpenAITunnelManager(t)
 	config := validOpenAITunnelConfig()
-	t.Setenv(config.APIKeyEnv, "test-secret")
+	secret := "unit-test-runtime-credential"
+	t.Setenv(config.APIKeyEnv, secret)
 	started := false
 	m.runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
 		if len(args) > 0 && args[0] == "doctor" {
-			return "control plane rejected profile", errors.New("doctor exit 1")
+			return "control plane rejected profile with " + secret, errors.New("doctor exit 1 exposed " + secret)
 		}
 		return "", nil
 	}
@@ -286,9 +324,11 @@ func TestOpenAITunnelDoctorFailureBlocksProcessStart(t *testing.T) {
 	}
 	if _, err := m.Start(); err == nil || started {
 		t.Fatalf("failed Doctor did not block run: started=%v err=%v", started, err)
+	} else if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Doctor error leaked runtime credential: %v", err)
 	}
 	state := m.State()
-	if state.Running || state.Status != "ERROR" || !strings.Contains(state.LastError, "doctor") {
+	if state.Running || state.Status != "ERROR" || !strings.Contains(state.LastError, "doctor") || strings.Contains(state.LastError, secret) || strings.Contains(state.DiagnosticsSummary, secret) {
 		t.Fatalf("Doctor failure was not actionable: %+v", state)
 	}
 }
@@ -343,6 +383,45 @@ func TestOpenAITunnelStopCancelsInFlightStart(t *testing.T) {
 	state := m.State()
 	if processStarted || state.Running || state.Status != "DISCONNECTED" || state.LastError != "" {
 		t.Fatalf("Stop raced into a stale start or error: processStarted=%v state=%+v", processStarted, state)
+	}
+}
+
+func TestOpenAITunnelStopFailureRetainsProcessAuthorityAndBlocksRestart(t *testing.T) {
+	m, process, _ := testOpenAITunnelManager(t)
+	config := validOpenAITunnelConfig()
+	t.Setenv(config.APIKeyEnv, "test-secret")
+	if err := m.Configure(config); err != nil {
+		t.Fatal(err)
+	}
+	starts := 0
+	m.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) {
+		starts++
+		return process, nil
+	}
+	if _, err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	process.mu.Lock()
+	process.stopErr = context.DeadlineExceeded
+	process.mu.Unlock()
+	if err := m.Stop(); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop did not surface physical termination failure: %v", err)
+	}
+	state := m.State()
+	if !state.Running || state.Connected || state.Status != "DEGRADED" || !strings.Contains(state.LastError, "stop tunnel-client") {
+		t.Fatalf("Stop failure lost process authority or connection truth: %+v", state)
+	}
+	if _, err := m.Restart(); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Restart did not fail closed on the retained process: %v", err)
+	}
+	if starts != 1 {
+		t.Fatalf("Restart launched a second process after unconfirmed stop: starts=%d", starts)
+	}
+	process.mu.Lock()
+	process.stopErr = nil
+	process.mu.Unlock()
+	if err := m.Stop(); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -76,6 +76,8 @@ type openAITunnelManager struct {
 	localTarget        string
 	process            tunnelClientProcess
 	starting           bool
+	stopping           bool
+	terminationUnknown bool
 	startEpoch         uint64
 	startCancel        context.CancelFunc
 	clientPath         string
@@ -121,6 +123,10 @@ func (m *openAITunnelManager) Configure(config store.OpenAITunnelConfig) error {
 	}
 	m.mu.Lock()
 	changed := m.config.TunnelID != config.TunnelID || m.config.ProfileName != config.ProfileName || m.config.APIKeyEnv != config.APIKeyEnv || m.config.ClientPath != config.ClientPath || m.config.AdminBaseURL != config.AdminBaseURL
+	if changed && (m.process != nil || m.starting) {
+		m.mu.Unlock()
+		return errors.New("stop the active OpenAI tunnel before changing its connection configuration")
+	}
 	m.config = config
 	if changed && m.process == nil {
 		m.healthy = false
@@ -149,7 +155,7 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 		clientErr = nil
 	}
 	running := m.process != nil
-	connected := running && m.healthy && m.ready
+	connected := running && !m.stopping && !m.terminationUnknown && m.healthy && m.ready
 	state := openAITunnelState{
 		Provider: "openai", Transport: "secure-mcp-tunnel", Configured: config.TunnelID != "", Running: running,
 		Healthy: m.healthy, Ready: m.ready, Connected: connected, Identifier: config.TunnelID, ProfileName: config.ProfileName,
@@ -185,8 +191,14 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 		state.Status, state.NextAction = "MISCONFIGURED", "Đặt runtime API key trong biến "+config.APIKeyEnv+" rồi mở lại MAR Console."
 	case m.starting:
 		state.Status, state.NextAction = "CONNECTING", "MAR đang chạy Doctor và mở tunnel outbound."
+	case m.stopping:
+		state.Status, state.NextAction = "DISCONNECTING", "MAR đang dừng tunnel-client do mình sở hữu."
+	case m.terminationUnknown:
+		state.Status, state.NextAction = "DEGRADED", "Chưa xác nhận tunnel-client đã dừng; thử Dừng lại hoặc kiểm tra tiến trình trước khi restart."
 	case connected:
 		state.Status, state.NextAction = "CONNECTED", "Sao chép tunnel ID vào màn hình kết nối được OpenAI hỗ trợ."
+	case running && m.lastError != "":
+		state.Status, state.NextAction = "DEGRADED", "Tunnel vẫn còn tiến trình sau lỗi lifecycle; chẩn đoán trước khi thử lại."
 	case running && (m.lastHealthAt.IsZero() || firstNonEmpty(config.AdminBaseURL, m.adminDiscovered) == ""):
 		state.Status, state.NextAction = "CONNECTING", "Tunnel đang chạy; chờ readiness hoặc MCP request đầu tiên."
 	case running:
@@ -269,6 +281,8 @@ func (m *openAITunnelManager) Start() (openAITunnelState, error) {
 		return m.State(), errors.New("tunnel start was superseded or stopped")
 	}
 	m.process = process
+	m.starting = false
+	m.startCancel = nil
 	m.startedAt = now
 	m.connectedSince = time.Time{}
 	m.healthy = false
@@ -276,6 +290,7 @@ func (m *openAITunnelManager) Start() (openAITunnelState, error) {
 	m.lastHealthAt = time.Time{}
 	m.lastError = ""
 	m.mu.Unlock()
+	startCancel()
 	go m.watchProcess(process)
 	m.signalHealthRefresh()
 	return m.State(), nil
@@ -283,26 +298,35 @@ func (m *openAITunnelManager) Start() (openAITunnelState, error) {
 
 func (m *openAITunnelManager) failStart(epoch uint64, err error) (openAITunnelState, error) {
 	m.mu.Lock()
+	safeErr := newRedactedTunnelError(err, os.Getenv(m.config.APIKeyEnv), "")
 	if m.startEpoch == epoch {
 		m.starting = false
-		m.lastError = redactTunnelOutput(err.Error(), os.Getenv(m.config.APIKeyEnv))
+		m.lastError = safeErr.Error()
 	}
 	m.mu.Unlock()
-	return m.State(), err
+	return m.State(), safeErr
 }
 
 func (m *openAITunnelManager) Stop() error {
 	m.mu.Lock()
+	if m.stopping {
+		m.mu.Unlock()
+		return errors.New("OpenAI tunnel is already stopping")
+	}
 	process := m.process
 	startCancel := m.startCancel
 	m.startEpoch++
 	m.startCancel = nil
-	m.process = nil
 	m.starting = false
+	m.stopping = process != nil
 	m.healthy = false
 	m.ready = false
 	m.connectedSince = time.Time{}
-	m.startedAt = time.Time{}
+	if process == nil {
+		m.startedAt = time.Time{}
+		m.lastError = ""
+		m.terminationUnknown = false
+	}
 	m.mu.Unlock()
 	if startCancel != nil {
 		startCancel()
@@ -313,9 +337,23 @@ func (m *openAITunnelManager) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), openAITunnelStopTimeout)
 	defer cancel()
 	if err := process.Stop(ctx); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		m.setError(fmt.Errorf("stop tunnel-client: %w", err))
-		return err
+		m.mu.Lock()
+		safeErr := newRedactedTunnelError(fmt.Errorf("stop tunnel-client: %w", err), os.Getenv(m.config.APIKeyEnv), "")
+		m.stopping = false
+		m.terminationUnknown = true
+		m.lastError = safeErr.Error()
+		m.mu.Unlock()
+		return safeErr
 	}
+	m.mu.Lock()
+	if m.process == process {
+		m.process = nil
+	}
+	m.stopping = false
+	m.terminationUnknown = false
+	m.startedAt = time.Time{}
+	m.lastError = ""
+	m.mu.Unlock()
 	return nil
 }
 
@@ -348,11 +386,9 @@ func (m *openAITunnelManager) Diagnose(ctx context.Context) (openAITunnelState, 
 	}
 	if output, initErr := m.runCommand(ctx, clientPath, "init", "--sample", "sample_mcp_stdio_local", "--profile", config.ProfileName, "--tunnel-id", config.TunnelID, "--mcp-server-url", localTarget); initErr != nil {
 		redacted := redactTunnelOutput(output, os.Getenv(config.APIKeyEnv))
-		if redacted != "" {
-			initErr = fmt.Errorf("%w: %s", initErr, redacted)
-		}
-		m.setError(initErr)
-		return m.State(), initErr
+		safeErr := newRedactedTunnelError(initErr, os.Getenv(config.APIKeyEnv), redacted)
+		m.setError(safeErr)
+		return m.State(), safeErr
 	}
 	output, err := m.runCommand(ctx, clientPath, "doctor", "--profile", config.ProfileName, "--explain")
 	output = redactTunnelOutput(output, os.Getenv(config.APIKeyEnv))
@@ -363,7 +399,7 @@ func (m *openAITunnelManager) Diagnose(ctx context.Context) (openAITunnelState, 
 	}
 	m.mu.Unlock()
 	if err != nil {
-		err = fmt.Errorf("tunnel-client doctor failed: %w", err)
+		err = newRedactedTunnelError(fmt.Errorf("tunnel-client doctor failed: %w", err), os.Getenv(config.APIKeyEnv), "")
 		m.setError(err)
 	}
 	return m.State(), err
@@ -497,6 +533,8 @@ func (m *openAITunnelManager) watchProcess(process tunnelClientProcess) {
 			return
 		}
 		m.process = nil
+		m.stopping = false
+		m.terminationUnknown = false
 		m.healthy = false
 		m.ready = false
 		m.connectedSince = time.Time{}
@@ -527,7 +565,7 @@ func (m *openAITunnelManager) healthLoop() {
 
 func (m *openAITunnelManager) refreshHealth() {
 	m.mu.Lock()
-	if m.process == nil {
+	if m.process == nil || m.stopping || m.terminationUnknown {
 		m.mu.Unlock()
 		return
 	}
@@ -624,9 +662,6 @@ func runTunnelClientCommand(ctx context.Context, executable string, args ...stri
 	cmd := exec.CommandContext(ctx, executable, args...)
 	out, err := cmd.CombinedOutput()
 	text := strings.TrimSpace(string(out))
-	if err != nil && text != "" {
-		return text, fmt.Errorf("%w: %s", err, text)
-	}
 	return text, err
 }
 
@@ -766,6 +801,25 @@ func redactTunnelOutput(value, secret string) string {
 		value = value[:4096] + "…"
 	}
 	return value
+}
+
+type redactedTunnelError struct {
+	message string
+	cause   error
+}
+
+func (e *redactedTunnelError) Error() string { return e.message }
+func (e *redactedTunnelError) Unwrap() error { return e.cause }
+
+func newRedactedTunnelError(err error, secret, detail string) error {
+	if err == nil {
+		return nil
+	}
+	message := redactTunnelOutput(err.Error(), secret)
+	if detail = redactTunnelOutput(detail, secret); detail != "" && !strings.Contains(message, detail) {
+		message = strings.TrimSpace(message + ": " + detail)
+	}
+	return &redactedTunnelError{message: message, cause: err}
 }
 
 func firstNonEmpty(values ...string) string {

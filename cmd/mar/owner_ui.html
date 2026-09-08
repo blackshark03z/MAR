@@ -34,7 +34,7 @@
     .view { display:none; }
     .view.active { display:block; }
     .intro { max-width:760px; margin-bottom:20px; }
-    .notice { border-left:3px solid CanvasText; padding:11px 13px; background:color-mix(in srgb, CanvasText 5%, Canvas); line-height:1.45; border-radius:0 8px 8px 0; }
+    .notice { border-left:3px solid CanvasText; padding:11px 13px; background:color-mix(in srgb, CanvasText 5%, Canvas); line-height:1.45; border-radius:0 8px 8px 0; overflow-wrap:anywhere; }
     .notice.warn { border-left-style:double; }
     .notice.error { border-left-width:5px; }
     .grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:14px; }
@@ -69,6 +69,7 @@
     .provider-transport { margin-top:3px; font-size:12px; }
     .identifier-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; margin:12px 0; }
     .identifier-row .connection-url { margin:0; min-height:38px; }
+    .identifier-row button { width:144px; white-space:nowrap; }
     .provider-remedy { min-height:42px; font-size:13px; line-height:1.45; }
     .provider-meta { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; font-size:12px; }
     .provider-details { margin-top:12px; border-top:1px solid color-mix(in srgb, CanvasText 12%, transparent); padding-top:11px; }
@@ -213,7 +214,7 @@ function renderSandboxReadiness(data){
 }
 
 function connectionById(id){return (runtime?.connections||[]).find(c=>c.id===id)||null;}
-function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Đã kết nối · đang rảnh',LINK_READY:'Link sẵn sàng',READY_TO_START:'Chưa tạo link tạm',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng'})[status]||status||'—';}
+function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTING:'Đang ngắt…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Đã kết nối · đang rảnh',LINK_READY:'Link sẵn sàng',READY_TO_START:'Chưa tạo link tạm',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng'})[status]||status||'—';}
 function statusClass(status){return String(status||'').toLowerCase().replace(/_/g,'-');}
 async function copyValue(value,button,label){if(!value)return;try{await navigator.clipboard.writeText(value);button.textContent='Đã sao chép';setTimeout(()=>button.textContent=label,1200);}catch{button.textContent='Không sao chép được';setTimeout(()=>button.textContent=label,1600);}}
 function ensureOpenAITunnelCard(c){

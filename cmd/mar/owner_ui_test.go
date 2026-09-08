@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -316,7 +317,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 		t.Fatalf("config failed: %d %s", configured.Code, configured.Body.String())
 	}
 	started := post("/api/connections/openai-tunnel/start", `{}`)
-	if started.Code != http.StatusOK || strings.Contains(started.Body.String(), "sk-ui-secret") {
+	if started.Code != http.StatusOK || strings.Contains(started.Body.String(), "unit-test-ui-credential") {
 		t.Fatalf("start failed or leaked secret: %d %s", started.Code, started.Body.String())
 	}
 	persisted, err := db.GetOpenAITunnelConfig(ctx)
@@ -331,10 +332,17 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 	if err != nil || persisted.DesiredRunning {
 		t.Fatalf("stopped desired state was not persisted: config=%+v err=%v", persisted, err)
 	}
+	manager.runCommand = func(_ context.Context, _ string, _ ...string) (string, error) {
+		return "diagnostic exposed unit-test-ui-credential", errors.New("command exposed unit-test-ui-credential")
+	}
+	failed := post("/api/connections/openai-tunnel/start", `{}`)
+	if failed.Code != http.StatusServiceUnavailable || strings.Contains(failed.Body.String(), "unit-test-ui-credential") {
+		t.Fatalf("failed start leaked secret through owner API: status=%d body=%s", failed.Code, failed.Body.String())
+	}
 }
 
 func TestOwnerUIConnectionHubSeparatesGPTTunnelFromClaudeRemoteMCP(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · outbound-only", "data-web-connector", "Remote MCP · HTTPS", "data-tunnel-diagnose", "data-copy-id", "provider-details"} {
+	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · outbound-only", "data-web-connector", "Remote MCP · HTTPS", "data-tunnel-diagnose", "data-copy-id", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
 		if !strings.Contains(ownerUIHTML, required) {
 			t.Fatalf("Connection Hub is missing %q", required)
 		}
