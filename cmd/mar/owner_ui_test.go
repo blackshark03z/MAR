@@ -283,6 +283,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	manager := newOpenAITunnelManager(ctx, service.NewTaskService(db), t.TempDir())
+	makeOpenAITunnelPassiveForTest(manager)
 	defer manager.Close()
 	process := newFakeTunnelProcess()
 	manager.findClient = func(store.OpenAITunnelConfig, string) (string, error) { return `C:\fake\tunnel-client.exe`, nil }
@@ -372,6 +373,8 @@ func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	}
 	defer db.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(db), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
+	manager.waitReady = func(context.Context, string, string) error { return nil }
 	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
 	var stopped atomic.Bool
 	fakeDone := make(chan error)
@@ -436,6 +439,7 @@ func TestOwnerUIStableConnectorConfigAndRotationAreIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(db), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
 	if err := manager.ConfigureProfiles(profiles); err != nil {
 		t.Fatal(err)
 	}
@@ -679,8 +683,9 @@ func TestOwnerUIRecentWorkRestoresWithoutTaskIDAndPrematureAcceptanceFails(t *te
 
 func runOwnerGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
+	git := requireGitTool(t)
 	cmdArgs := append([]string{"-C", root}, args...)
-	cmd := exec.Command("git", cmdArgs...)
+	cmd := exec.Command(git, cmdArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)

@@ -66,6 +66,10 @@ func testOpenAITunnelManager(t *testing.T) (*openAITunnelManager, *fakeTunnelPro
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	m := newOpenAITunnelManager(ctx, service.NewTaskService(db), t.TempDir())
+	// Most lifecycle tests do not need an actual socket. Keep them executable in
+	// MAR's networkless verifier LPAC while dedicated host integration tests below
+	// still exercise the real loopback transport when that capability exists.
+	makeOpenAITunnelPassiveForTest(m)
 	t.Cleanup(func() { _ = m.Close() })
 	process := newFakeTunnelProcess()
 	var calls []string
@@ -131,15 +135,8 @@ func TestOpenAITunnelStartDoctorHealthReadinessStopAndCommandSafety(t *testing.T
 	m, process, calls := testOpenAITunnelManager(t)
 	config := validOpenAITunnelConfig()
 	t.Setenv(config.APIKeyEnv, "unit-test-runtime-credential")
-	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer admin.Close()
-	config.AdminBaseURL = admin.URL
+	config.AdminBaseURL = "http://127.0.0.1:1"
+	m.probe = func(context.Context, string, string) (bool, string) { return true, "" }
 	if err := m.Configure(config); err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +173,12 @@ func TestOpenAITunnelStartDoctorHealthReadinessStopAndCommandSafety(t *testing.T
 }
 
 func TestOpenAITunnelActualLocalMCPActivityEstablishesConnectionWithoutAdminGuess(t *testing.T) {
+	requireLoopbackTCP(t)
 	m, _, _ := testOpenAITunnelManager(t)
+	m.mu.Lock()
+	m.server = nil
+	m.localTarget = ""
+	m.mu.Unlock()
 	config := validOpenAITunnelConfig()
 	t.Setenv(config.APIKeyEnv, "test-secret")
 	if err := m.Configure(config); err != nil {
@@ -241,9 +243,8 @@ func TestOpenAITunnelRestartRequiresFreshReadiness(t *testing.T) {
 	m, first, _ := testOpenAITunnelManager(t)
 	config := validOpenAITunnelConfig()
 	t.Setenv(config.APIKeyEnv, "test-secret")
-	admin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
-	defer admin.Close()
-	config.AdminBaseURL = admin.URL
+	config.AdminBaseURL = "http://127.0.0.1:1"
+	m.probe = func(context.Context, string, string) (bool, string) { return true, "" }
 	second := newFakeTunnelProcess()
 	starts := 0
 	m.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) {
@@ -432,6 +433,7 @@ func TestJoinTunnelProbeDetailsOmitsEmptySeparators(t *testing.T) {
 }
 
 func TestTunnelClientAdminProbeAndSecretRedaction(t *testing.T) {
+	requireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.WriteHeader(http.StatusNoContent)

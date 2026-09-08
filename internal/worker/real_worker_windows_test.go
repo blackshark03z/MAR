@@ -22,12 +22,14 @@ import (
 	"mar/internal/processctl"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
 
 func TestProcessRunnerRealWorkerReturnsAfterFailingGoTool(t *testing.T) {
 	if os.Getenv("MAR_REAL_WORKER_FAIL_HELPER") == "1" {
 		t.Skip("worker helper process")
 	}
+	testsupport.RequireLoopbackTCP(t)
 	source := t.TempDir()
 	files := map[string]string{
 		"go.mod":      "module realworkerfail\n\ngo 1.27\n",
@@ -182,7 +184,8 @@ func TestProcessRunnerRealWorkerHelper(t *testing.T) {
 
 func runWorkerGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

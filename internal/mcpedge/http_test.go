@@ -9,9 +9,12 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"mar/internal/testsupport"
 )
 
 func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
+	testsupport.RequireLoopbackTCP(t)
 	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	var mu sync.Mutex
 	var methods []string

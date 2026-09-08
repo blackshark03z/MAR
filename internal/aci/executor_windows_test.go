@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mar/internal/testsupport"
 )
 
 func TestContainedHostExecutorIntegratesWithGitToolsButIsNotSelfHostingSafe(t *testing.T) {
@@ -62,10 +64,7 @@ func TestContainedHostExecutorIntegratesWithGitToolsButIsNotSelfHostingSafe(t *t
 
 func runGitSetup(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	git, err := exec.LookPath("git")
-	if err != nil {
-		t.Fatal(err)
-	}
+	git := testsupport.RequireExecutable(t, "git")
 	cmd := exec.Command(git, append([]string{"-C", dir}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v failed: %v: %s", args, err, out)

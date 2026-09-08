@@ -37,6 +37,7 @@ func connectorState(t *testing.T, state remoteBridgeState, id string) remoteConn
 }
 
 func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
+	requireLoopbackTCP(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s, err := store.Open(t.TempDir() + `\mar.db`)
@@ -45,6 +46,7 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	}
 	defer s.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	manager.listenAddr = "127.0.0.1:0"
 	manager.findTunnel = func() (string, error) { return `C:\fake\cloudflared.exe`, nil }
 	var stopped atomic.Bool
 	fakeDone := make(chan error)
@@ -135,6 +137,8 @@ func TestRemoteBridgeSerializesConcurrentTemporaryStartAndReportsConnecting(t *t
 	}
 	defer s.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
+	manager.waitReady = func(context.Context, string, string) error { return nil }
 	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -181,6 +185,7 @@ func TestRemoteBridgeRetriesDeadTemporaryRouteWithinBoundedStartup(t *testing.T)
 	}
 	defer s.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
 	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
 	var starts atomic.Int32
 	var stops atomic.Int32
@@ -212,6 +217,7 @@ func TestRemoteBridgeRetriesDeadTemporaryRouteWithinBoundedStartup(t *testing.T)
 }
 
 func TestRemoteBridgeStableProfileKeepsPersistentURLAndRevokesRotatedToken(t *testing.T) {
+	requireLoopbackTCP(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s, err := store.Open(t.TempDir() + `\mar.db`)
@@ -220,6 +226,7 @@ func TestRemoteBridgeStableProfileKeepsPersistentURLAndRevokesRotatedToken(t *te
 	}
 	defer s.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	manager.listenAddr = "127.0.0.1:0"
 	profiles := testRemoteProfiles(t)
 	if err := manager.ConfigureProfiles(profiles); err != nil {
 		t.Fatal(err)
@@ -275,6 +282,7 @@ func TestRemoteBridgeStateReportsMissingTunnelDependencyTruthfully(t *testing.T)
 	}
 	defer s.Close()
 	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
 	manager.findTunnel = func() (string, error) { return "", context.Canceled }
 	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
 		t.Fatal(err)

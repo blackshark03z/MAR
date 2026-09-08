@@ -22,6 +22,7 @@ import (
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 	"mar/internal/verification"
 	"mar/internal/worker"
 )
@@ -30,6 +31,9 @@ func TestAcceptanceT7ClientDisconnectDoesNotCancelActiveTask(t *testing.T) {
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
 		t.Skip("worker helper process")
 	}
+	// This host acceptance needs a local provider socket in addition to Git
+	// fixtures. The candidate verifier LPAC intentionally has neither.
+	testsupport.RequireLoopbackTCP(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	projectRoot := filepath.Join(t.TempDir(), "project")

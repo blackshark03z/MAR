@@ -27,6 +27,7 @@ import (
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 	"mar/internal/verification"
 	"mar/internal/worker"
 )
@@ -35,6 +36,7 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
 		t.Skip("worker helper process")
 	}
+	testsupport.RequireLoopbackTCP(t)
 
 	// Keep the E2E bounded while allowing cold sandbox/toolchain startup; production command execution allows a wider five-minute budget.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -638,7 +640,8 @@ func TestRuntimeE2EWorkerHelper(t *testing.T) {
 
 func runGitTest(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

@@ -117,14 +117,20 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err = filepath.EvalSymlinks(root)
+	// The workspace root is selected and created by the trusted MAR daemon. Do
+	// not resolve its ancestor chain from inside LPAC: those ancestors are
+	// intentionally outside the task capability and may be unreadable. Instead,
+	// require the assigned root itself to be a real directory; descendant path
+	// resolution rejects symlink components before access.
+	root = filepath.Clean(root)
+	st, err := os.Lstat(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace root: %w", err)
+		return nil, err
 	}
-	if st, err := os.Stat(root); err != nil || !st.IsDir() {
-		if err != nil {
-			return nil, err
-		}
+	if st.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.New("workspace root must not be a symlink")
+	}
+	if !st.IsDir() {
 		return nil, errors.New("workspace root is not a directory")
 	}
 	if cfg.MaxReadBytes <= 0 {

@@ -32,18 +32,20 @@ func (r *Runtime) resolveExisting(rel string) (string, error) {
 		return "", err
 	}
 	candidate := filepath.Join(r.root, clean)
-	resolved, err := filepath.EvalSymlinks(candidate)
-	if err != nil {
-		return "", err
-	}
-	resolved, err = filepath.Abs(resolved)
-	if err != nil {
-		return "", err
-	}
-	if !inside(r.root, resolved) {
+	if !inside(r.root, candidate) {
 		return "", errors.New("resolved path escapes workspace")
 	}
-	return filepath.Clean(resolved), nil
+	// EvalSymlinks walks the absolute ancestor chain on Windows. In the LPAC
+	// verifier that would require read authority on MAR's parent directories,
+	// which the task deliberately does not have. Walk only from the trusted
+	// workspace root downward and reject every symlink component instead.
+	if err := rejectSymlinkComponents(r.root, candidate); err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(candidate); err != nil {
+		return "", err
+	}
+	return filepath.Clean(candidate), nil
 }
 
 func (r *Runtime) resolveExistingForWrite(rel string) (string, error) {

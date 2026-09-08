@@ -30,6 +30,11 @@ func TestAcceptanceT7CLIStdioDisconnectLetsActiveWorkerReachSafeTerminal(t *test
 	if os.Getenv("MAR_T7_CLI_HELPER") == "1" {
 		t.Skip("CLI helper process")
 	}
+	// This acceptance case intentionally needs a host Git fixture plus a local
+	// provider socket. Both remain part of normal host release regression, while
+	// the verifier LPAC is deliberately denied those capabilities.
+	requireGitTool(t)
+	requireLoopbackTCP(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	root := t.TempDir()

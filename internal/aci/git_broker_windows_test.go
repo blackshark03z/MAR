@@ -59,12 +59,12 @@ func TestContainedGitBrokerDisablesRepositoryExternalExecution(t *testing.T) {
 
 func TestGitBrokerEnvironmentDoesNotInheritAmbientSecrets(t *testing.T) {
 	root := t.TempDir()
-	broker, err := NewContainedGitBroker()
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("MAR_GIT_BROKER_SECRET", "must-not-cross-broker")
-	env, err := gitBrokerEnvironment(root, broker.gitPath)
+	// Environment sanitization is independent of a host Git installation. Use
+	// a deterministic synthetic executable path so this unit test remains
+	// meaningful inside the verifier's deliberately minimal PATH.
+	gitPath := filepath.Join(t.TempDir(), "git.exe")
+	env, err := gitBrokerEnvironment(root, gitPath)
 	if err != nil {
 		t.Fatal(err)
 	}

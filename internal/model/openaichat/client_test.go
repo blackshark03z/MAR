@@ -15,11 +15,13 @@ import (
 
 	"mar/internal/model"
 	"mar/internal/model/openaichat"
+	"mar/internal/testsupport"
 )
 
 func TestClientMapsToolConversationAndUsage(t *testing.T) {
 	const envName = "MAR_TEST_MODEL_API_KEY"
 	t.Setenv(envName, "secret-test-key")
+	testsupport.RequireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -87,6 +89,7 @@ func TestClientDoesNotRetryHTTPFailure(t *testing.T) {
 	const envName = "MAR_TEST_MODEL_API_KEY_RETRY"
 	t.Setenv(envName, "key")
 	var calls atomic.Int32
+	testsupport.RequireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Retry-After", "2")
@@ -110,6 +113,7 @@ func TestClientDoesNotRetryHTTPFailure(t *testing.T) {
 func TestClientHonorsContextCancellation(t *testing.T) {
 	const envName = "MAR_TEST_MODEL_API_KEY_CANCEL"
 	t.Setenv(envName, "key")
+	testsupport.RequireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
@@ -132,6 +136,7 @@ func TestClientHonorsContextCancellation(t *testing.T) {
 func TestConfiguredTimeoutAppliesWithInjectedHTTPClient(t *testing.T) {
 	const envName = "MAR_TEST_MODEL_API_KEY_CUSTOM_CLIENT_TIMEOUT"
 	t.Setenv(envName, "key")
+	testsupport.RequireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
@@ -169,6 +174,7 @@ func TestClientRejectsMissingKeyAndOversizedResponse(t *testing.T) {
 
 	const envName = "MAR_TEST_MODEL_API_KEY_LARGE"
 	t.Setenv(envName, "key")
+	testsupport.RequireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, strings.Repeat("x", 256))
 	}))

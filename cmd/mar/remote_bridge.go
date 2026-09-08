@@ -87,6 +87,7 @@ type remoteBridgeManager struct {
 	mu             sync.Mutex
 	server         *http.Server
 	listener       net.Listener
+	listenAddr     string // tests may use an ephemeral loopback port; production defaults to remoteBridgeListen.
 	localBaseURL   string
 	routes         map[string]http.Handler
 	profiles       map[string]store.RemoteConnectorProfile
@@ -336,9 +337,13 @@ func (m *remoteBridgeManager) ensureLocalServer() error {
 	}
 	m.mu.Unlock()
 
-	listener, err := net.Listen("tcp", remoteBridgeListen)
+	listenAddr := strings.TrimSpace(m.listenAddr)
+	if listenAddr == "" {
+		listenAddr = remoteBridgeListen
+	}
+	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("listen for stable remote MCP bridge on %s: %w", remoteBridgeListen, err)
+		return fmt.Errorf("listen for stable remote MCP bridge on %s: %w", listenAddr, err)
 	}
 	server := &http.Server{Handler: http.HandlerFunc(m.serveRemoteHTTP), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	serveDone := make(chan error, 1)
