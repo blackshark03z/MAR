@@ -39,8 +39,12 @@ func CheckSandboxHostReady(ctx context.Context, workspaceRoot string) error {
 		return fmt.Errorf("%w: Windows SystemRoot is unavailable", ErrSandboxHostNotPrepared)
 	}
 	cmd := filepath.Join(systemRoot, "System32", "cmd.exe")
-	profileRoot := filepath.Join(root, ".mar", "runtime", "host-readiness", "profile")
-	tempRoot := filepath.Join(root, ".mar", "runtime", "host-readiness", "tmp")
+	// NUL readiness needs only this small workspace. Granting the project root
+	// propagates ACLs through unrelated files and can exhaust the probe deadline
+	// before the command starts (or fail on otherwise usable project ACLs).
+	probeRoot := filepath.Join(root, ".mar", "runtime", "host-readiness")
+	profileRoot := filepath.Join(probeRoot, "profile")
+	tempRoot := filepath.Join(probeRoot, "tmp")
 	appData := filepath.Join(profileRoot, "AppData", "Roaming")
 	localAppData := filepath.Join(profileRoot, "AppData", "Local")
 	for _, dir := range []string{profileRoot, tempRoot, appData, localAppData} {
@@ -53,10 +57,10 @@ func CheckSandboxHostReady(ctx context.Context, workspaceRoot string) error {
 	result, err := RunSandboxedCommand(probeCtx, SandboxCommandSpec{
 		TaskID:        "mar-sandbox-host-readiness",
 		OperationID:   "probe-null-device",
-		WorkspaceRoot: root,
+		WorkspaceRoot: probeRoot,
 		Path:          cmd,
 		Args:          []string{"/d", "/s", "/c", "type NUL > NUL"},
-		Dir:           root,
+		Dir:           probeRoot,
 		Env: []string{
 			"SystemRoot=" + systemRoot,
 			"WINDIR=" + systemRoot,
