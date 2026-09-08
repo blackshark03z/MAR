@@ -41,6 +41,7 @@ type acceptanceTaskClass struct {
 	id                    string
 	goal                  string
 	acceptance            []string
+	acceptanceCheck       domain.AcceptanceCheck
 	files                 map[string]string
 	steps                 []acceptanceToolStep
 	wantFiles             map[string]string
@@ -76,9 +77,10 @@ func acceptanceTaskClasses() []acceptanceTaskClass {
 
 	return []acceptanceTaskClass{
 		{
-			id:         "T1-tiny-fix",
-			goal:       "Fix Value so the localized unit test passes without changing unrelated files.",
-			acceptance: []string{"Value returns 2 and the Go verification profile passes"},
+			id:              "T1-tiny-fix",
+			goal:            "Fix Value so the localized unit test passes without changing unrelated files.",
+			acceptance:      []string{"Value returns 2 and the Go verification profile passes"},
+			acceptanceCheck: domain.AcceptanceCheck{CriterionIndex: 1, Scenario: "Run TestValue against the sealed candidate and observe Value() == 2", Oracle: "output_contains:--- PASS: TestValue (", CommandIndexes: []int{1}},
 			files: map[string]string{
 				"go.mod":       "module example.com/mar-accept-t1\n\ngo 1.27\n",
 				"calc.go":      tinyCalc,
@@ -92,9 +94,10 @@ func acceptanceTaskClasses() []acceptanceTaskClass {
 			wantChanged: []string{"calc.go"},
 		},
 		{
-			id:         "T2-medium-bug-repair-loop",
-			goal:       "Repair the arithmetic and label defects, using the failing test as evidence before declaring a candidate.",
-			acceptance: []string{"Sum and Label satisfy the targeted regression test and the full Go verification profile passes"},
+			id:              "T2-medium-bug-repair-loop",
+			goal:            "Repair the arithmetic and label defects, using the failing test as evidence before declaring a candidate.",
+			acceptance:      []string{"Sum and Label satisfy the targeted regression test and the full Go verification profile passes"},
+			acceptanceCheck: domain.AcceptanceCheck{CriterionIndex: 1, Scenario: "Run TestBehavior against the sealed candidate and observe Sum(2, 3) == 5 and Label(5) == sum=5", Oracle: "output_contains:--- PASS: TestBehavior (", CommandIndexes: []int{1}},
 			files: map[string]string{
 				"go.mod":      "module example.com/mar-accept-t2\n\ngo 1.27\n",
 				"sum.go":      mediumSum,
@@ -116,15 +119,16 @@ func acceptanceTaskClasses() []acceptanceTaskClass {
 			mustObserveFailedTest: true,
 		},
 		{
-			id:         "T3-large-multi-file",
-			goal:       "Add a factor-aware transformation across the domain, transform, and API layers so Result(3) returns 6.",
-			acceptance: []string{"The cross-module implementation changes all required layers and the Go verification profile passes"},
+			id:              "T3-large-multi-file",
+			goal:            "Add a factor-aware transformation across the domain, transform, and API layers so Result(3) returns 6.",
+			acceptance:      []string{"The cross-module implementation changes all required layers and the Go verification profile passes"},
+			acceptanceCheck: domain.AcceptanceCheck{CriterionIndex: 1, Scenario: "Run TestResult against the sealed candidate and observe the Factor field, factor-aware Transform, and Result(3) == 6", Oracle: "output_contains:--- PASS: TestResult (", CommandIndexes: []int{1}},
 			files: map[string]string{
 				"go.mod":       "module example.com/mar-accept-t3\n\ngo 1.27\n",
 				"domain.go":    largeDomain,
 				"transform.go": largeTransform,
 				"api.go":       largeAPI,
-				"api_test.go":  "package feature\n\nimport \"testing\"\n\nfunc TestResult(t *testing.T) { if Result(3) != 6 { t.Fatal(\"want 6\") } }\n",
+				"api_test.go":  "package feature\n\nimport \"testing\"\n\nfunc TestResult(t *testing.T) {\n\tif Transform(Record{Value: 3, Factor: 4}) != 12 { t.Fatal(\"factor-aware transform required\") }\n\tif Result(3) != 6 { t.Fatal(\"want 6\") }\n}\n",
 			},
 			steps: []acceptanceToolStep{
 				{name: "replace_exact", args: map[string]any{"path": "domain.go", "expected_sha256": acceptanceSHA(largeDomain), "search": "\tValue int\n", "replacement": "\tValue  int\n\tFactor int\n", "expected_count": 1}},
@@ -141,15 +145,16 @@ func acceptanceTaskClasses() []acceptanceTaskClass {
 			wantChanged: []string{"api.go", "domain.go", "transform.go"},
 		},
 		{
-			id:         "T4-deep-refactor",
-			goal:       "Rename the legacy normalization primitive across all call sites while preserving behavior.",
-			acceptance: []string{"No legacyNormalize call sites remain and all behavior-preserving verification passes"},
+			id:              "T4-deep-refactor",
+			goal:            "Rename the legacy normalization primitive across all call sites while preserving behavior.",
+			acceptance:      []string{"No legacyNormalize call sites remain and all behavior-preserving verification passes"},
+			acceptanceCheck: domain.AcceptanceCheck{CriterionIndex: 1, Scenario: "Run TestNormalize against the sealed candidate and observe preserved consumer behavior and absence of legacyNormalize in all three implementation files", Oracle: "output_contains:--- PASS: TestNormalize (", CommandIndexes: []int{1}},
 			files: map[string]string{
 				"go.mod":            "module example.com/mar-accept-t4\n\ngo 1.27\n",
 				"library.go":        refactorLibrary,
 				"consumer_a.go":     refactorA,
 				"consumer_b.go":     refactorB,
-				"normalize_test.go": "package normalize\n\nimport \"testing\"\n\nfunc TestNormalize(t *testing.T) {\n\tif NormalizeA(\" x \" ) != \"x\" { t.Fatal(\"A\") }\n\tif NormalizeB(\" y \" ) != \"y\" { t.Fatal(\"B\") }\n}\n",
+				"normalize_test.go": "package normalize\n\nimport (\n\t\"os\"\n\t\"strings\"\n\t\"testing\"\n)\n\nfunc TestNormalize(t *testing.T) {\n\tif NormalizeA(\" x \" ) != \"x\" { t.Fatal(\"A\") }\n\tif NormalizeB(\" y \" ) != \"y\" { t.Fatal(\"B\") }\n\tfor _, path := range []string{\"library.go\", \"consumer_a.go\", \"consumer_b.go\"} {\n\t\tcontent, err := os.ReadFile(path)\n\t\tif err != nil { t.Fatal(err) }\n\t\tif strings.Contains(string(content), \"legacyNormalize\") { t.Fatalf(\"legacy name remains in %s\", path) }\n\t}\n}\n",
 			},
 			steps: []acceptanceToolStep{
 				{name: "run_command", args: map[string]any{"name": "go", "args": []string{"test", "./..."}, "cwd": "."}},
@@ -285,7 +290,7 @@ func runAcceptanceTaskClass(t *testing.T, scenario acceptanceTaskClass) {
 		VerificationProfiles: []verification.Profile{{
 			ID: "go-standard",
 			Commands: []verification.Command{
-				{Name: goExe, Args: []string{"test", "-count=1", "./..."}, Cwd: "."},
+				{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 				{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
 				{Name: goExe, Args: []string{"build", "./..."}, Cwd: "."},
 			},
@@ -358,6 +363,7 @@ func runAcceptanceTaskClass(t *testing.T, scenario acceptanceTaskClass) {
 		"contract": map[string]any{
 			"goal":                 scenario.goal,
 			"acceptance":           scenario.acceptance,
+			"acceptance_checks":    []domain.AcceptanceCheck{scenario.acceptanceCheck},
 			"boundaries":           []string{"Modify only files necessary for this acceptance scenario."},
 			"non_goals":            []string{"No remote Git writes or deployment."},
 			"project_id":           projectID,
@@ -420,6 +426,17 @@ func runAcceptanceTaskClass(t *testing.T, scenario acceptanceTaskClass) {
 	}
 	if !resultPayload.Available || resultPayload.Result.IntegrationStatus != "INTEGRATED" || resultPayload.Result.Verdict != domain.ResultVerified {
 		t.Fatalf("%s produced unexpected result: %s", scenario.id, raw)
+	}
+	inspection, err := runtime.Service.Inspect(ctx, submitted.Task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Evidence == nil || len(inspection.Evidence.Acceptance) != len(scenario.acceptance) {
+		t.Fatalf("%s missing criterion-specific verification evidence: %+v", scenario.id, inspection.Evidence)
+	}
+	observation := inspection.Evidence.Acceptance[0]
+	if observation.EffectiveStatus() != domain.AcceptancePass || observation.Scenario != scenario.acceptanceCheck.Scenario || observation.Oracle != scenario.acceptanceCheck.Oracle || observation.Observation == "" || len(observation.EvidenceRefs) == 0 {
+		t.Fatalf("%s missing passing typed acceptance observation: %+v", scenario.id, observation)
 	}
 	if strings.TrimSpace(runGitTest(t, projectRoot, "rev-parse", "HEAD")) == baseRevision {
 		t.Fatalf("%s did not advance authoritative head", scenario.id)
