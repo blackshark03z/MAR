@@ -17,6 +17,7 @@ import (
 	"mar/internal/model"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
 
 func TestLoopExecutesRealCodingACIWriteAndGitStatus(t *testing.T) {
@@ -307,7 +308,8 @@ func TestLoopPersistsAndResumesSemanticCheckpointAcrossReplacementAttempt(t *tes
 
 func runAgentGit(t *testing.T, root string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

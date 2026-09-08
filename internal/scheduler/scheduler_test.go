@@ -15,6 +15,7 @@ import (
 	"mar/internal/resourcegov"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 	"mar/internal/workspace"
 )
 
@@ -353,7 +354,8 @@ func TestEffectivePriorityAgesWithoutExtraDurableState(t *testing.T) {
 
 func gitTestRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", dir}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -361,7 +363,8 @@ func gitTestRun(t *testing.T, dir string, args ...string) {
 
 func gitTestOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", dir}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

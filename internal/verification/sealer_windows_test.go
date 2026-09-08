@@ -18,6 +18,7 @@ import (
 	"mar/internal/effects"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
 
 type sealerHarness struct {
@@ -273,7 +274,8 @@ func runVerificationGit(t *testing.T, root string, args ...string) {
 
 func runVerificationGitOutput(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

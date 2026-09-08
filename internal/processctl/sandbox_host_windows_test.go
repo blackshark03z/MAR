@@ -8,10 +8,13 @@ import (
 	"runtime"
 	"testing"
 
+	"mar/internal/testsupport"
+
 	"golang.org/x/sys/windows"
 )
 
 func TestSandboxHostReadinessDoesNotRequireProjectACLMutation(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	root := t.TempDir()
 	name, err := windows.UTF16PtrFromString(root)
 	if err != nil {

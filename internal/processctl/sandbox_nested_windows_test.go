@@ -14,9 +14,11 @@ import (
 
 	"mar/internal/aci"
 	"mar/internal/processctl"
+	"mar/internal/testsupport"
 )
 
 func TestNestedWorkerJobSandboxReturnsPromptlyForFailingGoTest(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	if os.Getenv("MAR_NESTED_SANDBOX_HELPER") == "1" {
 		t.Skip("helper process")
 	}

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"mar/internal/testsupport"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -45,6 +47,7 @@ func TestHelperProcess(t *testing.T) {
 }
 
 func TestSupervisorAppliesHardCPUJobMemoryAndProcessLimits(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	s := NewSupervisor()
 	want := Limits{CPUHardCapBasisPoints: 5_000, JobMemoryBytes: 256 << 20, MaxActiveProcesses: 4}
 	tree, err := s.Start(Spec{
@@ -74,6 +77,7 @@ func TestSupervisorAppliesHardCPUJobMemoryAndProcessLimits(t *testing.T) {
 }
 
 func TestTerminateAndConfirmKillsInheritedChildTree(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	s := NewSupervisor()
 	tree, err := s.Start(Spec{

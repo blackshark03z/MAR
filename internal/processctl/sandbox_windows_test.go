@@ -17,11 +17,14 @@ import (
 	"time"
 	"unsafe"
 
+	"mar/internal/testsupport"
+
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 func TestAppContainerSandboxEnforcesWorkerAuthorityBoundary(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	outside := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
@@ -65,6 +68,7 @@ func TestAppContainerSandboxEnforcesWorkerAuthorityBoundary(t *testing.T) {
 }
 
 func TestLPACCapabilityAllowsWorkspaceWriteWithCmd(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	systemRoot := os.Getenv("SystemRoot")
 	if systemRoot == "" {
@@ -96,6 +100,7 @@ func TestLPACCapabilityAllowsWorkspaceWriteWithCmd(t *testing.T) {
 }
 
 func TestLPACTaskCapabilityACLIsRestoredAfterCommand(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	taskID := "sandbox-acl-restore"
 	capabilitySID, release, err := deriveCapabilitySID(taskCapabilityName(taskID), "ACL restore test")
@@ -135,6 +140,7 @@ func TestLPACTaskCapabilityACLIsRestoredAfterCommand(t *testing.T) {
 }
 
 func TestSandboxKeyedLocksAreReleasedAfterCommand(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	systemRoot := os.Getenv("SystemRoot")
 	if systemRoot == "" {
@@ -169,6 +175,7 @@ func TestSandboxKeyedLocksAreReleasedAfterCommand(t *testing.T) {
 }
 
 func TestSandboxProfileLockSerializesAcrossProcesses(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	profile := "MAR.Worker.CrossProcessProfileTest"
 	marker := filepath.Join(t.TempDir(), "profile-acquired.txt")
 	unlock, err := lockSandboxProfile(profile)
@@ -227,6 +234,7 @@ func TestSandboxProfileLockHelper(t *testing.T) {
 }
 
 func TestSandboxPathLockSerializesAcrossProcesses(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	path := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "acquired.txt")
 	unlock, err := lockSandboxPaths([]string{path})
@@ -285,6 +293,7 @@ func TestSandboxPathLockHelper(t *testing.T) {
 }
 
 func TestLPACTaskCapabilityCannotReadAnotherTaskWorkspace(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspaceA := t.TempDir()
 	workspaceB := t.TempDir()
 	secretPath := filepath.Join(workspaceA, "task-a-secret.txt")
@@ -328,6 +337,7 @@ func TestLPACTaskCapabilityCannotReadAnotherTaskWorkspace(t *testing.T) {
 }
 
 func TestLPACCapabilityAllowsExplicitReadWithCmd(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	readRoot := t.TempDir()
 	readPath := filepath.Join(readRoot, "runtime.txt")
@@ -361,6 +371,7 @@ func TestLPACCapabilityAllowsExplicitReadWithCmd(t *testing.T) {
 }
 
 func TestLPACOptsOutOfAllApplicationPackagesRead(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	outside := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
@@ -392,6 +403,7 @@ func TestLPACOptsOutOfAllApplicationPackagesRead(t *testing.T) {
 }
 
 func TestLPACRegistryReadDoesNotExposeUserOrProtectedMachineHives(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
 	secretKeyPath := `Software\\MAR\\SandboxRegistryProbe`
@@ -428,6 +440,7 @@ func TestLPACRegistryReadDoesNotExposeUserOrProtectedMachineHives(t *testing.T) 
 }
 
 func TestAppContainerSandboxAllowsExplicitReadScopeWithoutWrite(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	readRoot := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
@@ -462,6 +475,7 @@ func TestAppContainerSandboxAllowsExplicitReadScopeWithoutWrite(t *testing.T) {
 }
 
 func TestSandboxSharedReadPathSupportsConcurrentTasks(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	shared := t.TempDir()
 	readPath := filepath.Join(shared, "runtime.txt")
 	if err := os.WriteFile(readPath, []byte("shared-runtime"), 0o644); err != nil {
@@ -551,6 +565,7 @@ func TestSandboxSharedReadPathSupportsConcurrentTasks(t *testing.T) {
 }
 
 func TestSandboxSuccessfulRootCancellationConfirmsDescendantTerminationBeforeReturn(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
 	marker := filepath.Join(workspace, "success-descendant-marker.txt")
@@ -579,6 +594,7 @@ func TestSandboxSuccessfulRootCancellationConfirmsDescendantTerminationBeforeRet
 }
 
 func TestAppContainerSandboxTimeoutKillsDescendantTree(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
 	probe := copySandboxProbe(t, workspace)
 	marker := filepath.Join(workspace, "descendant-marker.txt")

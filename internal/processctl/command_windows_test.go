@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mar/internal/testsupport"
 )
 
 func TestRunContainedHelper(t *testing.T) {
@@ -55,6 +57,7 @@ func TestRunContainedLeaf(t *testing.T) {
 }
 
 func TestRunContainedCommandSuccess(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	out, err := RunContainedCommand(context.Background(), CommandSpec{
 		TaskID:      "task-control",
 		OperationID: "success",
@@ -71,6 +74,7 @@ func TestRunContainedCommandSuccess(t *testing.T) {
 }
 
 func TestRunContainedCommandOutputIsBounded(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	out, err := RunContainedCommand(context.Background(), CommandSpec{
 		TaskID:         "task-control",
 		OperationID:    "flood",
@@ -88,6 +92,7 @@ func TestRunContainedCommandOutputIsBounded(t *testing.T) {
 }
 
 func TestRunContainedCommandParentExitThenTimeoutKillsRemainingChild(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	pidFile := filepath.Join(t.TempDir(), "orphan-child.pid")
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -113,6 +118,7 @@ func TestRunContainedCommandParentExitThenTimeoutKillsRemainingChild(t *testing.
 }
 
 func TestRunContainedCommandCancellationKillsDescendant(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	pidFile := filepath.Join(t.TempDir(), "child.pid")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

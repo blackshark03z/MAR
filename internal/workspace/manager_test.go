@@ -17,6 +17,7 @@ import (
 	"mar/internal/domain"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 	"mar/internal/workspace"
 )
 
@@ -513,8 +514,9 @@ func makeRepo(t *testing.T) (string, string) {
 
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	git := testsupport.RequireExecutable(t, "git")
 	base := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", dir}
-	cmd := exec.Command("git", append(base, args...)...)
+	cmd := exec.Command(git, append(base, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -522,8 +524,9 @@ func gitRun(t *testing.T, dir string, args ...string) {
 
 func gitOut(t *testing.T, dir string, args ...string) string {
 	t.Helper()
+	git := testsupport.RequireExecutable(t, "git")
 	base := []string{"-c", "core.autocrlf=false", "-c", "core.eol=lf", "-C", dir}
-	cmd := exec.Command("git", append(base, args...)...)
+	cmd := exec.Command(git, append(base, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

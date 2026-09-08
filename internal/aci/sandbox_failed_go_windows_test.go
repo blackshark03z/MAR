@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mar/internal/testsupport"
 )
 
 func TestWindowsSandboxExecutorReturnsPromptlyForFailingGoTest(t *testing.T) {
@@ -157,7 +159,8 @@ func TestWindowsSandboxLinkedWorktreeReturnsPromptlyForFailingGoTest(t *testing.
 
 func runACIGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
 
 func TestProjectContextReturnsCurrentHeadAndPolicyForGoalCompilation(t *testing.T) {
@@ -42,7 +43,8 @@ func TestProjectContextReturnsCurrentHeadAndPolicyForGoalCompilation(t *testing.
 
 func runProjectContextGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v failed: %v\n%s", args, err, out)

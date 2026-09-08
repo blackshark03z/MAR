@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"mar/internal/testsupport"
 )
 
 func TestGitRepositorySnapshotCapturesRevisionAndWorkingTreeState(t *testing.T) {
@@ -165,7 +167,8 @@ func TestEngineBuildsBoundedContextFromRealGitSnapshot(t *testing.T) {
 
 func runGitContextTest(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"mar/internal/domain"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
 
 type t13StoreFreshGate struct{ store *store.SQLite }
@@ -214,7 +215,8 @@ func prepareT13VerifiedCandidate(t *testing.T, db *store.SQLite, svc *service.Ta
 
 func t13Git(t *testing.T, root string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
@@ -222,7 +224,8 @@ func t13Git(t *testing.T, root string, args ...string) {
 
 func t13GitOut(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+	git := testsupport.RequireExecutable(t, "git")
+	cmd := exec.Command(git, append([]string{"-C", root}, args...)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
