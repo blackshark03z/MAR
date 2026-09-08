@@ -27,6 +27,7 @@ type Backend interface {
 	PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error)
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
+	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
 }
 
 type submitArgs struct {
@@ -70,13 +71,17 @@ type projectReadArgs struct {
 	Path      string `json:"path"`
 }
 
+type projectContextArgs struct {
+	ProjectID string `json:"project_id,omitempty"`
+}
+
 func NewServer(backend Backend) (*mcp.Server, error) {
 	if backend == nil {
 		return nil, errors.New("MCP backend is required")
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 
-	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding/mutation work and return its durable task handle. Do not use submit for a simple read-only file inspection; use project_read instead."},
+	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding/mutation work. The Web Tech Lead must compile this contract from the owner's natural-language request; do not ask the owner to fill project_id, base_revision, acceptance, verification, or authority fields when MAR can infer them. Use project_context to resolve registered project IDs/current HEAD/policy. Do not use submit for simple read-only file inspection; use project_read instead."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args submitArgs) (*mcp.CallToolResult, map[string]any, error) {
 			task, created, err := backend.Submit(ctx, args.IdempotencyKey, args.Contract)
 			if err != nil {
@@ -152,6 +157,14 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 				return nil, nil, err
 			}
 			return nil, map[string]any{"file": result}, nil
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "project_context", Description: "Read registered project IDs, current Git HEADs, and owner project policies so the Web Tech Lead can compile Goal Contracts itself. Use this internally before submit when project_id/base_revision are not already known. Do not ask the owner for those technical fields unless project identity remains genuinely ambiguous after this lookup."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, args projectContextArgs) (*mcp.CallToolResult, map[string]any, error) {
+			items, err := backend.ProjectContext(ctx, strings.TrimSpace(args.ProjectID))
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, map[string]any{"projects": items}, nil
 		})
 
 	return server, nil

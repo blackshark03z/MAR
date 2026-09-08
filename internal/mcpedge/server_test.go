@@ -59,6 +59,12 @@ func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string)
 	}
 	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "small file\n", SizeBytes: 11}, nil
 }
+func (f *fakeBackend) ProjectContext(_ context.Context, projectID string) ([]service.ProjectContextItem, error) {
+	if projectID == "" {
+		projectID = "mar"
+	}
+	return []service.ProjectContextItem{{ProjectID: projectID, Head: "abc123", Policy: domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: true, LocalGitWrite: true}}}, nil
+}
 
 type largeReadBackend struct{ fakeBackend }
 
@@ -114,7 +120,7 @@ func TestPublicMCPSurfaceKeepsWorkerPrimitivesPrivateAndAddsBoundedProjectRead(t
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "project_read", "result", "status", "steer", "submit"}
+	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "project_context", "project_read", "result", "status", "steer", "submit"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected public tool count: got=%v want=%v", names, want)
 	}
@@ -148,6 +154,25 @@ func TestProjectReadDoesNotRequireGoalContractProjectIDOrBaseRevision(t *testing
 	text := string(raw)
 	if !strings.Contains(text, "inferred-project") || !strings.Contains(text, "README.md") || strings.Contains(text, "base_revision") {
 		t.Fatalf("unexpected lightweight read result: %s", text)
+	}
+}
+
+func TestProjectContextLetsWebTechLeadResolveTechnicalGoalFieldsWithoutOwnerPrompt(t *testing.T) {
+	session := connectTestMCP(t, &fakeBackend{})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project_context", Arguments: map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("project_context returned tool error: %+v", result.Content)
+	}
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"project_id":"mar"`) || !strings.Contains(text, `"head":"abc123"`) || !strings.Contains(text, `"local_file_write":true`) {
+		t.Fatalf("project_context omitted technical goal inputs: %s", text)
 	}
 }
 
