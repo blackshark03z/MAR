@@ -71,4 +71,52 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 
 # Current Safe Action
 
-Converge the Claude-Web remote MCP slice with rendered Console review and full repository test/vet/build/diff-check, then checkpoint it separately. Build a clean candidate from that commit and run one representative Goal end-to-end through the public remote MCP URL (submit -> Web brain turns -> worker -> typed verification -> integration -> result), not merely tools/list. After that, launch the clean Owner Console for the owner to connect Claude Web and perform the final human journey/UAT. ChatGPT Web remains capability/plan dependent and must not be falsely labeled connected.
+Ship MAR V1 Stable from checkpoint `bc0ae69`. Keep Claude on its existing dedicated remote MCP transport. Replace the experimental public ChatGPT connector path with the official outbound-only OpenAI Secure MCP Tunnel, backed by typed local state, safe process ownership, actionable diagnostics, restart reconciliation, and a compact owner-facing Connection Hub. Then run the full release gates and the real smoke checks that the current machine configuration permits. Do not claim Owner acceptance from engineering evidence.
+
+## Secure MCP Tunnel UX contract
+
+```text
+UX_CONTRACT
+PRIMARY_USER=The single owner checking and operating GPT and Claude connectivity without networking expertise.
+PRIMARY_JOURNEY=Open Connections -> understand both connection states -> configure/start or diagnose the affected transport -> copy the required identifier -> see live recovery or success.
+PRIMARY_SURFACE=Owner Console > Connections.
+INFORMATION_HIERARCHY=Provider status first; identifier and primary actions second; short remedy third; technical details behind Details.
+SCOPE_MODEL=OpenAI/GPT and Claude are independent transports with independent configuration, lifecycle, telemetry, and errors.
+PRIMARY_CONTROLS=Copy identifier, Start/Stop/Restart as applicable, Diagnose, and the minimum setup input.
+ADVANCED_CONTROLS=Local target, health/readiness timestamps, profile, dependency path, and diagnostic output under Details.
+STATES=Not configured, Connecting, Connected, Disconnected, Degraded, Misconfigured, Error; every non-ready state includes a next action.
+BULK_DESTRUCTIVE=Not applicable; Stop affects only the selected transport and is explicitly labelled.
+DISCOVERABILITY=Connections is a primary Console destination and both provider cards are visible together without scrolling at normal desktop height.
+ACCESSIBILITY=Semantic buttons/labels, visible focus, status text in addition to color, live status announcements, responsive reflow, and no hover-only controls.
+OWNER_PREFERENCE=NONE; the requested transport split and hierarchy are explicit.
+```
+
+```text
+CREATE_FLOW_CONTRACT
+TASK_GOAL=Connect GPT to private MAR MCP through OpenAI Secure MCP Tunnel.
+LINEAR_OR_NONLINEAR=Linear onboarding until configured; routine lifecycle controls become direct after setup.
+STEPS=Enter tunnel ID -> verify tunnel-client and local MAR MCP -> run Doctor -> Start tunnel -> confirm Connected -> copy tunnel ID into the supported OpenAI surface.
+STEP_DEPENDENCIES=Tunnel ID, runtime control-plane credential, tunnel-client, and local MCP readiness must pass before Start can report Connected.
+BACK_BEHAVIOR=Editing or leaving setup does not delete the saved tunnel ID or stop an already running connection.
+NEXT_VALIDATION=Validate tunnel ID on save; dependency/local health/Doctor on Diagnose or Start; return errors beside the failing provider card.
+FINAL_REVIEW_STEP=Not required because Start is reversible and does not publish or mutate repository state.
+PRIMARY_COMMIT_ACTION=Start GPT tunnel.
+CANCEL_EXIT_BEHAVIOR=Stop GPT tunnel terminates only the owned tunnel-client process and preserves configuration.
+DRAFT_PERSISTENCE=Valid tunnel ID, profile name, credential environment-variable name, and desired-running state persist; secret values never persist.
+POST_SUBMIT_DESTINATION=The same GPT card transitions through Connecting to Connected/Degraded/Error with near-realtime status.
+```
+
+```text
+WORKSPACE_CONTRACT
+PRIMARY_TASK=Understand and operate GPT and Claude connectivity in under three seconds.
+PRIMARY_WORKSPACE=Two compact peer provider cards visible together.
+PERSISTENT_REGIONS=Provider name, transport, normalized status, identifier, activity, concise error/remedy, and primary actions.
+CONTEXTUAL_REGIONS=Setup fields when unconfigured; detailed diagnostics when Details is expanded.
+NAVIGATION_MODEL=Existing Console Connections destination; no new global navigation.
+LAYOUT_ARCHETYPE=Responsive two-column dashboard with per-card disclosure.
+VIEWPORT_BUDGET=Each provider receives one half-width card at desktop widths and one full-width card in a narrow window; secondary connections follow below.
+CONTENT_REPLACEMENT_STRATEGY=Status/remedy replaces stale setup messaging; advanced diagnostics remain collapsed.
+ADVANCED_CONTROL_STRATEGY=Native Details disclosure inside the relevant provider card.
+EXPECTED_SCROLL_BEHAVIOR=Primary provider cards fit near the top; secondary sandbox/desktop/provider details may continue below.
+ARCHETYPE_RATIONALE=GPT and Claude must be compared at a glance but operated independently.
+```

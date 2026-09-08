@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 12
+const latestSchemaVersion = 13
 
 type SQLite struct {
 	db *sql.DB
@@ -364,6 +364,19 @@ CREATE TABLE remote_connector_profiles (
     stable_base_url TEXT NOT NULL DEFAULT '',
     path_token TEXT NOT NULL,
     preferred_mode TEXT NOT NULL DEFAULT 'temporary',
+    updated_at TEXT NOT NULL
+);
+`
+	case 13:
+		script = `
+CREATE TABLE openai_tunnel_config (
+    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+    tunnel_id TEXT NOT NULL DEFAULT '',
+    profile_name TEXT NOT NULL DEFAULT 'mar-openai',
+    api_key_env TEXT NOT NULL DEFAULT 'CONTROL_PLANE_API_KEY',
+    client_path TEXT NOT NULL DEFAULT '',
+    admin_base_url TEXT NOT NULL DEFAULT '',
+    desired_running INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
 `

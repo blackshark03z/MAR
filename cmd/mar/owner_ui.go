@@ -60,6 +60,7 @@ type ownerUIBackend struct {
 	maxWorkers      int
 	sessionToken    string
 	bridge          *remoteBridgeManager
+	openAITunnel    *openAITunnelManager
 	sandboxPrepare  func(context.Context, string, string) error
 	sandboxCheck    func(context.Context, string, string) (bool, string)
 }
@@ -106,28 +107,48 @@ type ownerTaskView struct {
 }
 
 type ownerConnectionView struct {
-	ID            string     `json:"id"`
-	Name          string     `json:"name"`
-	Status        string     `json:"status"`
-	Transport     string     `json:"transport"`
-	Summary       string     `json:"summary"`
-	Command       string     `json:"command,omitempty"`
-	Args          []string   `json:"args,omitempty"`
-	SetupAction   string     `json:"setup_action,omitempty"`
-	ConnectionURL string     `json:"connection_url,omitempty"`
-	StableBaseURL string     `json:"stable_base_url,omitempty"`
-	StableURL     string     `json:"stable_url,omitempty"`
-	TemporaryURL  string     `json:"temporary_url,omitempty"`
-	PreferredMode string     `json:"preferred_mode,omitempty"`
-	LocalTarget   string     `json:"local_target,omitempty"`
-	TemporaryLink bool       `json:"temporary_link,omitempty"`
-	RouteReady    bool       `json:"route_ready,omitempty"`
-	Initialized   bool       `json:"initialized,omitempty"`
-	ToolsListed   bool       `json:"tools_listed,omitempty"`
-	Requests      int64      `json:"requests,omitempty"`
-	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
-	LastHealthAt  *time.Time `json:"last_health_at,omitempty"`
-	LastError     string     `json:"last_error,omitempty"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Status             string     `json:"status"`
+	Transport          string     `json:"transport"`
+	Summary            string     `json:"summary"`
+	Command            string     `json:"command,omitempty"`
+	Args               []string   `json:"args,omitempty"`
+	SetupAction        string     `json:"setup_action,omitempty"`
+	ConnectionURL      string     `json:"connection_url,omitempty"`
+	StableBaseURL      string     `json:"stable_base_url,omitempty"`
+	StableURL          string     `json:"stable_url,omitempty"`
+	TemporaryURL       string     `json:"temporary_url,omitempty"`
+	PreferredMode      string     `json:"preferred_mode,omitempty"`
+	LocalTarget        string     `json:"local_target,omitempty"`
+	TemporaryLink      bool       `json:"temporary_link,omitempty"`
+	RouteReady         bool       `json:"route_ready,omitempty"`
+	Initialized        bool       `json:"initialized,omitempty"`
+	ToolsListed        bool       `json:"tools_listed,omitempty"`
+	Requests           int64      `json:"requests,omitempty"`
+	LastSeenAt         *time.Time `json:"last_seen_at,omitempty"`
+	LastHealthAt       *time.Time `json:"last_health_at,omitempty"`
+	Configured         bool       `json:"configured,omitempty"`
+	Running            bool       `json:"running,omitempty"`
+	Healthy            bool       `json:"healthy,omitempty"`
+	Ready              bool       `json:"ready,omitempty"`
+	Connected          bool       `json:"connected,omitempty"`
+	Identifier         string     `json:"identifier,omitempty"`
+	ProfileName        string     `json:"profile_name,omitempty"`
+	APIKeyEnv          string     `json:"api_key_env,omitempty"`
+	AuthConfigured     bool       `json:"auth_configured,omitempty"`
+	ClientFound        bool       `json:"client_found,omitempty"`
+	ClientPath         string     `json:"client_path,omitempty"`
+	InstallURL         string     `json:"install_url,omitempty"`
+	AdminBaseURL       string     `json:"admin_base_url,omitempty"`
+	DesiredRunning     bool       `json:"desired_running,omitempty"`
+	PID                int        `json:"pid,omitempty"`
+	ConnectedSince     *time.Time `json:"connected_since,omitempty"`
+	LastActivityAt     *time.Time `json:"last_activity_at,omitempty"`
+	LastSuccessAt      *time.Time `json:"last_success_at,omitempty"`
+	DiagnosticsSummary string     `json:"diagnostics_summary,omitempty"`
+	NextAction         string     `json:"next_action,omitempty"`
+	LastError          string     `json:"last_error,omitempty"`
 }
 
 type ownerSubmitRequest struct {
@@ -152,6 +173,14 @@ type ownerInputRequest struct {
 type ownerConnectorConfigRequest struct {
 	StableBaseURL string `json:"stable_base_url"`
 	PreferredMode string `json:"preferred_mode"`
+}
+
+type ownerOpenAITunnelConfigRequest struct {
+	TunnelID     string `json:"tunnel_id"`
+	ProfileName  string `json:"profile_name,omitempty"`
+	APIKeyEnv    string `json:"api_key_env,omitempty"`
+	ClientPath   string `json:"client_path,omitempty"`
+	AdminBaseURL string `json:"admin_base_url,omitempty"`
 }
 
 func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
@@ -226,6 +255,18 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 	}
 	_ = backend.bridge.ConfigureProfiles(profiles)
 	defer backend.bridge.Close()
+	backend.openAITunnel = newOpenAITunnelManager(ctx, backend.svc, opts.DataRoot)
+	tunnelConfig, err := db.EnsureOpenAITunnelConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("initialize OpenAI tunnel config: %w", err)
+	}
+	if err := backend.openAITunnel.Configure(tunnelConfig); err != nil {
+		return fmt.Errorf("configure OpenAI tunnel: %w", err)
+	}
+	defer backend.openAITunnel.Close()
+	if tunnelConfig.DesiredRunning {
+		go func() { _, _ = backend.openAITunnel.Start() }()
+	}
 	mux := backend.routes()
 	listener, err := net.Listen("tcp", opts.Listen)
 	if err != nil {
@@ -284,9 +325,16 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/runtime/sandbox/prepare", b.prepareSandboxHost)
 	mux.HandleFunc("POST /api/connections/web-bridge/start", b.startWebBridge)
 	mux.HandleFunc("POST /api/connections/web-bridge/stop", b.stopWebBridge)
+	mux.HandleFunc("POST /api/connections/web-bridge/restart", b.restartWebBridge)
+	mux.HandleFunc("POST /api/connections/claude-web/diagnose", b.diagnoseClaudeBridge)
 	mux.HandleFunc("POST /api/connections/{connectorID}/config", b.updateRemoteConnectorConfig)
 	mux.HandleFunc("POST /api/connections/{connectorID}/rotate", b.rotateRemoteConnectorLink)
 	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
+	mux.HandleFunc("POST /api/connections/openai-tunnel/config", b.updateOpenAITunnelConfig)
+	mux.HandleFunc("POST /api/connections/openai-tunnel/start", b.startOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel/stop", b.stopOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel/restart", b.restartOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel/diagnose", b.diagnoseOpenAITunnel)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
 	mux.HandleFunc("POST /api/projects", b.addProject)
 	mux.HandleFunc("POST /api/projects/{projectID}/policy", b.updateProjectPolicy)
@@ -418,11 +466,37 @@ func (b *ownerUIBackend) stopWebBridge(w http.ResponseWriter, _ *http.Request) {
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
 }
 
+func (b *ownerUIBackend) restartWebBridge(w http.ResponseWriter, _ *http.Request) {
+	if b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("Claude remote MCP bridge is unavailable"))
+		return
+	}
+	if err := b.bridge.StopTemporary(); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	state, err := b.bridge.StartTemporary()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": state})
+}
+
+func (b *ownerUIBackend) diagnoseClaudeBridge(w http.ResponseWriter, _ *http.Request) {
+	if b.bridge == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("Claude remote MCP bridge is unavailable"))
+		return
+	}
+	b.bridge.refreshStableHealth()
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"bridge": b.bridge.State()})
+}
+
 func ensureRemoteConnectorProfiles(ctx context.Context, db *store.SQLite) ([]store.RemoteConnectorProfile, error) {
 	if db == nil {
 		return nil, errors.New("remote connector profile store is unavailable")
 	}
-	for _, id := range []string{store.RemoteConnectorClaudeWeb, store.RemoteConnectorChatGPTWeb} {
+	for _, id := range []string{store.RemoteConnectorClaudeWeb} {
 		if _, err := db.GetRemoteConnectorProfile(ctx, id); err == nil {
 			continue
 		} else if !errors.Is(err, store.ErrNotFound) {
@@ -459,7 +533,7 @@ func normalizeStableConnectorBase(raw string) (string, error) {
 }
 
 func validRemoteConnectorID(id string) bool {
-	return id == store.RemoteConnectorClaudeWeb || id == store.RemoteConnectorChatGPTWeb
+	return id == store.RemoteConnectorClaudeWeb
 }
 
 func (b *ownerUIBackend) updateRemoteConnectorConfig(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +543,7 @@ func (b *ownerUIBackend) updateRemoteConnectorConfig(w http.ResponseWriter, r *h
 	}
 	id := strings.TrimSpace(r.PathValue("connectorID"))
 	if !validRemoteConnectorID(id) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web or chatgpt-web"))
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web"))
 		return
 	}
 	var req ownerConnectorConfigRequest
@@ -518,7 +592,7 @@ func (b *ownerUIBackend) rotateRemoteConnectorLink(w http.ResponseWriter, r *htt
 	}
 	id := strings.TrimSpace(r.PathValue("connectorID"))
 	if !validRemoteConnectorID(id) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web or chatgpt-web"))
+		writeOwnerError(w, http.StatusBadRequest, errors.New("connector must be claude-web"))
 		return
 	}
 	profile, err := b.db.GetRemoteConnectorProfile(r.Context(), id)
@@ -553,10 +627,159 @@ func (b *ownerUIBackend) currentBridgeState() remoteBridgeState {
 	if b.bridge == nil {
 		return remoteBridgeState{Status: "REMOTE_BRIDGE_REQUIRED", Provider: "external", Connectors: []remoteConnectorState{
 			{ID: store.RemoteConnectorClaudeWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
-			{ID: store.RemoteConnectorChatGPTWeb, Status: "REMOTE_BRIDGE_REQUIRED", PreferredMode: store.RemoteConnectorModeTemporary},
 		}}
 	}
 	return b.bridge.State()
+}
+
+func (b *ownerUIBackend) currentOpenAITunnelState() openAITunnelState {
+	if b.openAITunnel == nil {
+		config := store.DefaultOpenAITunnelConfig()
+		return openAITunnelState{
+			Provider: "openai", Transport: "secure-mcp-tunnel", Status: "MISCONFIGURED",
+			ProfileName: config.ProfileName, APIKeyEnv: config.APIKeyEnv, InstallURL: openAITunnelInstallURL,
+			NextAction: "Thiết lập OpenAI tunnel trong màn hình Kết nối AI.",
+		}
+	}
+	return b.openAITunnel.State()
+}
+
+func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http.Request) {
+	if b.db == nil || b.openAITunnel == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel configuration is unavailable"))
+		return
+	}
+	var req ownerOpenAITunnelConfigRequest
+	if err := decodeOwnerJSON(r, &req); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	current, err := b.db.EnsureOpenAITunnelConfig(r.Context())
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	next := current
+	next.TunnelID = strings.TrimSpace(req.TunnelID)
+	if value := strings.TrimSpace(req.ProfileName); value != "" {
+		next.ProfileName = value
+	}
+	if value := strings.TrimSpace(req.APIKeyEnv); value != "" {
+		next.APIKeyEnv = value
+	}
+	next.ClientPath = strings.TrimSpace(req.ClientPath)
+	next.AdminBaseURL = strings.TrimRight(strings.TrimSpace(req.AdminBaseURL), "/")
+	next.UpdatedAt = time.Now().UTC()
+	if err := next.Validate(); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	wasRunning := b.openAITunnel.State().Running
+	changed := current.TunnelID != next.TunnelID || current.ProfileName != next.ProfileName || current.APIKeyEnv != next.APIKeyEnv || current.ClientPath != next.ClientPath || current.AdminBaseURL != next.AdminBaseURL
+	if changed && wasRunning {
+		if err := b.openAITunnel.Stop(); err != nil {
+			writeOwnerError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if err := b.db.UpsertOpenAITunnelConfig(r.Context(), next); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.openAITunnel.Configure(next); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	if changed && wasRunning {
+		if _, err := b.openAITunnel.Start(); err != nil {
+			writeOwnerError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": b.openAITunnel.State()})
+}
+
+func (b *ownerUIBackend) setOpenAITunnelDesired(ctx context.Context, desired bool) error {
+	if b.db == nil || b.openAITunnel == nil {
+		return errors.New("OpenAI tunnel configuration is unavailable")
+	}
+	config, err := b.db.EnsureOpenAITunnelConfig(ctx)
+	if err != nil {
+		return err
+	}
+	config.DesiredRunning = desired
+	config.UpdatedAt = time.Now().UTC()
+	if err := b.db.UpsertOpenAITunnelConfig(ctx, config); err != nil {
+		return err
+	}
+	return b.openAITunnel.Configure(config)
+}
+
+func (b *ownerUIBackend) startOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnel == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel is unavailable"))
+		return
+	}
+	state, err := b.openAITunnel.Start()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	if err := b.setOpenAITunnelDesired(r.Context(), true); err != nil {
+		_ = b.openAITunnel.Stop()
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
+}
+
+func (b *ownerUIBackend) stopOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnel == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel is unavailable"))
+		return
+	}
+	if err := b.setOpenAITunnelDesired(r.Context(), false); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.openAITunnel.Stop(); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": b.openAITunnel.State()})
+}
+
+func (b *ownerUIBackend) restartOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnel == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel is unavailable"))
+		return
+	}
+	state, err := b.openAITunnel.Restart()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	if err := b.setOpenAITunnelDesired(r.Context(), true); err != nil {
+		_ = b.openAITunnel.Stop()
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
+}
+
+func (b *ownerUIBackend) diagnoseOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnel == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel is unavailable"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	state, err := b.openAITunnel.Diagnose(ctx)
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
 }
 
 func (b *ownerUIBackend) sandboxProbeWorkspace() string {
@@ -618,13 +841,20 @@ func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Reque
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	bridge := b.currentBridgeState()
+	tunnel := b.currentOpenAITunnelState()
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "Configure Claude Web or ChatGPT Web in Connections. Stable mode uses your persistent HTTPS route; temporary mode uses Quick Tunnel."
+		nextAction = tunnel.NextAction
+		if nextAction == "" {
+			nextAction = "Thiết lập GPT Secure MCP Tunnel hoặc Claude Remote MCP trong Kết nối AI."
+		}
+		if tunnel.Connected {
+			nextAction = "GPT/OpenAI Secure MCP Tunnel đã sẵn sàng nhận MCP traffic."
+		}
 		for _, connector := range bridge.Connectors {
 			if connector.Status == "CONNECTED" {
-				nextAction = connector.ID + " is actively exchanging MCP traffic with MAR."
+				nextAction = "Claude Remote MCP đang trao đổi traffic với MAR."
 				break
 			}
 		}
@@ -637,13 +867,19 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 
 	stdioArgs := b.webStdioArgs()
 	connections := make([]ownerConnectionView, 0, 4)
+	connections = append(connections, ownerConnectionView{
+		ID: "openai-tunnel", Name: "OpenAI / GPT", Status: tunnel.Status, Transport: tunnel.Transport,
+		Summary:    "Secure MCP Tunnel outbound-only; MAR MCP vẫn riêng tư trên localhost.",
+		Configured: tunnel.Configured, Running: tunnel.Running, Healthy: tunnel.Healthy, Ready: tunnel.Ready, Connected: tunnel.Connected,
+		Identifier: tunnel.Identifier, ProfileName: tunnel.ProfileName, APIKeyEnv: tunnel.APIKeyEnv, AuthConfigured: tunnel.AuthConfigured,
+		ClientFound: tunnel.ClientFound, ClientPath: tunnel.ClientPath, InstallURL: tunnel.InstallURL, LocalTarget: tunnel.LocalTarget,
+		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
+		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
+		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
+	})
 	for _, connector := range bridge.Connectors {
-		name := "Claude Web"
-		summary := "Dedicated Claude Web connector. Stable and temporary links use a Claude-only capability path and independent realtime telemetry."
-		if connector.ID == store.RemoteConnectorChatGPTWeb {
-			name = "ChatGPT Web"
-			summary = "Dedicated ChatGPT Web connector. Availability of custom write-capable MCP tools still depends on the ChatGPT account/workspace capability."
-		}
+		name := "Claude"
+		summary := "Claude Remote MCP có URL riêng và telemetry traffic realtime độc lập."
 		connections = append(connections, ownerConnectionView{
 			ID: connector.ID, Name: name, Status: connector.Status, Transport: "streamable-http", Summary: summary,
 			ConnectionURL: connector.PublicURL, StableBaseURL: connector.StableBaseURL, StableURL: connector.StableURL,
@@ -667,6 +903,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		"web_brain_requires_mcp_client": b.brainMode == "web",
 		"brain_next_action":             nextAction,
 		"remote_bridge":                 bridge,
+		"openai_tunnel":                 tunnel,
 		"sandbox_host_ready":            sandboxReady,
 		"sandbox_detail":                sandboxDetail,
 		"sandbox_prepare_action":        !sandboxReady,
