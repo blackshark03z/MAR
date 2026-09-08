@@ -4,7 +4,7 @@
 **Branch:** `master`
 **Verified Slice 016 implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
 **Current pushed base HEAD:** `f83506b00938875ae560655ddd32633278897b57`
-**V1 candidate:** committed locally on current `master` (not yet pushed): durable Claude Web + ChatGPT Web connector profiles, independent secret paths/telemetry, stable/temporary modes, copy/rotate UX; full regression + candidate build + HTTP/UI smoke PASS; live owner cutover/reconnect pending.
+**V1 candidate:** committed locally on current `master` (not yet pushed): durable Claude Web + ChatGPT Web connector profiles, independent secret paths/telemetry, stable/temporary modes, copy/rotate UX, plus bounded `project_read` for simple file inspection without an owner-authored Goal Contract. Full regression + vet + candidate build + diff check PASS; live Web-client reconnect/owner acceptance pending.
 
 Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
 
@@ -52,8 +52,9 @@ Latest repository-wide verification on the Slice 016 runtime checkpoint:
 - durable Goal Contract/profile/acceptance identity is revalidated by the store before VERIFIED publication: PASS
 - result/evidence survive SQLite close/reopen with valid integrity: PASS
 - official MCP Go SDK stdio server: PASS
-- Slice 015 seven-tool MCP surface: historical PASS; current V1 candidate extends it to exactly `submit/status/steer/input/cancel/result/inspect/brain_turn/brain_respond`: targeted MCP tests PASS
-- low-level worker filesystem/shell primitives are absent from the public MCP surface: PASS
+- Slice 015 seven-tool MCP surface: historical PASS; current V1 candidate exposes exactly `submit/status/steer/input/cancel/result/inspect/brain_turn/brain_respond/project_read`: targeted MCP tests PASS
+- `project_read` is a bounded read-only owner/project inspection path, not a worker filesystem primitive: it requires a real file identity, infers project when unambiguous, requires no `base_revision`, rejects traversal/symlink escape, rejects binary/non-UTF-8 files, and caps reads at 512 KiB: PASS
+- low-level worker mutation/shell primitives (`read_file`, `write_file`, `run_shell`, `run_command`) remain absent from the public MCP surface: PASS
 - durable `task_controls` schema/migration v8: PASS
 - task control stream is monotonic, idempotent, integrity-bound and survives SQLite reopen: PASS
 - control tamper is rejected: PASS
@@ -92,11 +93,19 @@ MAR as a product is **not** yet `SELF_HOSTING_READY`.
 ## Latest connector checkpoint — 2026-09-08
 
 - Current live owner UAT on `127.0.0.1:8787` is still the pre-split binary. It uses one shared Web-bridge telemetry stream, so Claude traffic can make both `claude-web` and `chatgpt-web` appear CONNECTED. Treat that GPT status as a legacy false positive, not proof of a ChatGPT MCP session.
-- Non-disruptive cutover sidecar is now live on `127.0.0.1:8897` against the same owner-UAT DB/data root. Its Quick Tunnel is started, Claude and ChatGPT each have a distinct MCP URL, and both correctly report `LINK_READY` until their own client sends MCP traffic. Legacy `8787` remains CONNECTED so the existing Claude session is not interrupted during migration. The sidecar is hosted by durable ChatCode Job `job-18d34be6fed5aa58-117`; retire it only after final cutover or explicit rollback.
+- A fresh non-disruptive candidate sidecar is live on `127.0.0.1:8897` from the current lightweight-read candidate, against the owner-UAT DB/data root. Its Quick Tunnel is started; Claude and ChatGPT have distinct MCP URLs and both correctly report `LINK_READY` until each client sends real traffic. Legacy `8787` remains the live pre-split Claude path so the existing Claude session is not interrupted during owner cutover; do not treat its shared GPT status as proof of a GPT session.
 - Candidate state adds durable schema v12 `remote_connector_profiles` for separate Claude Web and ChatGPT Web capability paths. Each connector keeps its own secret token, preferred mode, stable base, telemetry, health state, request count and last-seen time.
 - Console now renders independent Claude/GPT cards with stable/temporary mode switching, saved stable HTTPS base, active MCP URL copy, secret-link rotation/revocation, route health and realtime MCP traffic status. Polling updates reuse the existing card and do not overwrite a mode/base field while the owner is actively editing it.
 - Stable mode is intentionally honest: MAR preserves the connector token across restart, but the public base must be a persistent HTTPS route owned by the user/environment. Quick Tunnel remains explicitly temporary and its hostname may change after restart. A one-time connector reconnect is expected when cutting over from the legacy Quick Tunnel.
 - Verification completed on the current local connector candidate: targeted `mar/cmd/mar` tests PASS; full repository `go test ./...` PASS; `go vet ./...` PASS; build PASS; `git diff --check` PASS; owner UI JavaScript syntax PASS; candidate HTTP smoke on an isolated DB confirmed exactly two Web connector rows and the expected stable/copy/rotate/realtime controls.
+
+## Latest owner real-use defect — lightweight read routing
+
+- Owner test through Claude Web exposed a product gap: asking MAR to perform a tiny read-only action caused the Web client to request `project_id` and `base_revision` and effectively ask the owner to author a coding Goal Contract. That is incorrect product routing for a simple inspection.
+- Fix: public MCP now has one bounded `project_read` convenience tool. It reads UTF-8 text only from registered project roots, never creates a task, never grants write/network/Git authority, and does not require `base_revision`.
+- Project resolution is owner-light: an absolute path resolves to the registered project containing it; a single registered project is automatic; with multiple projects a relative path is inferred if it exists in exactly one project. The Web client should ask the owner only when the file itself or remaining project choice is genuinely ambiguous.
+- `submit` tool guidance now explicitly routes coding/mutation work to Goal Contracts and routes simple read-only inspection to `project_read`, so the Web client should no longer suggest bypassing MAR for this normal case.
+- Tests added for no-Goal-Contract read, unique-project inference, ambiguous-project handling, traversal rejection, remote HTTP tool exposure, and preservation of the private low-level worker primitive boundary. Targeted tests PASS; full repository test/vet/build/diff-check PASS.
 
 ## Next gate
 

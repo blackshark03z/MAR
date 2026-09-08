@@ -50,6 +50,15 @@ func (f *fakeBackend) PendingWebTurn(context.Context, string) (domain.WebTurn, b
 func (f *fakeBackend) RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error) {
 	return domain.WebTurn{}, true, nil
 }
+func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string) (service.ProjectReadResult, error) {
+	if path == "" {
+		return service.ProjectReadResult{}, errors.New("file path is required")
+	}
+	if projectID == "" {
+		projectID = "inferred-project"
+	}
+	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "small file\n", SizeBytes: 11}, nil
+}
 
 type largeReadBackend struct{ fakeBackend }
 
@@ -94,7 +103,7 @@ func connectTestMCP(t *testing.T, backend Backend) *mcp.ClientSession {
 	return clientSession
 }
 
-func TestPublicMCPSurfaceIsExactlyNineTaskOrientedTools(t *testing.T) {
+func TestPublicMCPSurfaceKeepsWorkerPrimitivesPrivateAndAddsBoundedProjectRead(t *testing.T) {
 	session := connectTestMCP(t, &fakeBackend{})
 	listed, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 	if err != nil {
@@ -105,7 +114,7 @@ func TestPublicMCPSurfaceIsExactlyNineTaskOrientedTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "result", "status", "steer", "submit"}
+	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "project_read", "result", "status", "steer", "submit"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected public tool count: got=%v want=%v", names, want)
 	}
@@ -120,6 +129,25 @@ func TestPublicMCPSurfaceIsExactlyNineTaskOrientedTools(t *testing.T) {
 				t.Fatalf("low-level worker primitive leaked to public MCP: %s", forbidden)
 			}
 		}
+	}
+}
+
+func TestProjectReadDoesNotRequireGoalContractProjectIDOrBaseRevision(t *testing.T) {
+	session := connectTestMCP(t, &fakeBackend{})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project_read", Arguments: map[string]any{"path": "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsError {
+		t.Fatalf("project_read returned tool error: %+v", result.Content)
+	}
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "inferred-project") || !strings.Contains(text, "README.md") || strings.Contains(text, "base_revision") {
+		t.Fatalf("unexpected lightweight read result: %s", text)
 	}
 }
 

@@ -75,7 +75,7 @@ func TestRemoteBridgeSeparatesClaudeAndChatGPTTelemetryAndLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 9 {
+	if len(listed.Tools) != 10 {
 		t.Fatalf("remote bridge leaked or lost MCP tools: count=%d", len(listed.Tools))
 	}
 

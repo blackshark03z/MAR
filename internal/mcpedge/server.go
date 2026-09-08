@@ -26,6 +26,7 @@ type Backend interface {
 	Inspect(context.Context, string) (service.TaskInspection, error)
 	PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error)
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
+	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
 }
 
 type submitArgs struct {
@@ -64,13 +65,18 @@ type brainRespondArgs struct {
 	FinishReason string           `json:"finish_reason,omitempty"`
 }
 
+type projectReadArgs struct {
+	ProjectID string `json:"project_id,omitempty"`
+	Path      string `json:"path"`
+}
+
 func NewServer(backend Backend) (*mcp.Server, error) {
 	if backend == nil {
 		return nil, errors.New("MCP backend is required")
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 
-	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract and return its durable task handle."},
+	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding/mutation work and return its durable task handle. Do not use submit for a simple read-only file inspection; use project_read instead."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args submitArgs) (*mcp.CallToolResult, map[string]any, error) {
 			task, created, err := backend.Submit(ctx, args.IdempotencyKey, args.Contract)
 			if err != nil {
@@ -138,6 +144,14 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 				return nil, nil, err
 			}
 			return nil, map[string]any{"created": created, "turn": turn}, nil
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "project_read", Description: "Read one bounded UTF-8 text file from a registered MAR project without creating a task or Goal Contract. project_id is optional: MAR infers it when the absolute path or registered projects make the project unambiguous. No base_revision is required. Ask the owner only when the file identity or project remains genuinely ambiguous."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, args projectReadArgs) (*mcp.CallToolResult, map[string]any, error) {
+			result, err := backend.ReadProjectFile(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path))
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, map[string]any{"file": result}, nil
 		})
 
 	return server, nil
