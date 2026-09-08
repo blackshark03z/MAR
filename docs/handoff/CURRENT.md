@@ -4,7 +4,7 @@
 
 **Branch:** `master`
 
-**V1 stable implementation checkpoint:** `e4b1630740defce67bb7cc2ab379870f798bc411`
+**V1 stable implementation checkpoint:** `8740028c2540655ffeac65995080e1cab7260fc1`
 
 **Project-context checkpoint:** `bc0ae694b8f9f382a419d4ab08676e0d13bd7b1b`
 
@@ -22,7 +22,7 @@ The repository implementation and full regression are clean. The remaining block
 
 1. The machine does not currently have `tunnel-client`; no real OpenAI Doctor/run/readiness or ChatGPT discovery can be claimed.
 2. A real `tunnel_id`, its Platform/ChatGPT workspace association, Tunnels Read + Use permission, and the runtime `CONTROL_PLANE_API_KEY` still require Owner configuration.
-3. Windows sandbox preparation currently fails closed with `HRESULT 0x80070070`; C: has approximately 0.29 GiB free, below MAR's hard disk reserve. Do not weaken the sandbox/resource boundary.
+3. Windows sandbox preparation currently fails closed; the latest check timed out in the AppContainer NUL probe, and the earlier probe returned `HRESULT 0x80070070`. C: now rounds to 0.00 GiB free, below MAR's hard disk reserve. Do not weaken the sandbox/resource boundary.
 4. Owner real-use acceptance has not happened. Engineering tests and rendered UI evidence are not `PRODUCT_ACCEPTED` or `SELF_HOSTING_READY`.
 
 ## Completed in this pass
@@ -31,6 +31,7 @@ The repository implementation and full regression are clean. The remaining block
 - Added schema v13 singleton OpenAI tunnel configuration. It persists tunnel identity, profile, credential environment-variable name, optional client/admin paths, and desired-running state; it never persists secret values.
 - Added one dedicated OpenAI Secure MCP Tunnel manager around the existing MCP backend. The private MCP target listens only on loopback and the manager runs official `init -> doctor --explain -> run` lifecycle steps.
 - Added bounded owned-process Start/Stop/Restart, concurrent Stop-during-Start cancellation, crash detection, restart reconciliation, output redaction, admin `/healthz` and `/readyz` probing, and real MCP-activity telemetry.
+- Hardened lifecycle failure handling at `8740028`: raw `tunnel-client` stderr can no longer escape through owner HTTP errors; configuration cannot change under an active identity; readiness/status cannot disagree during a fast start; and a failed physical Stop retains the process handle and blocks replacement instead of losing authority.
 - Retired the experimental ChatGPT public Web-bridge route from runtime authority. The existing public HTTPS/Quick Tunnel manager is Claude-only; legacy `chatgpt-web` database data is ignored but retained for backward audit data.
 - Reworked **Kết nối AI** into separate GPT and Claude cards with independent state, identifier, copy, lifecycle actions, last activity, errors, and collapsed diagnostics.
 - Updated `README.md` with the official OpenAI setup/recovery flow and kept Claude instructions separate.
@@ -41,14 +42,15 @@ Executed with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp` because C: is below MAR's d
 
 - `go vet ./...`: PASS
 - `go build -o D:\MAR\.mar\runtime\mar-v1-stable.exe ./cmd/mar`: PASS
-- `go test -p 1 -count=1 -timeout 180s ./...`: PASS
-- targeted store/MCP/owner UI/tunnel/remote-bridge tests: PASS
+- `go test -p 1 -count=1 -timeout 180s ./...` at `c0fa4f2` before the lifecycle hardening: PASS
+- current `8740028` required `cmd/mar` regression gate: HOST-BLOCKED/FAIL in `TestAcceptanceT7CLIStdioDisconnectLetsActiveWorkerReachSafeTerminal`; worker correctly rejected execution because the Windows sandbox host is not self-hosting-safe, so a current full-suite PASS cannot be claimed
+- current tunnel tests repeated 30 times, owner UI tests, store/MCP/remote-bridge tests: PASS
 - owner UI JavaScript syntax check: PASS
 - `git diff --check`: PASS
 - changed-file credential-pattern scan: PASS after removing key-shaped test fixtures
-- candidate binary SHA-256: `43D371F28B9F82BA48EDC8DFE0CCA5C47876F1E1C5BAF02D06F9554DA8A81B87`
+- candidate binary SHA-256: `85160B3C4726717572D658A7AD4F137DD44CFC06570BE56837C16D817155E94D`
 
-One isolated acceptance run initially remained in `WAITING_RESOURCE`. This was not a code regression: its temporary data root was on C:, which had only about 0.29 GiB free against the frozen 2 GiB host reserve. The same test and the full suite passed when `TEMP/TMP` pointed to D: (about 23.26 GiB free). This is positive fail-closed resource evidence.
+An earlier isolated acceptance run remained in `WAITING_RESOURCE` when its temporary data root was on C:, correctly enforcing the frozen 2 GiB host reserve. Moving test temp to D: allowed a full PASS before the final tunnel hardening. C: then exhausted further; the current revision's T7 worker now reaches the stronger sandbox gate and fails closed because AppContainer preparation is not valid for this boot. This is a host blocker, not a passing current full regression.
 
 ## Rendered owner-surface review
 
