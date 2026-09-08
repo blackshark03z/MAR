@@ -161,7 +161,7 @@ func safeProjectReadTarget(project domain.Project, requestedPath string) (string
 	if lexicalErr != nil || lexicalRel == ".." || strings.HasPrefix(lexicalRel, ".."+string(filepath.Separator)) || filepath.IsAbs(lexicalRel) {
 		return "", errors.New("project file path escapes the registered project root")
 	}
-	real, err := pathidentity.ResolveExisting(candidate)
+	real, err := pathidentity.ResolveWithin(rootAbs, candidate)
 	if err != nil {
 		return "", err
 	}

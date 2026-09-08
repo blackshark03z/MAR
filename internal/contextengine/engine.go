@@ -366,7 +366,7 @@ func readContextFile(root, rel string, maxBytes int64) ([]byte, int64, bool, err
 		return nil, 0, true, err
 	}
 	candidate := filepath.Join(root, clean)
-	resolved, err := pathidentity.ResolveExisting(candidate)
+	resolved, err := pathidentity.ResolveWithin(root, candidate)
 	if err != nil {
 		return nil, 0, true, err
 	}
