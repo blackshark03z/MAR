@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -304,10 +305,12 @@ func newRemoteBridgeToken() (string, error) {
 	return hex.EncodeToString(raw[:]), nil
 }
 
+const remoteBridgeReadyTimeout = 90 * time.Second
+
 func waitRemoteBridgeReady(ctx context.Context, baseURL, token string) error {
 	healthURL := strings.TrimRight(baseURL, "/") + "/health/" + token
 	client := &http.Client{Timeout: 3 * time.Second}
-	deadline := time.NewTimer(30 * time.Second)
+	deadline := time.NewTimer(remoteBridgeReadyTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
@@ -325,16 +328,31 @@ func waitRemoteBridgeReady(ctx context.Context, baseURL, token string) error {
 			}
 			lastErr = fmt.Errorf("public bridge health returned HTTP %d", resp.StatusCode)
 		} else {
-			lastErr = err
+			lastErr = errors.New(sanitizeRemoteBridgeReadyError(err, token))
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("public bridge did not become reachable: %w", lastErr)
+			return fmt.Errorf("public bridge did not become reachable within %s: %s", remoteBridgeReadyTimeout, sanitizeRemoteBridgeReadyError(lastErr, token))
 		case <-ticker.C:
 		}
 	}
+}
+
+func sanitizeRemoteBridgeReadyError(err error, token string) string {
+	if err == nil {
+		return "unknown public route error"
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) && urlErr.Err != nil {
+		err = urlErr.Err
+	}
+	text := err.Error()
+	if token != "" {
+		text = strings.ReplaceAll(text, token, "[redacted]")
+	}
+	return text
 }
 
 var quickTunnelURLPattern = regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)

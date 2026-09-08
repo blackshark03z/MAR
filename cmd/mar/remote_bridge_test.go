@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -76,6 +78,18 @@ func TestRemoteBridgeLifecyclePublishesCapabilityURLAndObservesMCPInitialization
 	if err == nil {
 		_ = probe.Close()
 		t.Fatal("revoked remote MCP local endpoint remained reachable")
+	}
+}
+
+func TestSanitizeRemoteBridgeReadyErrorRedactsCapabilityToken(t *testing.T) {
+	const token = "0123456789abcdef-secret-capability"
+	err := &url.Error{Op: "Get", URL: "https://example.invalid/health/" + token, Err: errors.New("dial tcp: lookup example.invalid: no such host")}
+	got := sanitizeRemoteBridgeReadyError(err, token)
+	if strings.Contains(got, token) || strings.Contains(got, "/health/") {
+		t.Fatalf("remote bridge diagnostic leaked capability URL/token: %q", got)
+	}
+	if !strings.Contains(got, "no such host") {
+		t.Fatalf("remote bridge diagnostic lost useful network cause: %q", got)
 	}
 }
 
