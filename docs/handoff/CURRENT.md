@@ -14,24 +14,23 @@
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
-## Current release gate — 2026-09-08, Codex takeover
+## Current release gate — 2026-09-08, self-hosting closeout
 
-Target verdict: `ENGINEERING_V1_STABLE_PENDING_OWNER_CONFIG`. Confirm it only when
-`D:\MAR\.mar\runtime\v1-release-final.json` matches the current Git HEAD, every
-release gate exits 0, and `git_clean` is true. The final full release gate runs
-after this handoff commit, so its exact revision and executable hash belong in
-that local evidence record rather than a self-referential commit hash here.
-If the record is missing, stale, or failing, final release confirmation remains
-UNVERIFIED. Do not infer a current full-suite PASS from the historical section.
+The runtime-source engineering release gate passed at `0716bcc9037e8a5f116d6e6c425453b60972bd6b`: vet, build, full sequential regression, real sandbox-host check, and diff-check all exited 0, with clean Git identity and binary SHA256 `C91F118B33C809DFB728AD6428BFBCD469C1F3A019CDC34DCE804F3094C34812` recorded locally. MAR later advanced `master` by one docs-only self-hosted integration and this handoff closeout will advance it once more. Therefore the final current-head claim still requires one last `D:\MAR\.mar\runtime\v1-release-final.json` refresh after this handoff commit. The record must match that final Git HEAD, every gate must exit 0, and `git_clean` must remain true.
 
-`PRODUCT_ACCEPTED`, `MAR_V1_STABLE`, and `MAR_SELF_HOSTING_READY` remain unclaimed.
-The real Web journey is still pending. Owner configuration for OpenAI Secure MCP Tunnel remains optional/backlog for this checkpoint and no longer blocks V1 while the owner uses MCP Link.
+`PRODUCT_ACCEPTED` remains unclaimed pending explicit Owner real-use acceptance. The engineering evidence now supports `MAR_V1_STABLE` and `MAR_SELF_HOSTING_READY` once the final current-head release record above is refreshed successfully. OpenAI Secure MCP Tunnel remains optional/backlog and does not block the current MCP-Link path.
 
 ### Current transport decision — 2026-09-08
 
-Owner selected **MCP LINK** as the temporary/current GPT path instead of requiring OpenAI Secure MCP Tunnel. The existing hardened Streamable HTTP bridge now treats `chatgpt-web` and `claude-web` as peer connector profiles with independent capability URLs, stable/temporary settings, secret-link rotation and telemetry. The public Quick Tunnel process may be shared infrastructure, but traffic/state cannot promote the other connector. Secure MCP Tunnel implementation remains intact as an optional advanced/future path.
+Owner selected **MCP LINK** as the temporary/current GPT path instead of requiring OpenAI Secure MCP Tunnel. The existing hardened Streamable HTTP bridge treats `chatgpt-web` and `claude-web` as peer connector profiles with independent capability URLs, stable/temporary settings, secret-link rotation and telemetry. The public Quick Tunnel process may be shared infrastructure, but traffic/state cannot promote the other connector. Secure MCP Tunnel implementation remains intact as an optional advanced/future path.
 
-Post-commit release verification at `fc668f1` exposed one T9 acceptance-test false negative: `TestAcceptanceT9ActualDaemonCrashReconcilesWithoutFalseCompletion` ended with an empty marker after the daemon/process tree was killed. The helper rewrote the marker with `os.WriteFile` every 20 ms, so kill could land after truncate and before write, producing `""` even when containment succeeded. The production recovery path was not changed. T9 passed 10/10 isolated before the test change; the helper was then hardened to fixed-width in-place writes that never truncate after the first observed marker, and T9 passed 30/30. A new full release gate is required on the resulting commit before any final engineering claim.
+Real public-Web evidence is now present. A live GPT Quick Tunnel accepted `Origin: https://chatgpt.com`; MCP `initialize` + `tools/list` succeeded through the public Internet with exactly 11 MAR tools, and GPT telemetry moved to `CONNECTED`. Public `project_context` returned project `mar`, exact HEAD and the persisted local-only policy without asking the Owner for Git vocabulary. A real public-link task then traversed submit -> Web Brain turns -> isolated worker mutation. It correctly failed closed at verification because the runtime had fallen back to `C:\Program Files\Go\bin\go.exe`, and Coding ACI could not grant sandbox read access to `C:\Program Files\Go` (`Access is denied`). Its criterion-specific file oracle nevertheless PASSed; the failed result remains durable provenance and was not integrated.
+
+The managed Go prerequisite was restored at `D:\MAR\.mar\runtime\go-portable\go` from the installed Go 1.27.0 tree. Source and managed `go.exe` SHA256 both equal `7D828191BA32519A9C9361789AB647486236ED45C660889196C7770A8FF1985C`. MAR was relaunched with that explicit managed toolchain; sandbox policy was not weakened and no ACL exception for Program Files was added.
+
+The bounded retry task `task-4790c13cb09e4782b0b26ff4d5c585cb` then completed end-to-end through MAR: isolated worker created only `docs/handoff/SELF_HOSTING_SMOKE.md`; the `file_contains` oracle PASSed; managed-Go `go test -run '^$'`, `go vet`, and `go build` all PASSed; durable result `result-8819e6da8eda46438f3c5c11407d33b0` / evidence `evidence-0b3aa3f6acb042929d8b208c569b2f1e` were `VERIFIED`; authoritative integration was `INTEGRATED`; and task state became `COMPLETE`. MAR itself advanced `master` from `0716bcc` to `890d55f802a3d0f957b2f7b9b2def313feae7239` with commit message `MAR candidate task=task-4790c13cb09e4782b0b26ff4d5c585cb attempt=attempt-082ca722e5ec46c394abb6a9e789b476 epoch=1`. This closes the first bounded V1.1 self-hosting task gate. The successful retry used the same SQLite/daemon authority with a local MCP stdio Web-Brain relay because the Owner-session boundary prevented programmatic restart of the Quick Tunnel after MAR restart; the earlier public-link run already proved the remote GPT transport through real worker mutation. No second coordinator was created.
+
+Post-commit release verification at `fc668f1` also exposed one T9 acceptance-test false negative: `TestAcceptanceT9ActualDaemonCrashReconcilesWithoutFalseCompletion` ended with an empty marker after the daemon/process tree was killed. The helper rewrote the marker with `os.WriteFile` every 20 ms, so kill could land after truncate and before write, producing `""` even when containment succeeded. The production recovery path was not changed. T9 passed 10/10 isolated before the test change; the helper was hardened to fixed-width in-place writes and then passed 30/30. The resulting `0716bcc` runtime source subsequently passed the full revision-bound release gate.
 
 ### Takeover and completed corrections
 
@@ -51,14 +50,14 @@ Post-commit release verification at `fc668f1` exposed one T9 acceptance-test fal
 - Official `tunnel-client doctor --profile mar-openai --explain` stops at missing profile (`profile_load`). No runtime profile exists. `CONTROL_PLANE_API_KEY` is absent in process/user/machine environments (presence-only inspection). The only nonempty persisted preview tunnel ID has a sequential fixture marker and is not verified Owner configuration. No secret value was printed, stored, or committed.
 - Real Secure MCP Tunnel healthz/readyz, authenticated lifecycle/activity, Platform association, ChatGPT workspace association, and Tunnels Read + Use remain PENDING_OWNER_CONFIG for the optional tunnel path. They are no longer release blockers for the current MCP-Link path. No fake profile or second coordinator was introduced.
 
-### Next action and self-hosting transition
+### Next action after self-hosting transition
 
-1. Start or configure the existing Remote MCP bridge and confirm both GPT and Claude receive different capability URLs with `LINK_READY`/route truth in the Connection Hub.
-2. Add the GPT MCP URL to the supported ChatGPT MCP connection surface, discover MAR tools, and execute one simple read. This is now the current real-Web connection gate.
-3. Run one small real Goal through Web Brain -> MAR MCP Link -> MAR worker -> verify -> integrate; preserve its durable evidence. Obtain explicit Owner real-use acceptance separately.
-4. Immediately perform the first bounded V1.1 task through MAR itself. Only after its Goal, isolated edits, verification, integration, and handoff evidence pass may `MAR_SELF_HOSTING_READY` be declared. Direct Codex/ChatCode coordination then remains bootstrap/emergency recovery only.
+1. Commit this handoff closeout, then run one final current-head release record refresh so the clean Git identity and all engineering gates are bound to the final docs-only HEAD.
+2. Keep MCP Link as the current GPT path. On the next Owner session, use the Connection Hub normally to create/reopen the GPT link and perform one short Owner-driven task for product acceptance; do not bypass the startup-session credential boundary.
+3. Obtain explicit Owner accept/reject feedback against a real integrated candidate. Only that may establish `PRODUCT_ACCEPTED`.
+4. After the final release-record refresh succeeds, routine MAR development should use MAR itself; direct Codex/ChatCode coordination is bootstrap/emergency recovery only.
 
-No remaining code blocker is proven by this pass; final engineering confirmation remains subject to the revision-bound release record after the MCP-Link change. Missing Secure MCP Tunnel owner credentials do not prevent the current real MAR task. No V1.1 work has started. Backlog: first small diagnostics/docs task through MAR after that gate; no new product scope.
+No remaining production-code blocker is proven. The first bounded V1.1 self-hosting task is complete and integrated. Missing Secure MCP Tunnel owner credentials do not block current use. The only remaining product gate is explicit Owner real-use acceptance; optional tunnel setup and further UX improvements are backlog, not V1 release blockers.
 
 ## Historical checkpoint — 2026-09-08, before takeover (superseded above)
 
@@ -121,9 +120,9 @@ The built candidate was run on isolated state at `127.0.0.1:8898`; the existing 
 
 ## Next gate
 
-`HOST_SANDBOX_PREP -> OPENAI_OWNER_CONFIG -> OPENAI_TUNNEL_DOCTOR_RUN -> CHATGPT_DISCOVERY -> REAL_BOUNDED_GOAL -> OWNER_REAL_USE_ACCEPTANCE`
+`FINAL_CURRENT_HEAD_RELEASE_RECORD -> OWNER_REAL_USE_ACCEPTANCE`
 
-Do not claim `MAR_V1_STABLE`, `PRODUCT_ACCEPTED`, or `SELF_HOSTING_READY` until every gate above passes. Do not add another GPT transport or bypass the frozen resource/sandbox policy.
+The engineering/self-hosting path has real durable evidence. `PRODUCT_ACCEPTED` still requires explicit Owner acceptance. Do not add another GPT transport or bypass the frozen resource/sandbox/session policy.
 
 ## Frozen boundaries — do not reopen without concrete evidence
 
@@ -139,6 +138,6 @@ Do not claim `MAR_V1_STABLE`, `PRODUCT_ACCEPTED`, or `SELF_HOSTING_READY` until 
 
 ## Environment notes
 
-- Use the hash-verified portable Go under `D:\MAR\.mar\runtime\go-portable` if Go is unavailable from PATH.
+- Managed Go 1.27.0 is restored under `D:\MAR\.mar\runtime\go-portable\go`; managed/source `go.exe` SHA256 is `7D828191BA32519A9C9361789AB647486236ED45C660889196C7770A8FF1985C`. Keep MAR verification on this managed path; do not fall back to `C:\Program Files\Go` inside Coding ACI.
 - C: storage recovered to approximately 21.18 GiB free during the latest continuation; D:-hosted test temp remains a valid low-risk regression location.
 - The Go race detector remains unavailable because the installed host C compiler lacks required 64-bit support; this is an environment limitation, not a passing race result.
