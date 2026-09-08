@@ -36,7 +36,8 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		t.Skip("worker helper process")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// Keep the E2E bounded while allowing cold sandbox/toolchain startup; production command execution allows a wider five-minute budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	projectRoot := filepath.Join(t.TempDir(), "project")

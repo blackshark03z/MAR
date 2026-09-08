@@ -43,7 +43,9 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 - Console normal flow no longer requires Owner-authored acceptance/profile/priority/authority; those remain engineering/MCP concerns.
 - MAR-measured input/output/total model usage is carried into durable result resource summaries; hidden client usage is not guessed.
 - Focused API/store/service/orchestrator tests PASS, including restart persistence, unauthorized mutation rejection, recent work continuity and premature acceptance rejection.
-- Real desktop/narrow rendered Console has been exercised on the actual MAR UI + SQLite/MCP runtime. Final live mutation probe, full repository gate and Owner real-use UAT remain.
+- Real desktop/narrow rendered Console has been exercised on the actual MAR UI + SQLite/MCP runtime.
+- Post-reboot sandbox preparation is now surfaced as an Owner Console action: one **Prepare sandbox** action invokes the existing host preparation through Windows UAC and re-checks readiness automatically; the owner no longer needs to open an Administrator terminal for the normal flow. A real UAC preparation probe passed on the current Windows host.
+- Final clean-candidate remote-Web full Goal, final release gate and Owner real-use UAT remain.
 
 # Non-goals
 

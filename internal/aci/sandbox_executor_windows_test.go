@@ -80,7 +80,8 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := New(Config{Root: root, TaskID: "task-sandbox-go", CommandTimeout: 30 * time.Second, GitBroker: broker}, executor)
+	// Match the ACI production default so a post-reboot cold Go build cache is not misclassified as a sandbox deadlock.
+	runtime, err := New(Config{Root: root, TaskID: "task-sandbox-go", CommandTimeout: 2 * time.Minute, GitBroker: broker}, executor)
 	if err != nil {
 		t.Fatal(err)
 	}

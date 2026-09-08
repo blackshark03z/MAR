@@ -29,7 +29,7 @@ mar sandbox-host-prepare -workspace <data-root>/sandbox-host-probe
 mar sandbox-host-check -workspace <data-root>/sandbox-host-probe
 ```
 
-MAR intentionally fails closed instead of running model-controlled commands without the enforced sandbox.
+MAR intentionally fails closed instead of running model-controlled commands without the enforced sandbox. In the normal Owner Console journey, the **Connections** screen detects this prerequisite after a reboot and offers **Prepare sandbox**. MAR invokes the same preparation command through Windows UAC and automatically re-checks readiness after the owner approves the Windows permission prompt, so the owner does not need to open an Administrator terminal. The commands above remain the diagnostic/manual fallback.
 
 2. Initialize MAR and register the project if they have not already been registered:
 

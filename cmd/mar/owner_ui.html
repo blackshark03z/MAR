@@ -143,6 +143,7 @@
   <section id="view-connections" class="view">
     <div class="intro"><h2>Kết nối AI</h2><p class="muted">Claude Web là Web path chính: tạo một remote MCP URL tạm thời, thêm URL đó vào Custom Connector rồi bật connector trong chat. MAR chỉ coi là có phiên MCP sau khi thực sự quan sát <code>initialize</code>. Claude Desktop chỉ là tùy chọn local.</p></div>
     <div id="connection-summary" class="notice warn"></div>
+    <div id="sandbox-readiness" class="card" style="margin-top:16px"></div>
     <div id="connection-list" class="connection-list" style="margin-top:16px"></div>
   </section>
 
@@ -180,8 +181,17 @@ async function loadRuntime(){
   $('runtime-raw').textContent=JSON.stringify(runtime,null,2);
   $('work-readiness').textContent=runtime.brain_next_action||'Kiểm tra tab Kết nối AI trước khi chạy task mới.';
   $('connection-summary').textContent=runtime.brain_next_action||'';
+  renderSandboxReadiness(runtime);
   renderConnections(runtime.connections||[]);
 }
+function renderSandboxReadiness(data){
+  const host=$('sandbox-readiness');
+  const ready=!!data.sandbox_host_ready;
+  host.innerHTML=`<div class="card-head"><div><h3>Sandbox bảo vệ Windows</h3><div class="muted">${ready?'Sẵn sàng cho boot hiện tại':'Cần chuẩn bị sau khi Windows khởi động lại'}</div></div><span class="chip">${ready?'READY':'ACTION_REQUIRED'}</span></div><p class="muted">${esc(data.sandbox_detail||'')}</p>${ready?'':`<div class="actions"><button type="button" class="primary" data-sandbox-prepare>Chuẩn bị sandbox</button></div><p class="muted" style="font-size:12px;margin-top:8px">Windows sẽ hiện UAC. Chỉ cần chọn Yes; MAR tự kiểm tra lại, không cần mở terminal.</p>`}`;
+  const btn=host.querySelector('[data-sandbox-prepare]');
+  if(btn) btn.addEventListener('click',async()=>{const label=btn.textContent;btn.disabled=true;btn.textContent='Đang chờ Windows UAC…';try{await api('/api/runtime/sandbox/prepare',{method:'POST',body:'{}'});await loadRuntime();}catch(err){alert(err.message);btn.disabled=false;btn.textContent=label;}});
+}
+
 function renderConnections(items){
   const host=$('connection-list'); host.innerHTML='';
   for(const c of items){

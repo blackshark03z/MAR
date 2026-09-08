@@ -57,6 +57,11 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 		apiKeyEnv:       "MAR_OWNER_UI_TEST_KEY",
 		model:           "test-model",
 		reasoning:       "high",
+		executable:      "mar.exe",
+		dataRoot:        t.TempDir(),
+		sandboxCheck: func(context.Context, string, string) (bool, string) {
+			return true, "prepared"
+		},
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
 	req.Host = "127.0.0.1:8787"
@@ -229,6 +234,7 @@ func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
 		{name: "missing token project add", method: http.MethodPost, path: "/api/projects", body: `{"root":"D:\\\\MAR"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token policy", method: http.MethodPost, path: "/api/projects/mar/policy", body: `{"local_file_write":true,"local_git_write":true}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token feedback", method: http.MethodPost, path: "/api/tasks/task-ui-test/feedback", body: `{"verdict":"COMMENT","message":"note"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
+		{name: "missing token sandbox prepare", method: http.MethodPost, path: "/api/runtime/sandbox/prepare", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token web bridge start", method: http.MethodPost, path: "/api/connections/web-bridge/start", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 	}
 	for _, tc := range tests {
@@ -303,6 +309,45 @@ func TestOwnerUIWebBridgeStartStopUsesSameOriginSessionBoundary(t *testing.T) {
 	stop := post("/api/connections/web-bridge/stop")
 	if stop.Code != http.StatusOK || !stopped.Load() || strings.Contains(stop.Body.String(), "public_url\":\"http") {
 		t.Fatalf("stop bridge did not revoke public URL: status=%d stopped=%v body=%s", stop.Code, stopped.Load(), stop.Body.String())
+	}
+}
+
+func TestOwnerUISandboxPreparationUsesUACHelperAndRechecksReadiness(t *testing.T) {
+	root := t.TempDir()
+	exe := filepath.Join(root, "mar.exe")
+	called := false
+	checked := false
+	backend := &ownerUIBackend{
+		executable:   exe,
+		dataRoot:     filepath.Join(root, "data"),
+		sessionToken: "test-owner-token",
+		sandboxPrepare: func(_ context.Context, gotExe, workspace string) error {
+			called = true
+			if gotExe != exe || workspace != filepath.Join(root, "data", "sandbox-host-probe") {
+				t.Fatalf("unexpected preparation target exe=%q workspace=%q", gotExe, workspace)
+			}
+			return nil
+		},
+		sandboxCheck: func(_ context.Context, gotExe, workspace string) (bool, string) {
+			checked = true
+			if gotExe != exe || workspace != filepath.Join(root, "data", "sandbox-host-probe") {
+				t.Fatalf("unexpected readiness target exe=%q workspace=%q", gotExe, workspace)
+			}
+			return true, "prepared"
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/runtime/sandbox/prepare", strings.NewReader(`{}`))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if !called || !checked {
+		t.Fatalf("sandbox preparation lifecycle incomplete: called=%v checked=%v", called, checked)
+	}
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"sandbox_host_ready":true`) {
+		t.Fatalf("unexpected sandbox prepare response %d: %s", rec.Code, rec.Body.String())
 	}
 }
 

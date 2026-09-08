@@ -59,6 +59,8 @@ type ownerUIBackend struct {
 	maxWorkers      int
 	sessionToken    string
 	bridge          *remoteBridgeManager
+	sandboxPrepare  func(context.Context, string, string) error
+	sandboxCheck    func(context.Context, string, string) (bool, string)
 }
 
 type ownerProjectView struct {
@@ -197,6 +199,8 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		goPath:          opts.GoPath,
 		maxWorkers:      opts.MaxWorkers,
 		sessionToken:    newOwnerUIID("session"),
+		sandboxPrepare:  runElevatedSandboxPrepare,
+		sandboxCheck:    checkSandboxHostReadiness,
 	}
 	backend.bridge = newRemoteBridgeManager(ctx, backend.svc, opts.DataRoot)
 	defer backend.bridge.Close()
@@ -255,6 +259,7 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", b.serveIndex)
 	mux.HandleFunc("GET /api/runtime", b.serveRuntime)
+	mux.HandleFunc("POST /api/runtime/sandbox/prepare", b.prepareSandboxHost)
 	mux.HandleFunc("POST /api/connections/web-bridge/start", b.startWebBridge)
 	mux.HandleFunc("POST /api/connections/web-bridge/stop", b.stopWebBridge)
 	mux.HandleFunc("POST /api/connections/claude-desktop/package", b.downloadClaudeDesktopPackage)
@@ -396,9 +401,66 @@ func (b *ownerUIBackend) currentBridgeState() remoteBridgeState {
 	return b.bridge.State()
 }
 
-func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
+func (b *ownerUIBackend) sandboxProbeWorkspace() string {
+	return filepath.Join(b.dataRoot, "sandbox-host-probe")
+}
+
+func checkSandboxHostReadiness(ctx context.Context, executable, workspace string) (bool, string) {
+	cmd := exec.CommandContext(ctx, executable, "sandbox-host-check", "-workspace", workspace)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			message = err.Error()
+		}
+		return false, message
+	}
+	return true, "Windows sandbox host is prepared for this boot."
+}
+
+func (b *ownerUIBackend) sandboxReadiness(ctx context.Context) (bool, string) {
+	workspace := b.sandboxProbeWorkspace()
+	if strings.TrimSpace(b.executable) == "" || strings.TrimSpace(b.dataRoot) == "" {
+		return false, "Sandbox readiness is unavailable until MAR runtime paths are initialized."
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return false, "Create sandbox probe directory: " + err.Error()
+	}
+	check := b.sandboxCheck
+	if check == nil {
+		check = checkSandboxHostReadiness
+	}
+	return check(ctx, b.executable, workspace)
+}
+
+func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Request) {
+	if b.sandboxPrepare == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("sandbox preparation helper is unavailable"))
+		return
+	}
+	workspace := b.sandboxProbeWorkspace()
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	prepareCtx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	if err := b.sandboxPrepare(prepareCtx, b.executable, workspace); err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	ready, detail := b.sandboxReadiness(r.Context())
+	if !ready {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("sandbox preparation returned without readiness: "+detail))
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"sandbox_host_ready": true, "detail": detail})
+}
+
+func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	bridge := b.currentBridgeState()
+	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
 		switch bridge.Status {
@@ -415,6 +477,9 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		}
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
+	}
+	if !sandboxReady {
+		nextAction = "Windows sandbox protection needs preparation for this boot before MAR can run coding workers. Use Prepare sandbox in Connections and approve the Windows UAC prompt."
 	}
 	stdioArgs := b.webStdioArgs()
 	remoteStatus := bridge.Status
@@ -440,6 +505,9 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		"web_brain_requires_mcp_client": b.brainMode == "web",
 		"brain_next_action":             nextAction,
 		"remote_bridge":                 bridge,
+		"sandbox_host_ready":            sandboxReady,
+		"sandbox_detail":                sandboxDetail,
+		"sandbox_prepare_action":        !sandboxReady,
 		"connections":                   connections,
 	})
 }
