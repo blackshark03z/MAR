@@ -1,182 +1,96 @@
 # MAR — Current Tech-Lead Handoff
 
 **Architecture:** FROZEN
+
 **Branch:** `master`
-**Verified Slice 016 implementation HEAD:** `a0c09066f7deb68ef22acd34ec2d4450249cecbf`
-**Current pushed base HEAD:** `f83506b00938875ae560655ddd32633278897b57`
-**V1 candidate:** committed locally on current `master` (not yet pushed): durable Claude Web + ChatGPT Web connector profiles, independent secret paths/telemetry, stable/temporary modes, copy/rotate UX, plus bounded `project_read` for simple file inspection without an owner-authored Goal Contract. Full regression + vet + candidate build + diff check PASS; live Web-client reconnect/owner acceptance pending.
 
-Git + frozen docs + this checkpoint are continuity truth. Chat history is disposable working memory.
+**V1 stable implementation checkpoint:** `e4b1630740defce67bb7cc2ab379870f798bc411`
 
-## Complete
+**Project-context checkpoint:** `bc0ae694b8f9f382a419d4ab08676e0d13bd7b1b`
 
-- 001 Durable Task Kernel — `c778a4a`
-- 002 Execution Attempt & Logical Fencing — `7753c8e`
-- 003 Windows Process Supervisor / Physical Fencing — `c5fc013`
-- 004 Resource Governor — `2aec14a`
-- 005 Isolated Workspace Manager — `2efbcb8`
-- 006 Durable Fair Scheduler — `ba9db93`
-- 007 Side-Effect Ledger / T15 — `e31942c`
-- 008 Model Gateway — `1af96dc`
-- 009 Coding ACI / Tool Runtime — `761376f`
-- 010 Windows Worker Sandbox — `06210a4`
-- 011 Minimal Context Engine — `1689cd2`
-- 012 Autonomous Agent Loop — `c1924e2`
-- 013 Semantic Checkpoint + Resume — `432a5c8`
-- 014 Verification / Result Contract — `e65f748`
-- 015 MCP Control Surface — `e8bb5b9`
+**Starting checkpoint for this stabilization pass:** `764a5648e8a19a48dbd864bc6b43cbbacd1e0d4f`
 
-## Current state
+**Remote state:** local `master` is ahead of `origin/master`; nothing was pushed or deployed.
 
-Repo implementation is verified through **Slice 016 technical self-hosting acceptance** at `a0c0906`. Frozen T1–T17 behavioral acceptance is complete and the repository-wide technical sweep is clean. MAR remains **PENDING OWNER REAL-USE ACCEPTANCE** and must not be claimed `SELF_HOSTING_READY` until owner real-use plus live baseline metrics pass.
+Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
-T16 integration checkpoint: `81c0042` — durable `integration_attempt`, serialized expected-head CAS, deterministic pre/post-CAS crash recovery, stale-evidence/base-drift blocking, and explicit integration-result integrity preservation.
+## Current verdict — 2026-09-08
 
-Self-hosting runtime checkpoint: `d0b3290` — real worker process boundary, daemon/preflight/scheduler orchestration, cancellation watcher, fail-closed restart recovery, portable-Go sandbox grants/shared module cache, MCP runtime wiring, and end-to-end MCP→worker→verification→integration execution.
+`BLOCKED`, not `MAR_V1_STABLE` yet.
 
-Latest repository-wide verification on the Slice 016 runtime checkpoint:
-- `go test -count=1 -timeout 180s ./...`: PASS with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp`
+The repository implementation and full regression are clean. The remaining blockers are real host/owner gates:
+
+1. The machine does not currently have `tunnel-client`; no real OpenAI Doctor/run/readiness or ChatGPT discovery can be claimed.
+2. A real `tunnel_id`, its Platform/ChatGPT workspace association, Tunnels Read + Use permission, and the runtime `CONTROL_PLANE_API_KEY` still require Owner configuration.
+3. Windows sandbox preparation currently fails closed with `HRESULT 0x80070070`; C: has approximately 0.29 GiB free, below MAR's hard disk reserve. Do not weaken the sandbox/resource boundary.
+4. Owner real-use acceptance has not happened. Engineering tests and rendered UI evidence are not `PRODUCT_ACCEPTED` or `SELF_HOSTING_READY`.
+
+## Completed in this pass
+
+- Reconciled the existing project-context slice and committed it at `bc0ae69`.
+- Added schema v13 singleton OpenAI tunnel configuration. It persists tunnel identity, profile, credential environment-variable name, optional client/admin paths, and desired-running state; it never persists secret values.
+- Added one dedicated OpenAI Secure MCP Tunnel manager around the existing MCP backend. The private MCP target listens only on loopback and the manager runs official `init -> doctor --explain -> run` lifecycle steps.
+- Added bounded owned-process Start/Stop/Restart, concurrent Stop-during-Start cancellation, crash detection, restart reconciliation, output redaction, admin `/healthz` and `/readyz` probing, and real MCP-activity telemetry.
+- Retired the experimental ChatGPT public Web-bridge route from runtime authority. The existing public HTTPS/Quick Tunnel manager is Claude-only; legacy `chatgpt-web` database data is ignored but retained for backward audit data.
+- Reworked **Kết nối AI** into separate GPT and Claude cards with independent state, identifier, copy, lifecycle actions, last activity, errors, and collapsed diagnostics.
+- Updated `README.md` with the official OpenAI setup/recovery flow and kept Claude instructions separate.
+
+## Verification evidence
+
+Executed with `TEMP/TMP=D:\MAR\.mar\runtime\testtmp` because C: is below MAR's disk reserve:
+
 - `go vet ./...`: PASS
-- Windows `go build ./cmd/mar`: PASS
+- `go build -o D:\MAR\.mar\runtime\mar-v1-stable.exe ./cmd/mar`: PASS
+- `go test -p 1 -count=1 -timeout 180s ./...`: PASS
+- targeted store/MCP/owner UI/tunnel/remote-bridge tests: PASS
+- owner UI JavaScript syntax check: PASS
 - `git diff --check`: PASS
-- durable verification/result schema + migration: PASS
-- candidate sealing is effect-ledger reconciled and idempotent after crash/retry: PASS
-- candidate reconciliation proves authorized workspace-state bytes, not only parent/message/path identity: PASS
-- `completed_candidate` cannot directly produce technical VERIFIED: PASS
-- stale `attempt_id/run_epoch` cannot publish verification/result: PASS
-- verification evidence is bound to Goal hash, base revision, candidate revision, profile hash and environment/toolchain identity: PASS
-- candidate/profile/environment drift invalidates evidence freshness: PASS
-- tracked and untracked workspace drift invalidates evidence freshness: PASS
-- failed verification cannot become VERIFIED and records explicit unresolved risk: PASS
-- evidence/result integrity tamper is rejected: PASS
-- durable Goal Contract/profile/acceptance identity is revalidated by the store before VERIFIED publication: PASS
-- result/evidence survive SQLite close/reopen with valid integrity: PASS
-- official MCP Go SDK stdio server: PASS
-- Slice 015 seven-tool MCP surface: historical PASS; current V1 candidate exposes exactly `submit/status/steer/input/cancel/result/inspect/brain_turn/brain_respond/project_read`: targeted MCP tests PASS
-- `project_read` is a bounded read-only owner/project inspection path, not a worker filesystem primitive: it requires a real file identity, infers project when unambiguous, requires no `base_revision`, rejects traversal/symlink escape, rejects binary/non-UTF-8 files, and caps reads at 512 KiB: PASS
-- low-level worker mutation/shell primitives (`read_file`, `write_file`, `run_shell`, `run_command`) remain absent from the public MCP surface: PASS
-- durable `task_controls` schema/migration v8: PASS
-- task control stream is monotonic, idempotent, integrity-bound and survives SQLite reopen: PASS
-- control tamper is rejected: PASS
-- concurrent clients append to one SQLite-backed coordination truth: PASS
-- steering cannot rewrite the immutable Goal Contract: PASS
-- `steer(kind=cancel)` uses the same authoritative cancellation path as `cancel`: PASS
-- `input` requires `INPUT_REQUIRED` + current ACTIVE attempt and resumes atomically: PASS
-- running cancellation logical-fences before final task cancellation: PASS
-- final cancellation is rejected until physical termination is confirmed: PASS
-- safe pre-attempt cancellation finalizes immediately: PASS
-- durable integration schema/migration v9: PASS
-- integration attempt identity/integrity survives SQLite reopen: PASS
-- PREPARED/DISPATCHED integration is serialized per project in the V1 daemon process: PASS
-- authoritative integration uses `git update-ref <ref> <candidate> <expected_head>` CAS semantics: PASS
-- crash before CAS deterministically advances exactly once and finalizes: PASS
-- crash after CAS but before durable finalize reconciles without a second ref advance: PASS
-- authoritative base drift blocks integration before an attempt is created: PASS
-- verification that becomes stale before integration dispatch is blocked before ref mutation: PASS
-- integration result cloning preserves explicit empty-array identity required by `TaskResult` integrity: PASS
-- worker runs in a separately killable Windows Job Object process tree via the internal `worker-run` protocol: PASS
-- worker RPC is bounded to attempt authority + semantic checkpoint operations and rejects task/attempt/epoch escape: PASS
-- abrupt worker exit returns no false success while preserving physical-termination proof when Windows confirms zero active processes: PASS
-- daemon startup fail-closes orphaned/unproven attempts into recovery-required blocking without admitting a replacement mutable worker: PASS
-- daemon startup recovery deduplicates each task within one reconciliation pass: PASS
-- `mcp-stdio` now runs the bounded MCP control surface and durable daemon runtime over one SQLite coordination truth: PASS
-- client stdio disconnect drains already-active bounded workers instead of treating disconnect as authority to kill mutation-capable work: PASS
-- portable Go is granted explicitly to the LPAC sandbox; shared Go module cache is read-only granted while build/tmp caches remain task-local: PASS
-- ACI command `cwd="."` correctly resolves to workspace root while `..`/absolute escape remains rejected: PASS
-- real E2E test `TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate` proves MCP submit → preflight → resource admission → isolated worktree → real worker child → model/tool loop → candidate seal → `go test/vet/build` → physical termination → serialized integration → authoritative project update: PASS
-- E2E candidate changed only the requested `marker.txt`; final task state `COMPLETE`; final result `VERIFIED` with `integration_status=INTEGRATED`: PASS
+- changed-file credential-pattern scan: PASS after removing key-shaped test fixtures
+- candidate binary SHA-256: `43D371F28B9F82BA48EDC8DFE0CCA5C47876F1E1C5BAF02D06F9554DA8A81B87`
 
-`VerificationEvidence` and `TaskResult` are durable technical truth. The MCP edge is now a bounded task control plane over that durable kernel; it is not the coding inner loop and owns no independent coordination truth.
+One isolated acceptance run initially remained in `WAITING_RESOURCE`. This was not a code regression: its temporary data root was on C:, which had only about 0.29 GiB free against the frozen 2 GiB host reserve. The same test and the full suite passed when `TEMP/TMP` pointed to D: (about 23.26 GiB free). This is positive fail-closed resource evidence.
 
-MAR as a product is **not** yet `SELF_HOSTING_READY`.
+## Rendered owner-surface review
 
-## Latest connector checkpoint — 2026-09-08
+The built candidate was run on isolated state at `127.0.0.1:8898`; the existing owner runtime was not modified.
 
-- Current live owner UAT on `127.0.0.1:8787` is still the pre-split binary. It uses one shared Web-bridge telemetry stream, so Claude traffic can make both `claude-web` and `chatgpt-web` appear CONNECTED. Treat that GPT status as a legacy false positive, not proof of a ChatGPT MCP session.
-- A fresh non-disruptive candidate sidecar is live on `127.0.0.1:8897` from the current lightweight-read candidate, against the owner-UAT DB/data root. Its Quick Tunnel is started; Claude and ChatGPT have distinct MCP URLs and both correctly report `LINK_READY` until each client sends real traffic. Legacy `8787` remains the live pre-split Claude path so the existing Claude session is not interrupted during owner cutover; do not treat its shared GPT status as proof of a GPT session.
-- Candidate state adds durable schema v12 `remote_connector_profiles` for separate Claude Web and ChatGPT Web capability paths. Each connector keeps its own secret token, preferred mode, stable base, telemetry, health state, request count and last-seen time.
-- Console now renders independent Claude/GPT cards with stable/temporary mode switching, saved stable HTTPS base, active MCP URL copy, secret-link rotation/revocation, route health and realtime MCP traffic status. Polling updates reuse the existing card and do not overwrite a mode/base field while the owner is actively editing it.
-- Stable mode is intentionally honest: MAR preserves the connector token across restart, but the public base must be a persistent HTTPS route owned by the user/environment. Quick Tunnel remains explicitly temporary and its hostname may change after restart. A one-time connector reconnect is expected when cutting over from the legacy Quick Tunnel.
-- Verification completed on the current local connector candidate: targeted `mar/cmd/mar` tests PASS; full repository `go test ./...` PASS; `go vet ./...` PASS; build PASS; `git diff --check` PASS; owner UI JavaScript syntax PASS; candidate HTTP smoke on an isolated DB confirmed exactly two Web connector rows and the expected stable/copy/rotate/realtime controls.
+- Two primary cards are visible together on desktop and reflow to one column at narrow width without horizontal overflow: PASS.
+- GPT and Claude lifecycle, identifier, telemetry, and errors remain independent: PASS.
+- Missing `tunnel-client` appears on the GPT card with an install/recovery action; it never reports Connected: PASS.
+- Missing `cloudflared` appears only on the Claude card; it does not contaminate GPT status: PASS.
+- Tunnel ID copy interaction gives visible `Đã sao chép` feedback: PASS.
+- Owner real-use/acceptance: PENDING OWNER.
 
-## Latest owner real-use defect — lightweight read routing
+## OpenAI Secure MCP Tunnel owner steps
 
-- Owner test through Claude Web exposed a product gap: asking MAR to perform a tiny read-only action caused the Web client to request `project_id` and `base_revision` and effectively ask the owner to author a coding Goal Contract. That is incorrect product routing for a simple inspection.
-- Fix: public MCP now has one bounded `project_read` convenience tool. It reads UTF-8 text only from registered project roots, never creates a task, never grants write/network/Git authority, and does not require `base_revision`.
-- Project resolution is owner-light: an absolute path resolves to the registered project containing it; a single registered project is automatic; with multiple projects a relative path is inferred if it exists in exactly one project. The Web client should ask the owner only when the file itself or remaining project choice is genuinely ambiguous.
-- `submit` tool guidance now explicitly routes coding/mutation work to Goal Contracts and routes simple read-only inspection to `project_read`, so the Web client should no longer suggest bypassing MAR for this normal case.
-- Tests added for no-Goal-Contract read, unique-project inference, ambiguous-project handling, traversal rejection, remote HTTP tool exposure, and preservation of the private low-level worker primitive boundary. Targeted tests PASS; full repository test/vet/build/diff-check PASS.
+1. Free enough space on C: for Windows/AppContainer operations, then run the existing **Chuẩn bị sandbox** owner flow and confirm `sandbox-host-check` passes.
+2. In OpenAI Platform tunnel settings, create/select a tunnel and associate the intended Platform organization and ChatGPT workspace. Ensure the operator has Tunnels Read + Use.
+3. Install the latest official `tunnel-client`, either at `<data-root>\runtime\tunnel-client.exe`, on `PATH`, or at the absolute path selected in the GPT card.
+4. Set `CONTROL_PLANE_API_KEY` in the MAR process environment. Do not paste or store its value in MAR configuration.
+5. Open **Kết nối AI**, save the real `tunnel_id`, run **Chẩn đoán**, then start the GPT tunnel.
+6. Confirm fresh health/readiness and select or paste that tunnel in the supported ChatGPT developer-mode app connection screen.
+7. Execute one bounded real Goal, inspect durable result/evidence, and explicitly accept or reject the Owner journey.
 
 ## Next gate
 
-`HOST_SANDBOX_PREP -> FINAL_V1_REGRESSION -> OWNER_REAL_USE_ACCEPTANCE`
+`HOST_STORAGE_RECOVERY -> HOST_SANDBOX_PREP -> OPENAI_TUNNEL_DOCTOR_RUN -> CHATGPT_DISCOVERY -> REAL_BOUNDED_GOAL -> OWNER_REAL_USE_ACCEPTANCE`
 
-Current host prerequisite: Windows reset the AppContainer NUL-device DACL after boot. `sandbox-host-check` currently fails closed and `sandbox-host-prepare` requires an elevated Administrator terminal. Do not weaken `SelfHostingSafe` to bypass this gate.
+Do not claim `MAR_V1_STABLE`, `PRODUCT_ACCEPTED`, or `SELF_HOSTING_READY` until every gate above passes. Do not add another GPT transport or bypass the frozen resource/sandbox policy.
 
-After host preparation passes, rerun T7/real-worker/Web-brain E2E and the full sequential repository sweep. Then run one real bounded Goal through GPT-5.6 Sol Web brain mode, inspect durable result/evidence, and complete UX1-UX7 owner acceptance. No further architecture or retrieval work is planned before this gate.
+## Frozen boundaries — do not reopen without concrete evidence
 
-Frozen requirements:
-- **T16 integration lane implementation: CLOSED at `81c0042`; retain it as a regression boundary while completing Slice 016.**
-- prove the public MCP workflow reaches the existing autonomous worker without turning MCP into the inner coding loop;
-- prove durable steering/input controls are consumed by the active/replacement runtime while Goal Contract authority remains immutable;
-- prove cancellation reaches graceful interruption/contained process-tree termination and leaves zero orphan mutation-capable children (T10);
-- preserve logical fencing + confirmed physical termination before mutable replacement (T14);
-- preserve crash reconciliation/no blind duplicate local side effects (T15);
-- close and verify serialized authoritative integration with durable `expected_head` validation, evidence identity and deterministic crash recovery (T16); if implementation is missing, treat that as a Slice 016 implementation defect rather than bypassing integration;
-- reject stale verification after base/candidate/profile/environment drift, including base-branch drift (T12);
-- exercise client disconnect, worker crash and MAR restart recovery without false completion or lost durable state (T7-T9);
-- exercise concurrency/fairness/resource/disk-pressure behavior required by T5, T6, T11 and T17;
-- surface semantic integration conflicts rather than silently integrating incompatible goals (T13);
-- execute the frozen T1-T17 acceptance suite and collect required resource/workflow metrics;
-- perform owner real-use acceptance: real project -> bounded Goal -> autonomous execution -> result/evidence inspection -> integrate or reject;
-- do not claim `SELF_HOSTING_READY` until all mandatory hard acceptance conditions and owner acceptance pass.
+- MAR V1 frozen architecture is canonical only under `docs/architecture/MAR_V1_Architecture_FROZEN/`.
+- MCP is the control plane, not the coding inner loop.
+- SQLite is the durable coordination truth.
+- One mutable task owns one isolated workspace.
+- Logical fencing and physical process termination remain separate proofs.
+- Worker authority remains OS-enforced and weaker than daemon authority.
+- CPU/RAM/disk/process bounds and serialized authoritative integration remain mandatory.
+- Ambiguous side effects reconcile before retry.
+- Verification evidence remains revision/profile/environment bound.
 
-Slice 016 may add the missing integration/runtime glue and benchmark harness required to satisfy these frozen acceptance conditions, but must not redesign the frozen architecture.
+## Environment notes
 
-## Bootstrap milestone
-
-`MAR_BOOTSTRAP_STABLE -> SELF_HOSTING_READY`
-
-Remaining bootstrap implementation slices: **NONE**.
-
-Remaining gates:
-- elevated Windows sandbox-host preparation for the current boot;
-- final runtime/full-repository regression on the V1 candidate;
-- owner real-use UX1-UX7 + live baseline metrics.
-
-After that gate passes, MAR becomes the primary coding worker for continuing MAR V1 development. ChatCode remains fallback/inspection/emergency repair.
-
-## Frozen boundaries — do not reopen without evidence
-
-- MAR V1 frozen architecture
-- single owner / single machine
-- MCP is control plane, not inner loop
-- one mutable task = one isolated workspace
-- logical fencing separated from physical process containment
-- SQLite is durable coordination truth
-- hard CPU/RAM/disk/process envelope
-- serialized authoritative integration
-- uncertain side effects reconcile before retry
-- worker authority is OS-enforced and strictly weaker than daemon authority
-- Project Brain V1 is frozen at deterministic bounded BM25F-style relevance + path/symbol + dependency graph + Personalized PageRank + RRF; vector/embedding infrastructure is post-V1 only if measured evidence requires it
-- live model cognition, transcript artifacts and durable semantic checkpoints are distinct state layers
-- verification evidence is revision/profile/environment bound and supersedes model self-assertion
-
-## Session rotation protocol
-
-A new Tech-Lead chat should:
-1. connect ChatCode;
-2. select project `MAR`;
-3. read this file;
-4. run `git_status`;
-5. inspect only the frozen docs and implementation files relevant to the next slice;
-6. continue from the recorded verified HEAD.
-
-Do not require replay of previous chat history.
-
-## Known environment limitations / host prerequisite
-
-- Go race detector is currently unavailable because the host C compiler lacks required 64-bit support. This is a host toolchain limitation, not a passing race result.
-- Windows LPAC self-hosting commands require the host NUL-device preparation from Slice 010. Windows resets that device security descriptor on reboot; `mar sandbox-host-check` must pass before the executor may report `ENFORCED_SANDBOX`, and `mar sandbox-host-prepare` requires owner/admin elevation when preparation is needed.
-- The Windows package inventory reports Go 1.27.0, but the normal installed `go.exe` was missing during Slice 014 validation. Slice 014 was validated with a hash-verified portable Go 1.27.0 toolchain kept under `D:\MAR\.mar\runtime`; if `go` is absent from PATH, use/re-locate that D:-hosted toolchain rather than weakening validation.
-- C: remains nearly full. Full validation should keep `TEMP/TMP=D:\MAR\.mar\runtime\testtmp` until C: is cleaned; do not weaken or skip tests to work around storage pressure.
+- Use the hash-verified portable Go under `D:\MAR\.mar\runtime\go-portable` if Go is unavailable from PATH.
+- Keep full validation temporary files on D: until C: is safely recovered.
+- The Go race detector remains unavailable because the installed host C compiler lacks required 64-bit support; this is an environment limitation, not a passing race result.
