@@ -31,6 +31,8 @@ The real Web journey is still pending. Owner configuration for OpenAI Secure MCP
 
 Owner selected **MCP LINK** as the temporary/current GPT path instead of requiring OpenAI Secure MCP Tunnel. The existing hardened Streamable HTTP bridge now treats `chatgpt-web` and `claude-web` as peer connector profiles with independent capability URLs, stable/temporary settings, secret-link rotation and telemetry. The public Quick Tunnel process may be shared infrastructure, but traffic/state cannot promote the other connector. Secure MCP Tunnel implementation remains intact as an optional advanced/future path.
 
+Post-commit release verification at `fc668f1` exposed one T9 acceptance-test false negative: `TestAcceptanceT9ActualDaemonCrashReconcilesWithoutFalseCompletion` ended with an empty marker after the daemon/process tree was killed. The helper rewrote the marker with `os.WriteFile` every 20 ms, so kill could land after truncate and before write, producing `""` even when containment succeeded. The production recovery path was not changed. T9 passed 10/10 isolated before the test change; the helper was then hardened to fixed-width in-place writes that never truncate after the first observed marker, and T9 passed 30/30. A new full release gate is required on the resulting commit before any final engineering claim.
+
 ### Takeover and completed corrections
 
 - Started at `287df0014c2be0e1c844092aa78c17629cc7ec87` on `master`. The sole dirty file was this handoff. Its installation/provenance, recovered-storage, and UI-discovery notes are retained below; no reset, stash, clean, destructive checkout, push, or deploy was performed.

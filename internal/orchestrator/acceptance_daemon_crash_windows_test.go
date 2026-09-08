@@ -170,9 +170,17 @@ func TestAcceptanceT9WorkerSleepHelper(t *testing.T) {
 		return
 	}
 	marker := os.Getenv("MAR_T9_WORKER_MARKER")
+	f, err := os.OpenFile(marker, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
 	for i := 1; ; i++ {
-		if err := os.WriteFile(marker, []byte(strconv.Itoa(i)), 0o600); err != nil {
-			t.Fatal(err)
+		value := strconv.Itoa(i)
+		value = strings.Repeat("0", 20-len(value)) + value
+		n, err := f.WriteAt([]byte(value), 0)
+		if err != nil || n != len(value) {
+			t.Fatalf("write worker marker: n=%d err=%v", n, err)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
