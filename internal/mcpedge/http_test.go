@@ -19,6 +19,7 @@ func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	var mu sync.Mutex
 	var methods []string
+	var sessionIDs []string
 	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{
 		PathToken: token,
 		Observe: func(event RemoteHTTPEvent) {
@@ -26,6 +27,9 @@ func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
 			defer mu.Unlock()
 			if event.JSONRPCMethod != "" {
 				methods = append(methods, event.JSONRPCMethod)
+			}
+			if event.SessionID != "" {
+				sessionIDs = append(sessionIDs, event.SessionID)
 			}
 		},
 	})
@@ -67,6 +71,9 @@ func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
 	defer mu.Unlock()
 	if !containsRemoteMethod(methods, "initialize") || !containsRemoteMethod(methods, "tools/list") {
 		t.Fatalf("remote MCP telemetry missed initialization/list-tools: %v", methods)
+	}
+	if len(sessionIDs) == 0 {
+		t.Fatalf("stateful MCP telemetry did not observe an authoritative session id: methods=%v", methods)
 	}
 }
 

@@ -19,6 +19,9 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+
+	"mar/internal/mcpedge"
+
 	"mar/internal/service"
 	"mar/internal/store"
 )
@@ -87,6 +90,143 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "super-secret-value") {
 		t.Fatal("runtime response leaked provider API key value")
+	}
+}
+
+func TestOwnerUIUsageAggregationSeparatesTimeWindowsAndCoverage(t *testing.T) {
+	loc := time.FixedZone("owner-local", 7*60*60)
+	now := time.Date(2026, 9, 9, 18, 0, 0, 0, loc)
+	results := []domain.TaskResult{
+		{CreatedAt: now.Add(-2 * time.Hour), ResourceSummary: domain.ResourceSummary{ModelInputTokens: 100, ModelOutputTokens: 40, ModelTotalTokens: 140}},
+		{CreatedAt: now.AddDate(0, 0, -3), ResourceSummary: domain.ResourceSummary{ModelInputTokens: 200, ModelOutputTokens: 80, ModelTotalTokens: 280}},
+		{CreatedAt: now.AddDate(0, 0, -10), ResourceSummary: domain.ResourceSummary{}},
+	}
+	view := buildOwnerUsage(results, now)
+	if view.Today.TotalTokens != 140 || view.Today.ResultsWithTokenData != 1 {
+		t.Fatalf("unexpected today usage: %+v", view.Today)
+	}
+	if view.Week.TotalTokens != 140 || view.Week.Results != 1 {
+		t.Fatalf("unexpected calendar-week usage: %+v", view.Week)
+	}
+	if view.AllTime.TotalTokens != 420 || view.AllTime.ResultsWithoutTokenData != 1 || view.AllTime.Results != 3 {
+		t.Fatalf("unexpected all-time usage: %+v", view.AllTime)
+	}
+	if len(view.Daily) != 30 || view.Daily[len(view.Daily)-1].Date != "2026-09-09" {
+		t.Fatalf("unexpected daily window: %+v", view.Daily)
+	}
+	if view.MeasurementScope != "MAR_OBSERVED_DURABLE_RESULT_USAGE" || view.BucketBasis != "RESULT_CREATED_AT_LOCAL" || view.ProviderAttribution != "UNAVAILABLE" {
+		t.Fatalf("usage provenance must make measurement limits explicit: %+v", view)
+	}
+}
+
+func TestOwnerUISystemAttentionUsesRealStateAndDeduplicates(t *testing.T) {
+	connections := []ownerConnectionView{
+		{ID: "openai-tunnel", Status: "CONNECTING", DesiredRunning: true, Connected: false, NextAction: "Reconnect GPT"},
+		{ID: "openai-tunnel", Status: "ERROR", DesiredRunning: true, Connected: false, LastError: "duplicate GPT observation"},
+		{ID: store.RemoteConnectorClaudeWeb, Status: "ROUTE_OFFLINE", LastError: "route health failed"},
+	}
+	items := buildOwnerSystemAttention(false, "sandbox probe failed", connections)
+	if len(items) != 3 {
+		t.Fatalf("expected sandbox + deduplicated GPT + Claude attention, got %+v", items)
+	}
+	seen := map[string]bool{}
+	for _, item := range items {
+		if seen[item.ID] {
+			t.Fatalf("duplicate attention id %q: %+v", item.ID, items)
+		}
+		seen[item.ID] = true
+		if item.View != "connections" || item.NextAction == "" {
+			t.Fatalf("attention item is not actionable: %+v", item)
+		}
+	}
+	for _, id := range []string{"sandbox", "gpt-connection", "claude-connection"} {
+		if !seen[id] {
+			t.Fatalf("missing attention item %q: %+v", id, items)
+		}
+	}
+}
+
+func TestOwnerUIUsageEndpointReturnsThirtyDayWindowOnEmptyStore(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	backend := &ownerUIBackend{db: db}
+	req := httptest.NewRequest(http.MethodGet, "/api/usage", nil)
+	req.Host = "127.0.0.1:8787"
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload ownerUsageView
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Daily) != 30 || payload.AllTime.TotalTokens != 0 || payload.AllTime.Results != 0 {
+		t.Fatalf("unexpected empty usage payload: %+v", payload)
+	}
+}
+
+func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
+	needed, severity, reason, next := ownerTaskAttentionFromState(domain.TaskInputRequired)
+	if !needed || severity != "high" || !strings.Contains(reason, "input") || next == "" {
+		t.Fatalf("input-required attention is not actionable: needed=%v severity=%q reason=%q next=%q", needed, severity, reason, next)
+	}
+	needed, severity, reason, next = ownerTaskAttentionFromResult(domain.TaskComplete, domain.TaskResult{Verdict: domain.ResultUnverified, IntegrationStatus: "NOT_APPLIED"})
+	if !needed || severity != "high" || !strings.Contains(reason, "evidence") || !strings.Contains(next, "verification") {
+		t.Fatalf("unverified-result attention is not actionable: needed=%v severity=%q reason=%q next=%q", needed, severity, reason, next)
+	}
+	needed, severity, reason, next = ownerTaskAttentionFromResult(domain.TaskComplete, domain.TaskResult{Verdict: domain.ResultVerified, IntegrationStatus: "INTEGRATED", UnresolvedRisks: []string{"owner review"}})
+	if !needed || severity != "medium" || !strings.Contains(reason, "1 unresolved") || next == "" {
+		t.Fatalf("risk attention is not actionable: needed=%v severity=%q reason=%q next=%q", needed, severity, reason, next)
+	}
+}
+
+func TestOwnerUIOperationsOverviewInformationArchitecture(t *testing.T) {
+	for _, marker := range []string{`data-view="overview" class="active" aria-current="page"`, `data-view="work">✓&nbsp; Tasks`, `data-view="projects">▣&nbsp; Workspaces`, `data-view="connections">⇄&nbsp; Connections`, `data-view="usage">◒&nbsp; Usage`, `data-view="advanced">⚙&nbsp; Diagnostics`, `id="workspace-filter"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="usage-daily-rows"`, `id="usage-coverage"`, "AI providers connected", "MAR-measured only", `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "sessions unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("operations overview contract missing %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIProjectPickerUsesBoundedHostPicker(t *testing.T) {
+	backend := &ownerUIBackend{
+		sessionToken: "test-owner-token",
+		projectPicker: func(context.Context) (string, error) {
+			return `D:\\Selected\\Workspace`, nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/projects/pick", strings.NewReader(`{}`))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `D:\\\\Selected\\\\Workspace`) {
+		t.Fatalf("unexpected picker response %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOwnerUIProjectPickerCancellationMutatesNothing(t *testing.T) {
+	backend := &ownerUIBackend{
+		sessionToken: "test-owner-token",
+		projectPicker: func(context.Context) (string, error) {
+			return "", nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/projects/pick", strings.NewReader(`{}`))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"cancelled":true`) || !strings.Contains(rec.Body.String(), `"path":""`) {
+		t.Fatalf("unexpected cancelled picker response %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -344,7 +484,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 }
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()", "card.className='card provider-card'"} {
+	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "await loadRuntime()", "card.className='card provider-card'"} {
 		if !strings.Contains(ownerUIHTML, required) {
 			t.Fatalf("Connection Hub is missing %q", required)
 		}
@@ -698,6 +838,70 @@ func ownerRuntimeConnectionContract(t *testing.T) string {
 	return rec.Body.String()
 }
 
+func TestOwnerUIStatefulSessionTelemetryUsesObservedSessionIDs(t *testing.T) {
+	manager := &remoteBridgeManager{quickBaseURL: "https://route.example.invalid", telemetry: map[string]*remoteConnectorTelemetry{store.RemoteConnectorClaudeWeb: {}}}
+	now := time.Now().UTC()
+	manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now, HTTPMethod: http.MethodPost, JSONRPCMethod: "initialize"})
+	manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now, HTTPMethod: http.MethodPost, JSONRPCMethod: "tools/list", SessionID: "session-real-1"})
+	manager.mu.Lock()
+	state := manager.connectorStateLocked(store.RemoteConnectorProfile{ID: store.RemoteConnectorClaudeWeb, PreferredMode: store.RemoteConnectorModeTemporary}, manager.telemetry[store.RemoteConnectorClaudeWeb])
+	manager.mu.Unlock()
+	if !state.ActiveSessionsAvailable || state.ActiveSessions != 1 {
+		t.Fatalf("expected one authoritative active session, got %+v", state)
+	}
+
+	manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now.Add(time.Second), HTTPMethod: http.MethodDelete, SessionID: "session-real-1"})
+	manager.mu.Lock()
+	state = manager.connectorStateLocked(store.RemoteConnectorProfile{ID: store.RemoteConnectorClaudeWeb, PreferredMode: store.RemoteConnectorModeTemporary}, manager.telemetry[store.RemoteConnectorClaudeWeb])
+	manager.mu.Unlock()
+	if !state.ActiveSessionsAvailable || state.ActiveSessions != 0 || state.Status != "IDLE" {
+		t.Fatalf("explicit session close should reconcile immediately to zero/idle: %+v", state)
+	}
+
+	manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now.Add(2 * time.Second), JSONRPCMethod: "tools/list", SessionID: "session-real-2"})
+	manager.mu.Lock()
+	manager.telemetry[store.RemoteConnectorClaudeWeb].sessions["session-real-2"] = now.Add(-mcpedge.RemoteMCPSessionTimeout - time.Second)
+	state = manager.connectorStateLocked(store.RemoteConnectorProfile{ID: store.RemoteConnectorClaudeWeb, PreferredMode: store.RemoteConnectorModeTemporary}, manager.telemetry[store.RemoteConnectorClaudeWeb])
+	manager.mu.Unlock()
+	if !state.ActiveSessionsAvailable || state.ActiveSessions != 0 {
+		t.Fatalf("expired session should reconcile to zero without losing measurement semantics: %+v", state)
+	}
+}
+
+func TestOwnerUIStatefulSessionTelemetryFailsClosedOnCardinalityOverflow(t *testing.T) {
+	manager := &remoteBridgeManager{telemetry: map[string]*remoteConnectorTelemetry{store.RemoteConnectorClaudeWeb: {}}}
+	now := time.Now().UTC()
+	for i := 0; i <= remoteSessionTelemetryLimit; i++ {
+		manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now, JSONRPCMethod: "tools/list", SessionID: fmt.Sprintf("session-%03d", i)})
+	}
+	manager.mu.Lock()
+	state := manager.connectorStateLocked(store.RemoteConnectorProfile{ID: store.RemoteConnectorClaudeWeb, PreferredMode: store.RemoteConnectorModeTemporary}, manager.telemetry[store.RemoteConnectorClaudeWeb])
+	manager.mu.Unlock()
+	if state.ActiveSessionsAvailable || state.ActiveSessions != 0 || state.ActiveSessionsReason != "CARDINALITY_LIMIT" {
+		t.Fatalf("saturated session telemetry must fail closed instead of exposing a partial count: %+v", state)
+	}
+}
+
+func TestOwnerUIStatelessGPTDoesNotInferActiveSessions(t *testing.T) {
+	body := ownerRuntimeConnectionContract(t)
+	var payload struct {
+		Connections []ownerConnectionView `json:"connections"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, connection := range payload.Connections {
+		if connection.ID != "openai-tunnel" {
+			continue
+		}
+		if connection.ActiveSessionsAvailable || connection.ActiveSessions != nil || !strings.Contains(connection.SessionCountDetail, "không suy đoán") {
+			t.Fatalf("stateless GPT session count was fabricated: %+v", connection)
+		}
+		return
+	}
+	t.Fatal("OpenAI Secure Tunnel connection missing")
+}
+
 func TestOwnerUIGPTSecureTunnelPrimary(t *testing.T) {
 	body := ownerRuntimeConnectionContract(t)
 	primary, fallback := strings.Index(body, `"id":"openai-tunnel"`), strings.Index(body, `"id":"chatgpt-web"`)
@@ -807,11 +1011,36 @@ func TestOwnerUIOpenAITunnelIdentitySurvivesRestart(t *testing.T) {
 		t.Fatalf("restart lost identity: %+v", state)
 	}
 }
+func TestOwnerUIProviderOverviewDoesNotDoubleCountGPTFallback(t *testing.T) {
+	for _, marker := range []string{"activeConnector(tunnel)?tunnel:(activeConnector(fallback)?fallback", "c.active_sessions_available===true&&Number(c.active_sessions||0)>0", "IDLE:'Idle · không có session/activity live'"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("provider aggregation truth contract missing %q", marker)
+		}
+	}
+}
+
 func TestOwnerUIConnectionUXAccessibilityContract(t *testing.T) {
-	for _, marker := range []string{":focus-visible", "min-width: 44px", "min-height: 44px", `role="status" aria-live="polite" aria-atomic="true"`, `role="alert"`, `aria-label="Thiết lập ChatGPT một lần"`} {
+	for _, marker := range []string{":focus-visible", "min-width: 44px", "min-height: 44px", "scroll-padding-top: 84px", "summary { cursor:pointer; font-weight:650; min-height:44px", ".actions a { min-height:44px", `aria-current="page"`, `role="status" aria-live="polite" aria-atomic="true"`, `role="alert"`, `aria-label="Thiết lập ChatGPT một lần"`} {
 		if !strings.Contains(ownerUIHTML, marker) {
 			t.Fatalf("accessibility contract missing %q", marker)
 		}
+	}
+}
+
+func TestOwnerUIUsageDailyBreakdownIncludesMeasuredInputOutputTotal(t *testing.T) {
+	for _, marker := range []string{`id="usage-daily-rows"`, "Input / Output theo ngày", "usageMeasuredField(day,'input_tokens')", "usageMeasuredField(day,'output_tokens')", "usageMeasuredField(day,'total_tokens')", "bucket theo durable result created_at local"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("daily usage breakdown missing %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIUsageChartsDoNotCreateDecorativeKeyboardStops(t *testing.T) {
+	if strings.Contains(ownerUIHTML, "bar.tabIndex=0") {
+		t.Fatal("non-interactive usage bars must not create dozens of keyboard stops")
+	}
+	if !strings.Contains(ownerUIHTML, "bar.setAttribute('role','img')") || !strings.Contains(ownerUIHTML, "bar.setAttribute('aria-label',bar.title)") {
+		t.Fatal("usage bars must retain accessible data semantics without becoming controls")
 	}
 }
 

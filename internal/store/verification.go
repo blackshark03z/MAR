@@ -189,6 +189,66 @@ FROM task_results WHERE task_id = ? ORDER BY version DESC LIMIT 1`, taskID)
 	return result, true, nil
 }
 
+func (s *SQLite) ListLatestTaskResults(ctx context.Context, projectID string) ([]domain.TaskResult, error) {
+	projectID = strings.TrimSpace(projectID)
+	rows, err := s.db.QueryContext(ctx, `
+SELECT tr.result_id, tr.task_id, tr.version, tr.goal_hash, tr.base_revision, tr.final_revision, tr.changed_areas_json,
+       tr.evidence_id, tr.verification_executed_json, tr.pass_fail_evidence_json, tr.unresolved_risks_json,
+       tr.integration_status, tr.workspace_disposition, tr.resource_summary_json, tr.verdict, tr.integrity_hash, tr.created_at
+FROM task_results tr
+JOIN (
+    SELECT task_id, MAX(version) AS version
+    FROM task_results
+    GROUP BY task_id
+) latest ON latest.task_id = tr.task_id AND latest.version = tr.version
+JOIN tasks t ON t.id = tr.task_id
+WHERE (? = '' OR t.project_id = ?)
+ORDER BY tr.created_at DESC`, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var results []domain.TaskResult
+	for rows.Next() {
+		var result domain.TaskResult
+		var changedJSON, verificationJSON, passFailJSON, risksJSON, resourceJSON []byte
+		var verdict, created string
+		if err := rows.Scan(&result.ID, &result.TaskID, &result.Version, &result.GoalHash, &result.BaseRevision, &result.FinalRevision,
+			&changedJSON, &result.EvidenceID, &verificationJSON, &passFailJSON, &risksJSON,
+			&result.IntegrationStatus, &result.WorkspaceDisposition, &resourceJSON, &verdict, &result.IntegrityHash, &created); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(changedJSON, &result.ChangedAreas); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(verificationJSON, &result.VerificationExecuted); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(passFailJSON, &result.PassFailEvidence); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(risksJSON, &result.UnresolvedRisks); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(resourceJSON, &result.ResourceSummary); err != nil {
+			return nil, err
+		}
+		result.Verdict = domain.ResultVerdict(verdict)
+		result.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			return nil, err
+		}
+		if !result.IntegrityValid() {
+			return nil, errors.New("latest task result integrity is invalid")
+		}
+		results = append(results, result)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
 func (s *SQLite) GetVerificationEvidence(ctx context.Context, evidenceID string) (domain.VerificationEvidence, error) {
 	row := s.db.QueryRowContext(ctx, `
 SELECT evidence_id, task_id, attempt_id, run_epoch, goal_hash, base_revision, candidate_revision,

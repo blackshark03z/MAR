@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -58,11 +59,13 @@ type ownerUIBackend struct {
 	dataRoot        string
 	goPath          string
 	maxWorkers      int
+	startedAt       time.Time
 	sessionToken    string
 	bridge          *remoteBridgeManager
 	openAITunnel    *openAITunnelManager
 	sandboxPrepare  func(context.Context, string, string) error
 	sandboxCheck    func(context.Context, string, string) (bool, string)
+	projectPicker   func(context.Context) (string, error)
 }
 
 type ownerProjectView struct {
@@ -93,62 +96,102 @@ type ownerFeedbackRequest struct {
 }
 
 type ownerTaskView struct {
-	ID                string                 `json:"id"`
-	ProjectID         string                 `json:"project_id"`
-	Goal              string                 `json:"goal"`
-	State             domain.TaskState       `json:"state"`
-	UpdatedAt         time.Time              `json:"updated_at"`
-	NeedsAttention    bool                   `json:"needs_attention"`
-	ResultVerdict     domain.ResultVerdict   `json:"result_verdict,omitempty"`
-	IntegrationStatus string                 `json:"integration_status,omitempty"`
-	CandidateRevision string                 `json:"candidate_revision,omitempty"`
-	OwnerFeedback     *domain.OwnerFeedback  `json:"owner_feedback,omitempty"`
-	Usage             domain.ResourceSummary `json:"usage"`
+	ID                  string                 `json:"id"`
+	ProjectID           string                 `json:"project_id"`
+	Goal                string                 `json:"goal"`
+	State               domain.TaskState       `json:"state"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+	NeedsAttention      bool                   `json:"needs_attention"`
+	AttentionSeverity   string                 `json:"attention_severity,omitempty"`
+	AttentionReason     string                 `json:"attention_reason,omitempty"`
+	AttentionNextAction string                 `json:"attention_next_action,omitempty"`
+	ResultVerdict       domain.ResultVerdict   `json:"result_verdict,omitempty"`
+	IntegrationStatus   string                 `json:"integration_status,omitempty"`
+	CandidateRevision   string                 `json:"candidate_revision,omitempty"`
+	OwnerFeedback       *domain.OwnerFeedback  `json:"owner_feedback,omitempty"`
+	Usage               domain.ResourceSummary `json:"usage"`
+}
+
+type ownerUsageTotals struct {
+	InputTokens             int64 `json:"input_tokens"`
+	OutputTokens            int64 `json:"output_tokens"`
+	TotalTokens             int64 `json:"total_tokens"`
+	Results                 int   `json:"results"`
+	ResultsWithTokenData    int   `json:"results_with_token_data"`
+	ResultsWithoutTokenData int   `json:"results_without_token_data"`
+}
+
+type ownerUsageDay struct {
+	Date string `json:"date"`
+	ownerUsageTotals
+}
+
+type ownerUsageView struct {
+	Today               ownerUsageTotals `json:"today"`
+	Week                ownerUsageTotals `json:"week"`
+	AllTime             ownerUsageTotals `json:"all_time"`
+	Daily               []ownerUsageDay  `json:"daily"`
+	MeasurementScope    string           `json:"measurement_scope"`
+	BucketBasis         string           `json:"bucket_basis"`
+	ProviderAttribution string           `json:"provider_attribution"`
+	UpdatedAt           time.Time        `json:"updated_at"`
 }
 
 type ownerConnectionView struct {
-	ID                 string     `json:"id"`
-	Name               string     `json:"name"`
-	Status             string     `json:"status"`
-	Transport          string     `json:"transport"`
-	Summary            string     `json:"summary"`
-	Command            string     `json:"command,omitempty"`
-	Args               []string   `json:"args,omitempty"`
-	SetupAction        string     `json:"setup_action,omitempty"`
-	ConnectionURL      string     `json:"connection_url,omitempty"`
-	StableBaseURL      string     `json:"stable_base_url,omitempty"`
-	StableURL          string     `json:"stable_url,omitempty"`
-	TemporaryURL       string     `json:"temporary_url,omitempty"`
-	PreferredMode      string     `json:"preferred_mode,omitempty"`
-	LocalTarget        string     `json:"local_target,omitempty"`
-	TemporaryLink      bool       `json:"temporary_link,omitempty"`
-	RouteReady         bool       `json:"route_ready,omitempty"`
-	Initialized        bool       `json:"initialized,omitempty"`
-	ToolsListed        bool       `json:"tools_listed,omitempty"`
-	Requests           int64      `json:"requests,omitempty"`
-	LastSeenAt         *time.Time `json:"last_seen_at,omitempty"`
-	LastHealthAt       *time.Time `json:"last_health_at,omitempty"`
-	Configured         bool       `json:"configured,omitempty"`
-	Running            bool       `json:"running,omitempty"`
-	Healthy            bool       `json:"healthy,omitempty"`
-	Ready              bool       `json:"ready,omitempty"`
-	Connected          bool       `json:"connected,omitempty"`
-	Identifier         string     `json:"identifier,omitempty"`
-	ProfileName        string     `json:"profile_name,omitempty"`
-	APIKeyEnv          string     `json:"api_key_env,omitempty"`
-	AuthConfigured     bool       `json:"auth_configured,omitempty"`
-	ClientFound        bool       `json:"client_found,omitempty"`
-	ClientPath         string     `json:"client_path,omitempty"`
-	InstallURL         string     `json:"install_url,omitempty"`
-	AdminBaseURL       string     `json:"admin_base_url,omitempty"`
-	DesiredRunning     bool       `json:"desired_running,omitempty"`
-	PID                int        `json:"pid,omitempty"`
-	ConnectedSince     *time.Time `json:"connected_since,omitempty"`
-	LastActivityAt     *time.Time `json:"last_activity_at,omitempty"`
-	LastSuccessAt      *time.Time `json:"last_success_at,omitempty"`
-	DiagnosticsSummary string     `json:"diagnostics_summary,omitempty"`
-	NextAction         string     `json:"next_action,omitempty"`
-	LastError          string     `json:"last_error,omitempty"`
+	ID                      string     `json:"id"`
+	Name                    string     `json:"name"`
+	Status                  string     `json:"status"`
+	Transport               string     `json:"transport"`
+	Summary                 string     `json:"summary"`
+	ActiveSessions          *int       `json:"active_sessions,omitempty"`
+	ActiveSessionsAvailable bool       `json:"active_sessions_available"`
+	SessionCountDetail      string     `json:"session_count_detail,omitempty"`
+	Command                 string     `json:"command,omitempty"`
+	Args                    []string   `json:"args,omitempty"`
+	SetupAction             string     `json:"setup_action,omitempty"`
+	ConnectionURL           string     `json:"connection_url,omitempty"`
+	StableBaseURL           string     `json:"stable_base_url,omitempty"`
+	StableURL               string     `json:"stable_url,omitempty"`
+	TemporaryURL            string     `json:"temporary_url,omitempty"`
+	PreferredMode           string     `json:"preferred_mode,omitempty"`
+	LocalTarget             string     `json:"local_target,omitempty"`
+	TemporaryLink           bool       `json:"temporary_link,omitempty"`
+	RouteReady              bool       `json:"route_ready,omitempty"`
+	Initialized             bool       `json:"initialized,omitempty"`
+	ToolsListed             bool       `json:"tools_listed,omitempty"`
+	Requests                int64      `json:"requests,omitempty"`
+	LastSeenAt              *time.Time `json:"last_seen_at,omitempty"`
+	LastHealthAt            *time.Time `json:"last_health_at,omitempty"`
+	Configured              bool       `json:"configured,omitempty"`
+	Running                 bool       `json:"running,omitempty"`
+	Healthy                 bool       `json:"healthy,omitempty"`
+	Ready                   bool       `json:"ready,omitempty"`
+	Connected               bool       `json:"connected,omitempty"`
+	Identifier              string     `json:"identifier,omitempty"`
+	ProfileName             string     `json:"profile_name,omitempty"`
+	APIKeyEnv               string     `json:"api_key_env,omitempty"`
+	AuthConfigured          bool       `json:"auth_configured,omitempty"`
+	ClientFound             bool       `json:"client_found,omitempty"`
+	ClientPath              string     `json:"client_path,omitempty"`
+	InstallURL              string     `json:"install_url,omitempty"`
+	AdminBaseURL            string     `json:"admin_base_url,omitempty"`
+	DesiredRunning          bool       `json:"desired_running,omitempty"`
+	PID                     int        `json:"pid,omitempty"`
+	ConnectedSince          *time.Time `json:"connected_since,omitempty"`
+	LastActivityAt          *time.Time `json:"last_activity_at,omitempty"`
+	LastSuccessAt           *time.Time `json:"last_success_at,omitempty"`
+	DiagnosticsSummary      string     `json:"diagnostics_summary,omitempty"`
+	NextAction              string     `json:"next_action,omitempty"`
+	LastError               string     `json:"last_error,omitempty"`
+}
+
+type ownerAttentionItem struct {
+	ID         string `json:"id"`
+	Severity   string `json:"severity"`
+	Title      string `json:"title"`
+	Detail     string `json:"detail,omitempty"`
+	NextAction string `json:"next_action,omitempty"`
+	View       string `json:"view"`
 }
 
 type ownerSubmitRequest struct {
@@ -244,6 +287,7 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		dataRoot:        opts.DataRoot,
 		goPath:          opts.GoPath,
 		maxWorkers:      opts.MaxWorkers,
+		startedAt:       time.Now(),
 		sessionToken:    newOwnerUIID("session"),
 		sandboxPrepare:  runElevatedSandboxPrepare,
 		sandboxCheck:    checkSandboxHostReadiness,
@@ -340,7 +384,9 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/connections/openai-tunnel/stop", b.stopOpenAITunnel)
 	mux.HandleFunc("POST /api/connections/openai-tunnel/restart", b.restartOpenAITunnel)
 	mux.HandleFunc("POST /api/connections/openai-tunnel/diagnose", b.diagnoseOpenAITunnel)
+	mux.HandleFunc("GET /api/usage", b.serveUsage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
+	mux.HandleFunc("POST /api/projects/pick", b.pickProjectFolder)
 	mux.HandleFunc("POST /api/projects", b.addProject)
 	mux.HandleFunc("POST /api/projects/{projectID}/policy", b.updateProjectPolicy)
 	mux.HandleFunc("GET /api/tasks", b.serveTasks)
@@ -861,6 +907,37 @@ func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Reque
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"sandbox_host_ready": true, "detail": detail})
 }
 
+func buildOwnerSystemAttention(sandboxReady bool, sandboxDetail string, connections []ownerConnectionView) []ownerAttentionItem {
+	items := make([]ownerAttentionItem, 0, 4)
+	seen := make(map[string]struct{}, 4)
+	add := func(item ownerAttentionItem) {
+		if _, exists := seen[item.ID]; exists {
+			return
+		}
+		seen[item.ID] = struct{}{}
+		items = append(items, item)
+	}
+	if !sandboxReady {
+		add(ownerAttentionItem{ID: "sandbox", Severity: "high", Title: "Sandbox Windows cần chuẩn bị", Detail: sandboxDetail, NextAction: "Chuẩn bị sandbox và xác nhận UAC của Windows.", View: "connections"})
+	}
+	for _, connection := range connections {
+		status := strings.ToUpper(strings.TrimSpace(connection.Status))
+		switch connection.ID {
+		case "openai-tunnel":
+			if connection.DesiredRunning && !connection.Connected {
+				add(ownerAttentionItem{ID: "gpt-connection", Severity: "high", Title: "GPT chưa kết nối theo trạng thái mong muốn", Detail: connection.LastError, NextAction: connection.NextAction, View: "connections"})
+			} else if slices.Contains([]string{"ERROR", "MISCONFIGURED", "DEGRADED"}, status) {
+				add(ownerAttentionItem{ID: "gpt-connection", Severity: "high", Title: "GPT cần kiểm tra kết nối", Detail: connection.LastError, NextAction: connection.NextAction, View: "connections"})
+			}
+		case store.RemoteConnectorClaudeWeb:
+			if slices.Contains([]string{"ERROR", "MISCONFIGURED", "DEGRADED", "ROUTE_OFFLINE", "STABLE_URL_REQUIRED", "BRIDGE_RUNTIME_MISSING"}, status) {
+				add(ownerAttentionItem{ID: "claude-connection", Severity: "medium", Title: "Claude cần kiểm tra kết nối", Detail: connection.LastError, NextAction: "Mở Kết nối để kiểm tra route và capability URL của Claude.", View: "connections"})
+			}
+		}
+	}
+	return items
+}
+
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	bridge := b.currentBridgeState()
@@ -906,14 +983,23 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			name = "GPT Server URL fallback"
 			summary = "Fallback/debug cho ChatGPT. Quick Tunnel là tạm thời và hostname có thể đổi sau restart hoặc khi tunnel được tạo lại."
 		}
-		connections = append(connections, ownerConnectionView{
+		view := ownerConnectionView{
 			ID: connector.ID, Name: name, Status: connector.Status, Transport: "streamable-http", Summary: summary,
 			ConnectionURL: connector.PublicURL, StableBaseURL: connector.StableBaseURL, StableURL: connector.StableURL,
 			TemporaryURL: connector.TemporaryURL, PreferredMode: connector.PreferredMode, LocalTarget: connector.LocalTarget,
 			TemporaryLink: connector.PreferredMode == store.RemoteConnectorModeTemporary, RouteReady: connector.RouteReady,
 			Initialized: connector.Initialized, ToolsListed: connector.ToolsListed, Requests: connector.Requests,
 			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
-		})
+			ActiveSessionsAvailable: connector.ActiveSessionsAvailable,
+		}
+		if connector.ActiveSessionsAvailable {
+			count := connector.ActiveSessions
+			view.ActiveSessions = &count
+			view.SessionCountDetail = "Đếm từ MCP session ID thật được quan sát trên stateful Streamable HTTP; session hết hạn theo timeout runtime 30 phút."
+		} else if connector.ActiveSessionsReason == "CARDINALITY_LIMIT" {
+			view.SessionCountDetail = "Session telemetry đã chạm giới hạn 256 identity trong cửa sổ 30 phút; MAR tạm ẩn số đếm thay vì công bố partial count."
+		}
+		connections = append(connections, view)
 	}
 
 	connections = append(connections, ownerConnectionView{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"})
@@ -922,10 +1008,26 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		providerStatus = "READY"
 	}
 	connections = append(connections, ownerConnectionView{ID: "provider", Name: "Autonomous provider", Status: providerStatus, Transport: "provider-api", Summary: "Provider usage is autonomous when configured. API key values are never returned by the Console."})
+	for i := range connections {
+		if !connections[i].ActiveSessionsAvailable && connections[i].SessionCountDetail == "" {
+			connections[i].SessionCountDetail = "Không có session identity/lifecycle authoritative trên transport này; MAR không suy đoán số session từ trạng thái kết nối hoặc recent activity."
+		}
+	}
+	attention := buildOwnerSystemAttention(sandboxReady, sandboxDetail, connections)
+	uptimeSeconds := int64(0)
+	if !b.startedAt.IsZero() {
+		uptimeSeconds = int64(time.Since(b.startedAt).Seconds())
+		if uptimeSeconds < 0 {
+			uptimeSeconds = 0
+		}
+	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{
 		"brain_mode":                    b.brainMode,
 		"model":                         b.model,
 		"reasoning":                     b.reasoning,
+		"max_workers":                   b.maxWorkers,
+		"started_at":                    b.startedAt,
+		"uptime_seconds":                uptimeSeconds,
 		"provider_ready":                providerReady,
 		"web_brain_requires_mcp_client": b.brainMode == "web",
 		"brain_next_action":             nextAction,
@@ -935,6 +1037,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		"sandbox_detail":                sandboxDetail,
 		"sandbox_prepare_action":        !sandboxReady,
 		"connections":                   connections,
+		"attention":                     attention,
 	})
 }
 
@@ -961,6 +1064,42 @@ func (b *ownerUIBackend) serveProjects(w http.ResponseWriter, r *http.Request) {
 		views = append(views, view)
 	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"projects": views})
+}
+
+func pickOwnerProjectFolder(ctx context.Context) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", errors.New("native workspace folder picker is available on Windows only")
+	}
+	const script = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Chọn workspace Git repository'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $d.SelectedPath }`
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-STA", "-Command", script)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("open Windows workspace folder picker: %w", err)
+	}
+	selected := strings.TrimSpace(string(out))
+	if selected == "" {
+		return "", nil
+	}
+	absolute, err := filepath.Abs(selected)
+	if err != nil {
+		return "", fmt.Errorf("resolve selected workspace path: %w", err)
+	}
+	return filepath.Clean(absolute), nil
+}
+
+func (b *ownerUIBackend) pickProjectFolder(w http.ResponseWriter, r *http.Request) {
+	picker := b.projectPicker
+	if picker == nil {
+		picker = pickOwnerProjectFolder
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	path, err := picker(ctx)
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"path": path, "cancelled": path == ""})
 }
 
 func (b *ownerUIBackend) addProject(w http.ResponseWriter, r *http.Request) {
@@ -1085,6 +1224,45 @@ func uniqueOwnerProjectID(projects []domain.Project, root string) string {
 	}
 }
 
+func ownerTaskAttentionFromState(state domain.TaskState) (bool, string, string, string) {
+	switch state {
+	case domain.TaskInputRequired:
+		return true, "high", "Task đang chờ input/quyết định của Owner.", "Mở task và trả lời đúng phần thông tin MAR đang yêu cầu."
+	case domain.TaskBlocked:
+		return true, "high", "Task đang BLOCKED và không thể tự tiến tiếp.", "Mở task để xem blocker/next action trước khi tiếp tục."
+	case domain.TaskFailed:
+		return true, "high", "Task đã FAILED.", "Mở task, xem result/evidence và nguyên nhân lỗi trước khi retry."
+	default:
+		return false, "", "", ""
+	}
+}
+
+func ownerTaskAttentionFromResult(state domain.TaskState, result domain.TaskResult) (bool, string, string, string) {
+	switch result.Verdict {
+	case domain.ResultVerificationFailed:
+		return true, "high", "Verification của candidate thất bại.", "Mở result/evidence để xem criterion hoặc command nào fail; không coi candidate là stable."
+	case domain.ResultUnverified:
+		return true, "high", "Candidate chưa có đủ evidence để được VERIFIED.", "Mở result/evidence và bổ sung verification thay vì suy đoán PASS."
+	}
+	if len(result.UnresolvedRisks) > 0 {
+		return true, "medium", fmt.Sprintf("Candidate còn %d unresolved risk(s).", len(result.UnresolvedRisks)), "Mở result/evidence để review risk trước khi Owner chấp nhận."
+	}
+	if state == domain.TaskComplete && !strings.EqualFold(result.IntegrationStatus, "INTEGRATED") {
+		return true, "high", "Task COMPLETE nhưng result chưa có authoritative integration INTEGRATED.", "Mở result/evidence và kiểm tra integration state trước khi dùng candidate."
+	}
+	return false, "", "", ""
+}
+
+func setOwnerTaskAttention(view *ownerTaskView, severity, reason, nextAction string) {
+	if view == nil || view.NeedsAttention {
+		return
+	}
+	view.NeedsAttention = true
+	view.AttentionSeverity = severity
+	view.AttentionReason = reason
+	view.AttentionNextAction = nextAction
+}
+
 func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 	tasks, err := b.db.ListRecentTasks(r.Context(), 30)
 	if err != nil {
@@ -1094,7 +1272,9 @@ func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 	views := make([]ownerTaskView, 0, len(tasks))
 	for _, task := range tasks {
 		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, Goal: task.Contract.Goal, State: task.State, UpdatedAt: task.UpdatedAt}
-		view.NeedsAttention = task.State == domain.TaskInputRequired || task.State == domain.TaskBlocked || task.State == domain.TaskFailed
+		if needed, severity, reason, nextAction := ownerTaskAttentionFromState(task.State); needed {
+			setOwnerTaskAttention(&view, severity, reason, nextAction)
+		}
 		result, ok, resultErr := b.db.LatestTaskResult(r.Context(), task.ID)
 		if resultErr != nil {
 			writeOwnerError(w, http.StatusInternalServerError, fmt.Errorf("read durable result for %s: %w", task.ID, resultErr))
@@ -1105,6 +1285,9 @@ func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 			view.IntegrationStatus = result.IntegrationStatus
 			view.CandidateRevision = result.FinalRevision
 			view.Usage = result.ResourceSummary
+			if needed, severity, reason, nextAction := ownerTaskAttentionFromResult(task.State, result); needed {
+				setOwnerTaskAttention(&view, severity, reason, nextAction)
+			}
 		}
 		feedback, feedbackErr := b.db.ListOwnerFeedbackByTask(r.Context(), task.ID, 1)
 		if feedbackErr != nil {
@@ -1118,6 +1301,71 @@ func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 		views = append(views, view)
 	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"tasks": views})
+}
+
+func ownerUsageHasTokenData(summary domain.ResourceSummary) bool {
+	return summary.ModelInputTokens > 0 || summary.ModelOutputTokens > 0 || summary.ModelTotalTokens > 0
+}
+
+func addOwnerUsageTotals(total *ownerUsageTotals, summary domain.ResourceSummary) {
+	total.Results++
+	if ownerUsageHasTokenData(summary) {
+		total.ResultsWithTokenData++
+		total.InputTokens += summary.ModelInputTokens
+		total.OutputTokens += summary.ModelOutputTokens
+		total.TotalTokens += summary.ModelTotalTokens
+	} else {
+		total.ResultsWithoutTokenData++
+	}
+}
+
+func buildOwnerUsage(results []domain.TaskResult, now time.Time) ownerUsageView {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	loc := now.Location()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	weekdayFromMonday := (int(today.Weekday()) + 6) % 7
+	weekStart := today.AddDate(0, 0, -weekdayFromMonday)
+	windowStart := today.AddDate(0, 0, -29)
+	view := ownerUsageView{
+		UpdatedAt:           now,
+		MeasurementScope:    "MAR_OBSERVED_DURABLE_RESULT_USAGE",
+		BucketBasis:         "RESULT_CREATED_AT_LOCAL",
+		ProviderAttribution: "UNAVAILABLE",
+	}
+	byDay := make(map[string]*ownerUsageDay, 30)
+	view.Daily = make([]ownerUsageDay, 0, 30)
+	for i := 0; i < 30; i++ {
+		date := windowStart.AddDate(0, 0, i).Format("2006-01-02")
+		view.Daily = append(view.Daily, ownerUsageDay{Date: date})
+		byDay[date] = &view.Daily[len(view.Daily)-1]
+	}
+	for _, result := range results {
+		created := result.CreatedAt.In(loc)
+		addOwnerUsageTotals(&view.AllTime, result.ResourceSummary)
+		if !created.Before(weekStart) {
+			addOwnerUsageTotals(&view.Week, result.ResourceSummary)
+		}
+		if !created.Before(today) {
+			addOwnerUsageTotals(&view.Today, result.ResourceSummary)
+		}
+		if !created.Before(windowStart) {
+			if day := byDay[created.Format("2006-01-02")]; day != nil {
+				addOwnerUsageTotals(&day.ownerUsageTotals, result.ResourceSummary)
+			}
+		}
+	}
+	return view
+}
+
+func (b *ownerUIBackend) serveUsage(w http.ResponseWriter, r *http.Request) {
+	results, err := b.db.ListLatestTaskResults(r.Context(), strings.TrimSpace(r.URL.Query().Get("project_id")))
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, buildOwnerUsage(results, time.Now()))
 }
 
 func (b *ownerUIBackend) serveTaskFeedback(w http.ResponseWriter, r *http.Request) {

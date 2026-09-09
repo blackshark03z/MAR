@@ -84,8 +84,8 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 
 	state = manager.State()
 	claude = connectorState(t, state, store.RemoteConnectorClaudeWeb)
-	if claude.Status != "CONNECTED" || !claude.Initialized || !claude.ToolsListed || claude.Requests < 2 || claude.LastSeenAt == nil {
-		t.Fatalf("Claude telemetry missing: %+v", claude)
+	if claude.Status != "IDLE" || !claude.Initialized || !claude.ToolsListed || claude.Requests < 2 || claude.LastSeenAt == nil || !claude.ActiveSessionsAvailable || claude.ActiveSessions != 0 {
+		t.Fatalf("Claude telemetry should show observed activity but no active session after explicit close: %+v", claude)
 	}
 	gpt = connectorState(t, state, store.RemoteConnectorChatGPTWeb)
 	if gpt.Status != "LINK_READY" || gpt.Requests != 0 || gpt.Initialized || gpt.ToolsListed {
@@ -109,8 +109,8 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 		t.Fatalf("GPT link leaked or lost MCP tools: count=%d", len(gptListed.Tools))
 	}
 	gpt = connectorState(t, manager.State(), store.RemoteConnectorChatGPTWeb)
-	if gpt.Status != "CONNECTED" || !gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil {
-		t.Fatalf("GPT telemetry missing: %+v", gpt)
+	if gpt.Status != "IDLE" || !gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil || !gpt.ActiveSessionsAvailable || gpt.ActiveSessions != 0 {
+		t.Fatalf("GPT fallback telemetry should show observed activity but no active session after explicit close: %+v", gpt)
 	}
 
 	if err := manager.StopTemporary(); err != nil {

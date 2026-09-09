@@ -6,8 +6,9 @@
   <title>MAR Console</title>
   <style>
     :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    html { scroll-padding-top: 84px; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: Canvas; color: CanvasText; }
+    body { margin: 0; background:color-mix(in srgb, CanvasText 2.2%, Canvas); color: CanvasText; }
     button, input, textarea, select { font: inherit; }
     button, input, textarea, select { border: 1px solid color-mix(in srgb, CanvasText 20%, transparent); border-radius: 9px; background: Canvas; color: CanvasText; }
     button { cursor: pointer; padding: 9px 13px; min-width: 44px; min-height: 44px; font-weight: 650; }
@@ -21,18 +22,21 @@
     h1,h2,h3,p { margin-top: 0; }
     h2 { font-size: 18px; margin-bottom: 8px; }
     h3 { font-size: 14px; margin-bottom: 8px; }
-    .shell { min-height: 100vh; display: grid; grid-template-rows: auto 1fr; }
+    .shell { min-height: 100vh; }
     header { position: sticky; top: 0; z-index: 4; border-bottom: 1px solid color-mix(in srgb, CanvasText 14%, transparent); background: color-mix(in srgb, Canvas 95%, transparent); backdrop-filter: blur(10px); }
-    .topbar { max-width: 1320px; margin: 0 auto; padding: 14px 20px 10px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .topbar { min-height:68px; margin:0; padding:12px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .topbar .brand { min-width:190px; }
     .brand { display:flex; gap:10px; align-items:baseline; }
     .brand strong { font-size:19px; }
     .muted { color: color-mix(in srgb, CanvasText 61%, transparent); }
     .runtime { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px; font-size:12px; }
     .badge,.chip { border:1px solid color-mix(in srgb, CanvasText 17%, transparent); border-radius:999px; padding:4px 8px; white-space:nowrap; }
-    nav { max-width:1320px; margin:0 auto; padding:0 20px; display:flex; gap:4px; overflow:auto; }
-    nav button { border:0; border-bottom:3px solid transparent; border-radius:0; background:transparent; padding:9px 12px; color:inherit; opacity:.65; }
-    nav button.active { opacity:1; border-bottom-color:CanvasText; }
-    main { max-width:1320px; width:100%; margin:0 auto; padding:22px 20px 44px; }
+    nav { position:fixed; top:69px; bottom:0; left:0; z-index:3; width:220px; padding:16px 12px; display:flex; flex-direction:column; gap:5px; overflow:auto; border-right:1px solid color-mix(in srgb, CanvasText 13%, transparent); background:color-mix(in srgb, CanvasText 1.8%, Canvas); }
+    nav button { border:0; border-radius:9px; background:transparent; padding:10px 12px; color:inherit; opacity:.68; text-align:left; justify-content:flex-start; }
+    nav button:hover { opacity:1; background:color-mix(in srgb, CanvasText 5%, Canvas); }
+    nav button.active { opacity:1; background:color-mix(in srgb, CanvasText 9%, Canvas); box-shadow:inset 3px 0 0 CanvasText; }
+    main { max-width:1540px; width:calc(100% - 220px); margin:0 0 0 220px; padding:24px 26px 48px; }
+    .card,.kpi { background:color-mix(in srgb, CanvasText 2.7%, Canvas); box-shadow:0 1px 0 color-mix(in srgb, CanvasText 4%, transparent); }
     .view { display:none; }
     .view.active { display:block; }
     .intro { max-width:760px; margin-bottom:20px; }
@@ -46,6 +50,8 @@
     .stack { display:grid; gap:12px; }
     .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
     .row > .grow { flex:1 1 240px; }
+    .picker-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:end; }
+    .picker-row button { white-space:nowrap; }
     .metric { border-top:1px solid color-mix(in srgb, CanvasText 13%, transparent); padding-top:9px; }
     .metric b { display:block; margin-top:3px; font-size:18px; }
     .metric small { display:block; margin-top:3px; }
@@ -89,7 +95,7 @@
     .connection-command { margin-top:10px; }
     .connection-url { display:block; margin-top:8px; padding:10px; border-radius:8px; background:color-mix(in srgb, CanvasText 6%, Canvas); word-break:break-all; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
     .connector-settings { display:grid; grid-template-columns:minmax(180px,.55fr) minmax(260px,1.45fr); gap:10px; align-items:end; margin-top:12px; }
-    .connector-telemetry { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:12px; }
+    .connector-telemetry { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; margin-top:12px; }
     .connector-telemetry > div { padding:8px; border-radius:8px; background:color-mix(in srgb, CanvasText 5%, Canvas); min-width:0; }
     .connector-telemetry b { display:block; margin-top:3px; font-size:12px; overflow:hidden; text-overflow:ellipsis; }
     .stable-help { margin-top:8px; font-size:12px; line-height:1.45; }
@@ -101,28 +107,101 @@
     @media(max-width:700px){ .connector-settings{grid-template-columns:1fr;} .connector-telemetry{grid-template-columns:repeat(2,minmax(0,1fr));} .connection-primary{grid-column:auto;} }
     @media(max-width:360px){ .identifier-row{grid-template-columns:1fr;} .identifier-row button{width:100%;} .connector-telemetry{grid-template-columns:1fr;} .actions>button{width:100%;} }
     .danger { border-color:color-mix(in srgb, CanvasText 38%, transparent); }
-    summary { cursor:pointer; font-weight:650; }
+    .topbar-controls { display:flex; align-items:center; justify-content:flex-end; gap:12px; min-width:0; }
+    .workspace-filter { min-width:220px; }
+    .workspace-filter label { font-size:11px; color:color-mix(in srgb, CanvasText 58%, transparent); gap:3px; }
+    .workspace-filter select { min-height:38px; padding-block:7px; }
+    .overview-kpis { display:grid; grid-template-columns:repeat(5,minmax(150px,1fr)); gap:12px; margin:16px 0 18px; }
+    .kpi { padding:15px; border:1px solid color-mix(in srgb, CanvasText 14%, transparent); border-radius:11px; background:Canvas; }
+    .kpi .kpi-label { display:block; color:color-mix(in srgb, CanvasText 61%, transparent); font-size:12px; }
+    .kpi strong { display:block; font-size:24px; margin:5px 0 2px; line-height:1.15; }
+    .kpi small { display:block; color:color-mix(in srgb, CanvasText 61%, transparent); }
+    .overview-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(320px,.85fr); gap:14px; align-items:start; }
+    .overview-stack { display:grid; gap:14px; }
+    .overview-connection-list,.overview-activity-list { display:grid; gap:8px; }
+    .overview-connection { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; align-items:center; padding:10px 11px; border-radius:9px; background:color-mix(in srgb, CanvasText 5%, Canvas); }
+    .overview-connection .connection-count { text-align:right; min-width:72px; }
+    .overview-connection .connection-count b { display:block; font-size:16px; }
+    .health-line { display:flex; gap:7px; align-items:center; font-weight:650; }
+    .usage-summary-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+    .usage-summary-grid .metric { border:1px solid color-mix(in srgb, CanvasText 12%, transparent); border-radius:9px; padding:11px; }
+    .usage-bars { display:flex; align-items:flex-end; gap:5px; min-height:150px; padding:12px 4px 2px; border-bottom:1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+    .usage-bar { flex:1; min-width:5px; border-radius:4px 4px 0 0; background:color-mix(in srgb, Highlight 48%, CanvasText 18%); position:relative; }
+    .usage-bar:focus-visible { outline:3px solid Highlight; outline-offset:2px; }
+    .usage-legend { display:flex; justify-content:space-between; gap:12px; margin-top:7px; font-size:12px; color:color-mix(in srgb, CanvasText 61%, transparent); }
+    .usage-table-wrap { max-height:420px; overflow:auto; border:1px solid color-mix(in srgb, CanvasText 12%, transparent); border-radius:9px; }
+    .usage-table { width:100%; min-width:620px; border-collapse:collapse; font-size:13px; }
+    .usage-table th,.usage-table td { padding:9px 10px; border-bottom:1px solid color-mix(in srgb, CanvasText 10%, transparent); text-align:right; white-space:nowrap; }
+    .usage-table th:first-child,.usage-table td:first-child { text-align:left; }
+    .usage-table thead th { position:sticky; top:0; z-index:1; background:Canvas; }
+    .usage-table tbody tr:last-child td { border-bottom:0; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    .scope-note { font-size:12px; color:color-mix(in srgb, CanvasText 61%, transparent); }
+    summary { cursor:pointer; font-weight:650; min-height:44px; display:flex; align-items:center; }
+    .actions a { min-height:44px; display:inline-flex; align-items:center; padding:9px 12px; border-radius:9px; }
     :focus-visible { outline:3px solid Highlight; outline-offset:2px; }
-    @media(max-width:900px){ .grid{grid-template-columns:1fr;} .card.span-4,.card.span-6,.card.span-8,.card.span-12{grid-column:auto;} .split{grid-template-columns:1fr;} .topbar{align-items:flex-start;} .runtime{justify-content:flex-start;} .connection-list{grid-template-columns:1fr;} .connection-list > .secondary-connection{grid-column:auto;} }
-    @media(max-width:560px){ main{padding:16px 12px 36px;} .topbar{padding:12px;} nav{padding:0 8px;} .brand .muted{display:none;} .row{align-items:stretch;} .row button{width:100%;} }
+    button, input, textarea, select, summary, a { scroll-margin-top:84px; }
+    @media(max-width:1100px){ .overview-kpis{grid-template-columns:repeat(3,minmax(0,1fr));} .overview-grid{grid-template-columns:1fr;} }
+    @media(max-width:900px){ nav{position:static;width:auto;display:flex;flex-direction:row;padding:0 12px;gap:4px;border-right:0;border-top:1px solid color-mix(in srgb, CanvasText 10%, transparent);overflow:auto;} nav button{border-radius:0;padding:10px 11px;white-space:nowrap;} nav button.active{box-shadow:inset 0 -3px 0 CanvasText;background:transparent;} main{width:100%;margin:0;max-width:none;} .grid{grid-template-columns:1fr;} .card.span-4,.card.span-6,.card.span-8,.card.span-12{grid-column:auto;} .split{grid-template-columns:1fr;} .topbar{align-items:flex-start; flex-wrap:wrap;} .topbar .brand{min-width:0;} .topbar-controls{width:100%; justify-content:space-between;} .runtime{justify-content:flex-start;} .connection-list{grid-template-columns:1fr;} .connection-list > .secondary-connection{grid-column:auto;} }
+    @media(max-width:700px){ .overview-kpis{grid-template-columns:repeat(2,minmax(0,1fr));} .usage-summary-grid{grid-template-columns:1fr;} .overview-connection{grid-template-columns:1fr auto;} .overview-connection .connection-count{grid-column:1/-1;text-align:left;} }
+    @media(max-width:560px){ main{padding:16px 12px 36px;} .topbar{padding:12px;} .topbar-controls{display:grid;grid-template-columns:1fr;} .workspace-filter{min-width:0;} nav{padding:0 8px;} .brand .muted{display:none;} .row{align-items:stretch;} .row button{width:100%;} .picker-row{grid-template-columns:1fr;} .picker-row button{width:100%;} .overview-kpis{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
 <div class="shell">
 <header>
   <div class="topbar">
-    <div class="brand"><strong>MAR</strong><span class="muted">local coding operations</span></div>
-    <div class="runtime" id="runtime-badges"><span class="badge">Đang kết nối…</span></div>
+    <div class="brand"><strong>MAR</strong><span class="muted">operations console</span></div>
+    <div class="topbar-controls">
+      <div class="workspace-filter"><label for="workspace-filter">Workspace<select id="workspace-filter"><option value="">Tất cả workspaces</option></select></label></div>
+      <div class="runtime"><span class="badge" id="telemetry-freshness" role="status" aria-live="polite" aria-atomic="true">Telemetry: đang kết nối…</span><span id="runtime-badges"><span class="badge">Đang tải runtime…</span></span></div>
+    </div>
   </div>
   <nav aria-label="MAR sections">
-    <button data-view="work" class="active">Công việc</button>
-    <button data-view="projects">Dự án</button>
-    <button data-view="connections">Kết nối AI</button>
-    <button data-view="advanced">Nâng cao</button>
+    <button data-view="overview" class="active" aria-current="page">◫&nbsp; Overview</button>
+    <button data-view="work">✓&nbsp; Tasks</button>
+    <button data-view="projects">▣&nbsp; Workspaces</button>
+    <button data-view="connections">⇄&nbsp; Connections</button>
+    <button data-view="usage">◒&nbsp; Usage</button>
+    <button data-view="advanced">⚙&nbsp; Diagnostics</button>
   </nav>
 </header>
 <main>
-  <section id="view-work" class="view active">
+  <section id="view-overview" class="view active">
+    <div class="intro"><h2>Tổng quan vận hành</h2><p class="muted">Trạng thái hệ thống, công việc cần chú ý, kết nối AI và mức sử dụng. Mỗi số liệu chỉ hiển thị từ telemetry MAR thực sự có.</p></div>
+    <div class="overview-kpis">
+      <div class="kpi"><span class="kpi-label">Hệ thống</span><strong id="overview-health">Đang tải…</strong><small id="overview-health-detail">—</small></div>
+      <div class="kpi"><span class="kpi-label">Đang chạy</span><strong id="overview-active">0</strong><small id="overview-active-detail">task hiện hoạt</small></div>
+      <div class="kpi"><span class="kpi-label">Cần chú ý</span><strong id="overview-attention" aria-live="polite">0</strong><small>task / workspace / connection / sandbox</small></div>
+      <div class="kpi"><span class="kpi-label">AI providers connected</span><strong id="overview-connections-count" aria-live="polite">—</strong><small id="overview-connections-detail">GPT + Claude, theo telemetry MAR</small></div>
+      <div class="kpi"><span class="kpi-label">Tokens hôm nay</span><strong id="overview-tokens">—</strong><small id="overview-tokens-detail">MAR-measured only</small></div>
+    </div>
+    <div class="overview-grid">
+      <div class="overview-stack">
+        <div class="card">
+          <div class="card-head"><div><h3>Công việc đang hoạt động</h3><div class="muted" style="font-size:12px">Theo workspace đang chọn.</div></div><button type="button" data-jump-view="work">Mở Công việc</button></div>
+          <div id="overview-active-list" class="task-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Kết nối AI</h3><div class="muted" style="font-size:12px">Health transport và activity được tách riêng.</div></div><button type="button" data-jump-view="connections">Mở Kết nối</button></div>
+          <div id="overview-connections" class="overview-connection-list"></div>
+        </div>
+      </div>
+      <div class="overview-stack">
+        <div class="card">
+          <div class="card-head"><div><h3>Cần bạn chú ý</h3><div class="muted" style="font-size:12px">Chỉ những việc cần hành động.</div></div></div>
+          <div id="overview-attention-list" class="task-list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Usage 7 ngày</h3><div id="overview-usage-scope" class="muted" style="font-size:12px">—</div></div><button type="button" data-jump-view="usage">Mở Usage</button></div>
+          <div id="overview-usage-bars" class="usage-bars" aria-label="Token usage 7 ngày"></div>
+          <div class="usage-legend"><span>7 ngày trước</span><span>Hôm nay</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-work" class="view">
     <div class="intro">
       <h2>Công việc</h2>
       <p class="muted">Bạn không cần tạo Goal Contract ở đây. Hãy nói nhu cầu với Tech Lead Web bằng ngôn ngữ bình thường. Khi Tech Lead giao việc qua MAR, task sẽ tự xuất hiện và tiếp tục tồn tại sau khi đóng/mở lại Console.</p>
@@ -151,14 +230,14 @@
   </section>
 
   <section id="view-projects" class="view">
-    <div class="intro"><h2>Dự án</h2><p class="muted">Đăng ký repository local và cấp quyền mặc định. Goal cụ thể có thể dùng ít quyền hơn, nhưng không được vượt policy của project.</p></div>
+    <div class="intro"><h2>Workspaces</h2><p class="muted">Đăng ký repository local và cấp quyền mặc định. Chọn workspace từ Windows thay vì phải gõ đường dẫn; Goal cụ thể vẫn không được vượt policy của project.</p></div>
     <div class="grid">
       <form id="add-project-form" class="card span-4 stack">
-        <h3>Thêm dự án</h3>
-        <label>Đường dẫn thư mục Git repository<input id="project-root" placeholder="D:\\Projects\\MyApp" required></label>
+        <h3>Thêm workspace</h3>
+        <label>Thư mục Git repository<div class="picker-row"><input id="project-root" placeholder="D:\\Projects\\MyApp" required><button id="pick-project-root" type="button">Mở chọn thư mục</button></div></label>
         <details><summary>Tên kỹ thuật (tùy chọn)</summary><label style="margin-top:9px">Project ID<input id="project-id" placeholder="Tự tạo nếu để trống"></label></details>
         <div id="project-error" class="notice error hidden"></div>
-        <button class="primary" type="submit">Thêm dự án</button>
+        <button class="primary" type="submit">Thêm workspace</button>
         <div class="muted" style="font-size:12px">MAR V1 hiện chỉ nhận project Go module có <code>go.mod</code> ở Git root.</div>
       </form>
       <div class="card span-8">
@@ -175,6 +254,19 @@
     <div id="sandbox-readiness" class="card" style="margin-top:16px"></div>
   </section>
 
+  <section id="view-usage" class="view">
+    <div class="intro"><h2>Usage</h2><p class="muted">Token counters lấy từ latest durable result của mỗi task để tránh double-count verification/integration. Kết quả không có token counters được báo riêng, không tự biến thành 0 usage.</p></div>
+    <div class="card" style="margin-bottom:14px"><div class="card-head"><div><h3>Phạm vi</h3><div id="usage-scope" class="scope-note">Tất cả workspaces</div></div><button type="button" id="refresh-usage">Làm mới Usage</button></div></div>
+    <div class="usage-summary-grid">
+      <div class="metric card"><span class="muted">Hôm nay</span><b id="usage-today-total">—</b><small class="muted" id="usage-today-detail">—</small></div>
+      <div class="metric card"><span class="muted">Tuần này</span><b id="usage-week-total">—</b><small class="muted" id="usage-week-detail">Theo tuần lịch local, bắt đầu thứ Hai</small></div>
+      <div class="metric card"><span class="muted">All time</span><b id="usage-all-total">—</b><small class="muted" id="usage-all-detail">—</small></div>
+    </div>
+    <div class="card" style="margin-top:14px"><div class="card-head"><div><h3>30 ngày gần nhất</h3><div class="muted" style="font-size:12px">Chiều cao = total measured tokens của ngày.</div></div></div><div id="usage-bars" class="usage-bars" aria-label="Token usage 30 ngày"></div><div class="usage-legend"><span>30 ngày trước</span><span>Hôm nay</span></div></div>
+    <div class="card" style="margin-top:14px"><div class="card-head"><div><h3>Input / Output theo ngày</h3><div class="muted" style="font-size:12px">30 ngày gần nhất · bucket theo durable result created_at local.</div></div></div><div class="usage-table-wrap"><table class="usage-table"><caption class="sr-only">MAR-observed daily input, output and total token usage</caption><thead><tr><th scope="col">Ngày</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Tổng</th><th scope="col">Coverage</th></tr></thead><tbody id="usage-daily-rows"></tbody></table></div></div>
+    <div class="card" style="margin-top:14px"><h3>Độ phủ telemetry</h3><div id="usage-coverage" class="notice">Đang tải…</div></div>
+  </section>
+
   <section id="view-advanced" class="view">
     <div class="intro"><h2>Nâng cao</h2><p class="muted">Dành cho Tech Lead/debug. Owner normal flow không cần base revision, verification profile, run epoch hoặc raw evidence.</p></div>
     <div class="grid">
@@ -189,10 +281,15 @@
 const ownerSessionToken='__MAR_OWNER_SESSION_TOKEN__';
 const $=id=>document.getElementById(id);
 const terminalStates=new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED']);
-let runtime=null, projects=[], tasks=[], selectedTaskId='', pollTimer=null;
+const activeWorkStates=new Set(['SUBMITTED','PREFLIGHT','WAITING_RESOURCE','WORKSPACE_READY','RUNNING','VERIFYING','REVIEWING','READY_TO_INTEGRATE','INTEGRATING','RETRY_WAIT']);
+const workspaceStorageKey='mar.owner.workspace.v2';
+function storedWorkspace(){try{return localStorage.getItem(workspaceStorageKey)||'';}catch{return '';}}
+function persistWorkspace(value){try{if(value)localStorage.setItem(workspaceStorageKey,value);else localStorage.removeItem(workspaceStorageKey);}catch{}}
+let runtime=null, projects=[], tasks=[], usage=null, selectedTaskId='', selectedWorkspace=storedWorkspace(), pollTimer=null, usageTimer=null, runtimeFresh=false, runtimeLastSuccessAt=0, operationalPollInFlight=false, usagePollInFlight=false;
 function esc(v){const d=document.createElement('div');d.textContent=v??'';return d.innerHTML;}
 function fmtTokens(n){n=Number(n||0);return new Intl.NumberFormat('vi-VN').format(n);}
 function fmtTime(v){try{return new Date(v).toLocaleString('vi-VN');}catch{return v||'';}}
+function fmtDuration(seconds){seconds=Math.max(0,Number(seconds||0));if(seconds<60)return `${Math.floor(seconds)}s`;if(seconds<3600)return `${Math.floor(seconds/60)}m`;if(seconds<86400)return `${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`;return `${Math.floor(seconds/86400)}d ${Math.floor((seconds%86400)/3600)}h`;}
 function show(id,yes=true){$(id).classList.toggle('hidden',!yes);}
 function setError(id,msg=''){const el=$(id);el.textContent=msg;show(id,!!msg);}
 async function api(path,options={}){
@@ -200,17 +297,27 @@ async function api(path,options={}){
   const res=await fetch(path,{...options,headers}); let data={}; try{data=await res.json();}catch{}
   if(!res.ok) throw new Error(data.error||`${res.status} ${res.statusText}`); return data;
 }
-function activateView(name){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${name}`));document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.view===name));}
+function activateView(name){document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${name}`));document.querySelectorAll('nav button').forEach(x=>{const active=x.dataset.view===name;x.classList.toggle('active',active);if(active)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current');});}
 document.querySelectorAll('nav button').forEach(btn=>btn.addEventListener('click',()=>activateView(btn.dataset.view)));
+document.querySelectorAll('[data-jump-view]').forEach(btn=>btn.addEventListener('click',()=>activateView(btn.dataset.jumpView)));
+$('workspace-filter').addEventListener('change',async e=>{selectedWorkspace=e.target.value;persistWorkspace(selectedWorkspace);renderUsage();renderTasks();renderOverview();await loadUsage();});
+$('refresh-usage').addEventListener('click',loadUsage);
+
+function scopedTasks(){return selectedWorkspace?tasks.filter(t=>t.project_id===selectedWorkspace):tasks;}
+function activeConnector(c){return !!c&&(c.connected===true||c.status==='CONNECTED'||(c.active_sessions_available===true&&Number(c.active_sessions||0)>0));}
+function primaryConnections(){const all=runtime?.connections||[];const tunnel=all.find(c=>c.id==='openai-tunnel');const fallback=all.find(c=>c.id==='chatgpt-web');const claude=all.find(c=>c.id==='claude-web');const gpt=activeConnector(tunnel)?tunnel:(activeConnector(fallback)?fallback:((tunnel?.configured?tunnel:null)||fallback||tunnel));return [gpt,claude].filter(Boolean);}
+function renderFreshness(){const el=$('telemetry-freshness');if(runtimeFresh){el.textContent=`Telemetry: live · ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`;}else{el.textContent='Telemetry: stale / unavailable';}}
+function markRuntimeStale(err){runtimeFresh=false;renderFreshness();$('connection-summary').textContent=`Telemetry runtime tạm thời không cập nhật${err?.message?`: ${err.message}`:''}. Trạng thái Connected cũ không được coi là live.`;if(runtime?.connections)renderConnections(runtime.connections.map(c=>({...c,status:'STALE',connected:false})));renderOverview();}
 
 async function loadRuntime(){
-  runtime=await api('/api/runtime');
-  $('runtime-badges').innerHTML=`<span class="badge">brain: ${esc(runtime.brain_mode||'—')}</span><span class="badge">model: ${esc(runtime.model||'default')}</span><span class="badge">reasoning: ${esc(runtime.reasoning||'default')}</span>`;
+  runtime=await api('/api/runtime');runtimeFresh=true;runtimeLastSuccessAt=Date.now();renderFreshness();
+  $('runtime-badges').innerHTML=`<span class="badge">uptime: ${esc(fmtDuration(runtime.uptime_seconds))}</span><span class="badge">model: ${esc(runtime.model||'default')}</span><span class="badge">workers: ${esc(runtime.max_workers||'—')}</span>`;
   $('runtime-raw').textContent=JSON.stringify(runtime,null,2);
   $('work-readiness').textContent=runtime.brain_next_action||'Kiểm tra tab Kết nối AI trước khi chạy task mới.';
   $('connection-summary').textContent=runtime.brain_next_action||'';
   renderSandboxReadiness(runtime);
   renderConnections(runtime.connections||[]);
+  renderOverview();
 }
 function renderSandboxReadiness(data){
   const host=$('sandbox-readiness');
@@ -221,7 +328,7 @@ function renderSandboxReadiness(data){
 }
 
 function connectionById(id){return (runtime?.connections||[]).find(c=>c.id===id)||null;}
-function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTING:'Đang ngắt…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Đã kết nối · đang rảnh',LINK_READY:'Link sẵn sàng',READY_TO_START:'Đang chờ tự khôi phục link',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng'})[status]||status||'—';}
+function humanConnectorStatus(status){return ({CONNECTED:'Đang kết nối',CONNECTING:'Đang kết nối…',DISCONNECTING:'Đang ngắt…',DISCONNECTED:'Đã ngắt',DEGRADED:'Kết nối suy giảm',MISCONFIGURED:'Chưa cấu hình đúng',ERROR:'Lỗi',IDLE:'Idle · không có session/activity live',LINK_READY:'Link sẵn sàng',READY_TO_START:'Đang chờ tự khôi phục link',STABLE_URL_REQUIRED:'Cần stable URL',CHECKING:'Đang kiểm tra route',ROUTE_OFFLINE:'Stable route chưa tới MAR',BRIDGE_RUNTIME_MISSING:'Thiếu tunnel runtime',REMOTE_BRIDGE_REQUIRED:'Chưa sẵn sàng',STALE:'Telemetry stale · chưa xác nhận trạng thái hiện tại'})[status]||status||'—';}
 function statusClass(status){return String(status||'').toLowerCase().replace(/_/g,'-');}
 async function copyValue(value,button,label){if(!value)return;try{await navigator.clipboard.writeText(value);button.textContent='Đã sao chép';setTimeout(()=>button.textContent=label,1200);}catch{button.textContent='Không sao chép được';setTimeout(()=>button.textContent=label,1600);}}
 function ensureOpenAITunnelCard(c){
@@ -238,7 +345,7 @@ function ensureOpenAITunnelCard(c){
       <label>Tunnel ID<input data-tunnel-id placeholder="tunnel_…" autocomplete="off" spellcheck="false"></label>
       <div class="actions"><button type="button" class="primary" data-tunnel-save>Lưu &amp; kết nối</button><a data-install-link target="_blank" rel="noreferrer">Tải tunnel-client bản mới nhất</a></div>
       <details><summary>Cấu hình nâng cao</summary><div class="stack" style="margin-top:10px"><label>Profile<input data-tunnel-profile value="mar-openai"></label><label>Tên biến môi trường chứa runtime API key<input data-tunnel-key-env value="CONTROL_PLANE_API_KEY" autocomplete="off"></label><label>Đường dẫn tunnel-client (để trống để MAR tự tìm)<input data-tunnel-client-path placeholder="C:\\tools\\tunnel-client.exe"></label><label>Admin base URL loopback (tùy chọn)<input data-tunnel-admin placeholder="http://127.0.0.1:…"></label></div></details>
-      <div class="connector-telemetry"><div><span class="muted">Client</span><b data-client>—</b></div><div><span class="muted">Health</span><b data-health>—</b></div><div><span class="muted">Readiness</span><b data-ready>—</b></div><div><span class="muted">Last success</span><b data-success>—</b></div></div>
+      <div class="connector-telemetry"><div><span class="muted">Client</span><b data-client>—</b></div><div><span class="muted">Health</span><b data-health>—</b></div><div><span class="muted">Readiness</span><b data-ready>—</b></div><div><span class="muted">Sessions</span><b data-sessions title="">—</b></div><div><span class="muted">Last success</span><b data-success>—</b></div></div>
       <div class="muted project-path" data-local-target></div><pre data-diagnostics>Chưa chạy chẩn đoán.</pre>
     </div></details>`;
   host.appendChild(card);
@@ -256,7 +363,7 @@ function updateOpenAITunnelCard(card,c){
   card.querySelector('[data-summary]').textContent=c.summary||'';card.querySelector('[data-identifier]').textContent=c.identifier||'Chưa có tunnel ID';card.querySelector('[data-copy-id]').disabled=!c.identifier;
   card.querySelector('[data-next-action]').textContent=c.next_action||'';card.querySelector('[data-activity]').textContent=`Hoạt động gần nhất: ${c.last_activity_at?fmtTime(c.last_activity_at):'—'}`;card.querySelector('[data-uptime]').textContent=`Kết nối từ: ${c.connected_since?fmtTime(c.connected_since):'—'}`;
   for(const [selector,value] of [['[data-tunnel-id]',c.identifier||''],['[data-tunnel-profile]',c.profile_name||'mar-openai'],['[data-tunnel-key-env]',c.api_key_env||'CONTROL_PLANE_API_KEY'],['[data-tunnel-client-path]',c.client_path||''],['[data-tunnel-admin]',c.admin_base_url||'']]){const input=card.querySelector(selector);if(document.activeElement!==input)input.value=value;}
-  card.querySelector('[data-install-link]').href=c.install_url||'#';card.querySelector('[data-client]').textContent=c.client_found?'Đã tìm thấy':'Chưa tìm thấy';card.querySelector('[data-health]').textContent=c.healthy?'Healthy':'Chưa healthy';card.querySelector('[data-ready]').textContent=c.ready?'Ready':'Chưa ready';card.querySelector('[data-success]').textContent=c.last_success_at?fmtTime(c.last_success_at):'—';card.querySelector('[data-local-target]').textContent=c.local_target?`Local MCP: ${c.local_target}`:'';card.querySelector('[data-diagnostics]').textContent=c.diagnostics_summary||'Chưa chạy chẩn đoán.';
+  card.querySelector('[data-install-link]').href=c.install_url||'#';card.querySelector('[data-client]').textContent=c.client_found?'Đã tìm thấy':'Chưa tìm thấy';card.querySelector('[data-health]').textContent=c.healthy?'Healthy':'Chưa healthy';card.querySelector('[data-ready]').textContent=c.ready?'Ready':'Chưa ready';const sessions=card.querySelector('[data-sessions]');sessions.textContent=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';sessions.title=c.session_count_detail||'';card.querySelector('[data-success]').textContent=c.last_success_at?fmtTime(c.last_success_at):'—';card.querySelector('[data-local-target]').textContent=c.local_target?`Local MCP: ${c.local_target}`:'';card.querySelector('[data-diagnostics]').textContent=c.diagnostics_summary||'Chưa chạy chẩn đoán.';
   const err=card.querySelector('[data-tunnel-error]');err.textContent=c.last_error||'';err.classList.toggle('hidden',!c.last_error);
   card.querySelector('[data-tunnel-start]').classList.toggle('hidden',!!c.running);card.querySelector('[data-tunnel-restart]').classList.toggle('hidden',!c.running);card.querySelector('[data-tunnel-stop]').classList.toggle('hidden',!c.running);
 }
@@ -276,7 +383,7 @@ function ensureWebConnectorCard(c){
       <div class="connector-settings"><label>Chế độ<select data-mode><option value="stable">Ổn định</option><option value="temporary">Tạm thời</option></select></label><label>Stable public HTTPS base<input data-stable-base placeholder="https://mar.example.com"></label></div>
       <div class="actions"><button type="button" data-save-connector>Lưu thiết lập</button><button type="button" data-rotate-link>Đổi secret link</button></div>
       <div class="stable-help muted" data-help></div>
-      <div class="connector-telemetry"><div><span class="muted">Route</span><b data-route>—</b></div><div><span class="muted">MCP</span><b data-mcp>—</b></div><div><span class="muted">Requests</span><b data-requests>0</b></div><div><span class="muted">Last seen</span><b data-last-seen>—</b></div></div>
+      <div class="connector-telemetry"><div><span class="muted">Route</span><b data-route>—</b></div><div><span class="muted">MCP</span><b data-mcp>—</b></div><div><span class="muted">Sessions</span><b data-sessions title="">—</b></div><div><span class="muted">Requests / run</span><b data-requests>0</b></div><div><span class="muted">Last seen</span><b data-last-seen>—</b></div></div>
     </div></details>`;
   host.appendChild(card);
   card.querySelector('[data-save-connector]').addEventListener('click',async e=>{const btn=e.currentTarget;btn.disabled=true;const id=card.dataset.webConnector;try{await api(`/api/connections/${encodeURIComponent(id)}/config`,{method:'POST',body:JSON.stringify({stable_base_url:card.querySelector('[data-stable-base]').value.trim(),preferred_mode:card.querySelector('[data-mode]').value})});await loadRuntime();}catch(err){alert(err.message);}finally{btn.disabled=false;}});
@@ -300,6 +407,7 @@ function updateWebConnectorCard(card,c){
   card.querySelector('[data-copy-url]').disabled=!c.connection_url;
   card.querySelector('[data-route]').textContent=c.route_ready?'Reachable':'Chưa xác nhận';
   card.querySelector('[data-mcp]').textContent=c.tools_listed?'initialize + tools/list':(c.initialized?'initialized':'chưa initialize');
+  const sessions=card.querySelector('[data-sessions]');sessions.textContent=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';sessions.title=c.session_count_detail||'';
   card.querySelector('[data-requests]').textContent=String(c.requests||0);
   card.querySelector('[data-last-seen]').textContent=c.last_seen_at?fmtTime(c.last_seen_at):'—';
   card.querySelector('[data-last-seen-summary]').textContent=`Hoạt động gần nhất: ${c.last_seen_at?fmtTime(c.last_seen_at):'—'}`;
@@ -352,7 +460,8 @@ async function downloadClaudePackage(button){
   }catch(err){button.textContent='Tạo gói thất bại'; alert(err.message);}finally{setTimeout(()=>{button.disabled=false;button.textContent=original;},1800);}
 }
 
-async function loadProjects(){const data=await api('/api/projects');projects=data.projects||[];renderProjects();}
+async function loadProjects(){const data=await api('/api/projects');projects=data.projects||[];renderProjects();renderWorkspaceFilter();renderOverview();}
+function renderWorkspaceFilter(){const select=$('workspace-filter');const available=new Set(projects.map(p=>p.id));if(selectedWorkspace&&!available.has(selectedWorkspace)){selectedWorkspace='';persistWorkspace('');}select.innerHTML='<option value="">Tất cả workspaces</option>'+projects.map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('');select.value=selectedWorkspace;}
 function renderProjects(){
   const host=$('project-list'); host.innerHTML='';
   if(!projects.length){host.innerHTML='<div class="empty">Chưa có dự án. Thêm Git repository local ở bên trái.</div>';return;}
@@ -364,14 +473,35 @@ function renderProjects(){
     card.querySelector('[data-save]').addEventListener('click',async e=>{e.currentTarget.disabled=true;try{await api(`/api/projects/${encodeURIComponent(p.id)}/policy`,{method:'POST',body:JSON.stringify({local_file_write:card.querySelector('[data-file]').checked,local_git_write:card.querySelector('[data-git]').checked})});await loadProjects();}catch(err){alert(err.message);}finally{e.currentTarget.disabled=false;}});
   }
 }
-$('add-project-form').addEventListener('submit',async e=>{e.preventDefault();setError('project-error');const root=$('project-root').value.trim();const id=$('project-id').value.trim();try{await api('/api/projects',{method:'POST',body:JSON.stringify({root,id})});$('project-root').value='';$('project-id').value='';await loadProjects();await loadTasks();}catch(err){setError('project-error',err.message);}});
+$('pick-project-root').addEventListener('click',async e=>{const btn=e.currentTarget;const original=btn.textContent;btn.disabled=true;btn.textContent='Đang mở Windows…';setError('project-error');try{const data=await api('/api/projects/pick',{method:'POST',body:'{}'});if(data.path)$('project-root').value=data.path;}catch(err){setError('project-error',err.message);}finally{btn.disabled=false;btn.textContent=original;}});
+$('add-project-form').addEventListener('submit',async e=>{e.preventDefault();setError('project-error');const root=$('project-root').value.trim();const id=$('project-id').value.trim();try{await api('/api/projects',{method:'POST',body:JSON.stringify({root,id})});$('project-root').value='';$('project-id').value='';await loadProjects();await loadTasks();await loadUsage();}catch(err){setError('project-error',err.message);}});
 $('refresh-projects').addEventListener('click',loadProjects);
 
-async function loadTasks(){const data=await api('/api/tasks');tasks=data.tasks||[];renderUsage();renderTasks();if(selectedTaskId&&!tasks.some(t=>t.id===selectedTaskId))selectedTaskId='';if(!selectedTaskId&&tasks.length){const first=tasks.find(t=>t.needs_attention)||tasks[0];selectedTaskId=first.id;}if(selectedTaskId)await refreshSelectedTask();}
-function renderUsage(){let input=0,output=0,total=0;for(const t of tasks){input+=Number(t.usage?.model_input_tokens||0);output+=Number(t.usage?.model_output_tokens||0);total+=Number(t.usage?.model_total_tokens||0);}$('usage-tasks').textContent=tasks.length;$('usage-input').textContent=fmtTokens(input);$('usage-output-total').textContent=`${fmtTokens(output)} / ${fmtTokens(total)}`;}
-function taskButton(t){const b=document.createElement('button');b.type='button';b.className=`task ${t.needs_attention?'status-attention':''} ${t.id===selectedTaskId?'selected':''}`;const fb=t.owner_feedback?.verdict?` · Owner ${t.owner_feedback.verdict}`:'';b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(t.goal||'Untitled goal')}</span><span class="chip">${esc(t.state)}</span></div><div class="task-meta muted"><span>${esc(t.project_id)}</span><span>${fmtTime(t.updated_at)}</span><span>${fmtTokens(t.usage?.model_total_tokens||0)} tokens${esc(fb)}</span></div>`;b.addEventListener('click',async()=>{selectedTaskId=t.id;renderTasks();await refreshSelectedTask();});return b;}
-function renderTasks(){const attention=tasks.filter(t=>t.needs_attention);$('attention-count').textContent=attention.length;const ah=$('attention-list');ah.innerHTML='';attention.forEach(t=>ah.appendChild(taskButton(t)));if(!attention.length)ah.innerHTML='<div class="muted">Không có việc nào cần bạn can thiệp.</div>';const rh=$('recent-list');rh.innerHTML='';tasks.forEach(t=>rh.appendChild(taskButton(t)));if(!tasks.length)rh.innerHTML='<div class="empty">Chưa có task. Hãy giao yêu cầu cho Tech Lead Web.</div>';}
+async function loadTasks(){const data=await api('/api/tasks');tasks=data.tasks||[];const scoped=scopedTasks();renderUsage();renderTasks();renderOverview();if(selectedTaskId&&!scoped.some(t=>t.id===selectedTaskId))selectedTaskId='';if(!selectedTaskId&&scoped.length){const first=scoped.find(t=>t.needs_attention)||scoped[0];selectedTaskId=first.id;}if(selectedTaskId)await refreshSelectedTask();}
+function renderUsage(){let input=0,output=0,total=0;const scoped=scopedTasks();for(const t of scoped){input+=Number(t.usage?.model_input_tokens||0);output+=Number(t.usage?.model_output_tokens||0);total+=Number(t.usage?.model_total_tokens||0);}$('usage-tasks').textContent=scoped.length;$('usage-input').textContent=fmtTokens(input);$('usage-output-total').textContent=`${fmtTokens(output)} / ${fmtTokens(total)}`;}
+function taskButton(t){const b=document.createElement('button');b.type='button';b.className=`task ${t.needs_attention?'status-attention':''} ${t.id===selectedTaskId?'selected':''}`;const fb=t.owner_feedback?.verdict?` · Owner ${t.owner_feedback.verdict}`:'';const attentionMeta=t.needs_attention&&t.attention_reason?`<span>${esc(t.attention_reason)}</span>`:'';b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(t.goal||'Untitled goal')}</span><span class="chip">${esc(t.state)}</span></div><div class="task-meta muted"><span>${esc(t.project_id)}</span><span>${fmtTime(t.updated_at)}</span><span>${fmtTokens(t.usage?.model_total_tokens||0)} tokens${esc(fb)}</span>${attentionMeta}</div>`;b.addEventListener('click',async()=>{selectedTaskId=t.id;activateView('work');renderTasks();await refreshSelectedTask();});return b;}
+function renderTasks(){const scoped=scopedTasks();const attention=scoped.filter(t=>t.needs_attention);$('attention-count').textContent=attention.length;const ah=$('attention-list');ah.innerHTML='';attention.forEach(t=>ah.appendChild(taskButton(t)));if(!attention.length)ah.innerHTML='<div class="muted">Không có việc nào cần bạn can thiệp.</div>';const rh=$('recent-list');rh.innerHTML='';scoped.forEach(t=>rh.appendChild(taskButton(t)));if(!scoped.length)rh.innerHTML='<div class="empty">Chưa có task trong workspace này.</div>';}
 $('refresh-work').addEventListener('click',loadTasks);
+
+async function loadUsage(){const query=selectedWorkspace?`?project_id=${encodeURIComponent(selectedWorkspace)}`:'';usage=await api('/api/usage'+query);renderUsageView();renderOverview();}
+function renderTokenBars(hostId,days){const host=$(hostId);host.innerHTML='';const values=(days||[]).map(d=>Number(d.total_tokens||0));const max=Math.max(1,...values);for(const day of days||[]){const value=Number(day.total_tokens||0);const bar=document.createElement('div');bar.className='usage-bar';bar.style.height=`${value?Math.max(4,Math.round(value/max*100)):2}%`;bar.title=`${day.date}: ${fmtTokens(value)} tokens`;bar.setAttribute('role','img');bar.setAttribute('aria-label',bar.title);host.appendChild(bar);}if(!days?.length)host.innerHTML='<div class="muted">Chưa có usage data.</div>';}
+function usageMeasuredValue(total){const measured=Number(total?.results_with_token_data||0);const results=Number(total?.results||0);return measured>0?fmtTokens(total?.total_tokens||0):(results>0?'—':'0');}
+function usageMeasuredField(total,field){const measured=Number(total?.results_with_token_data||0);const results=Number(total?.results||0);return measured>0?fmtTokens(total?.[field]||0):(results>0?'—':'0');}
+function usageDetail(total){const measured=Number(total?.results_with_token_data||0);const results=Number(total?.results||0);if(results>0&&!measured)return 'Không có token counters đo được trong phạm vi này';return `${fmtTokens(total?.input_tokens||0)} input · ${fmtTokens(total?.output_tokens||0)} output`;}
+function renderUsageDailyRows(days){const host=$('usage-daily-rows');host.innerHTML='';for(const day of [...(days||[])].reverse()){const tr=document.createElement('tr');const measured=Number(day.results_with_token_data||0),results=Number(day.results||0);for(const value of [day.date||'—',usageMeasuredField(day,'input_tokens'),usageMeasuredField(day,'output_tokens'),usageMeasuredField(day,'total_tokens'),`${measured}/${results}`]){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}host.appendChild(tr);}if(!days?.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='Chưa có usage data.';tr.appendChild(td);host.appendChild(tr);}}
+function renderUsageView(){if(!usage)return;const scope=selectedWorkspace?`Workspace: ${selectedWorkspace}`:'Tất cả workspaces';$('usage-scope').textContent=scope;$('overview-usage-scope').textContent=scope;$('usage-today-total').textContent=usageMeasuredValue(usage.today);$('usage-today-detail').textContent=usageDetail(usage.today);$('usage-week-total').textContent=usageMeasuredValue(usage.week);$('usage-week-detail').textContent=`${usageDetail(usage.week)} · tuần lịch local`;$('usage-all-total').textContent=usageMeasuredValue(usage.all_time);$('usage-all-detail').textContent=usageDetail(usage.all_time);const all=usage.all_time||{};$('usage-coverage').textContent=`${fmtTokens(all.results_with_token_data||0)} latest task results có token counters; ${fmtTokens(all.results_without_token_data||0)} latest results không có token counters. Bucket ngày/tuần dùng durable result created_at theo giờ local; đây không phải provider billing timeline. Provider attribution hiện ${usage.provider_attribution==='UNAVAILABLE'?'chưa có trong durable usage':'có sẵn'}. MAR không suy đoán phần không được đo.`;renderTokenBars('usage-bars',usage.daily||[]);renderTokenBars('overview-usage-bars',(usage.daily||[]).slice(-7));renderUsageDailyRows(usage.daily||[]);}
+function ownerAttentionItems(){const items=[],seen=new Set();const add=item=>{if(!item?.id||seen.has(item.id))return;seen.add(item.id);items.push(item);};for(const item of runtime?.attention||[])add({...item,kind:'system'});for(const p of projects){if(!p.supported)add({id:`workspace-${p.id}`,kind:'workspace',severity:'medium',title:`Workspace ${p.id} chưa sẵn sàng`,detail:p.support_reason||p.head_error||'',view:'projects'});}for(const t of scopedTasks()){if(t.needs_attention)add({id:`task-${t.id}`,kind:'task',severity:t.attention_severity||'high',title:t.goal||'Task cần chú ý',detail:t.attention_reason||`${t.state} · ${t.project_id}`,next_action:t.attention_next_action||'',view:'work',task:t});}return items;}
+function attentionButton(item){const b=document.createElement('button');b.type='button';b.className='task status-attention';const support=[item.detail,item.next_action].filter(Boolean).join(' · ')||'Mở để xử lý';b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(item.title||'Cần chú ý')}</span><span class="chip">${esc(item.severity||'attention')}</span></div><div class="task-meta muted"><span>${esc(support)}</span></div>`;b.addEventListener('click',async()=>{if(item.kind==='task'&&item.task){selectedTaskId=item.task.id;activateView('work');renderTasks();await refreshSelectedTask();return;}activateView(item.view||'overview');});return b;}
+function renderOverview(){
+  const scoped=scopedTasks();const active=scoped.filter(t=>activeWorkStates.has(String(t.state||'').toUpperCase()));const attention=ownerAttentionItems();const conns=primaryConnections();const connected=runtimeFresh?conns.filter(activeConnector):[];
+  if(runtime){const healthy=!!runtime.sandbox_host_ready;$('overview-health').textContent=healthy?'Healthy':'Needs action';$('overview-health-detail').textContent=healthy?`Sandbox ready · uptime ${fmtDuration(runtime.uptime_seconds)}`:(runtime.sandbox_detail||'Sandbox chưa sẵn sàng');}
+  $('overview-active').textContent=active.length;$('overview-active-detail').textContent=`${scoped.length} task gần đây trong scope`;$('overview-attention').textContent=attention.length;$('overview-connections-count').textContent=runtimeFresh?`${connected.length} / ${conns.length}`:'—';$('overview-connections-detail').textContent=runtimeFresh?(connected.length?'Có provider activity/connection được MAR xác nhận':'Chưa có provider nào Connected'):'Telemetry stale · không xác nhận Connected';
+  if(usage){$('overview-tokens').textContent=usageMeasuredValue(usage.today);$('overview-tokens-detail').textContent=`${usageDetail(usage.today)} · MAR-measured`;}
+  const activeHost=$('overview-active-list');activeHost.innerHTML='';active.slice(0,5).forEach(t=>activeHost.appendChild(taskButton(t)));if(!active.length)activeHost.innerHTML='<div class="muted">Không có task đang hoạt động trong scope này.</div>';
+  const attentionHost=$('overview-attention-list');attentionHost.innerHTML='';attention.slice(0,6).forEach(item=>attentionHost.appendChild(attentionButton(item)));if(!attention.length)attentionHost.innerHTML='<div class="muted">Không có việc nào cần bạn can thiệp.</div>';
+  const connHost=$('overview-connections');connHost.innerHTML='';for(const c of conns){const activity=c.last_activity_at||c.last_seen_at||'';const measured=[];if(Number.isFinite(Number(c.requests))&&Number(c.requests)>0)measured.push(`${fmtTokens(c.requests)} requests/run`);if(activity)measured.push(`last ${fmtTime(activity)}`);const sessionValue=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';const sessionNote=c.active_sessions_available?'active sessions':'sessions unavailable';const shownStatus=runtimeFresh?c.status:'STALE';const row=document.createElement('div');row.className='overview-connection';row.innerHTML=`<div><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.transport||'')}${measured.length?` · ${esc(measured.join(' · '))}`:''}</div></div><div class="health-line"><span class="status-dot ${statusClass(shownStatus)}"></span>${esc(humanConnectorStatus(shownStatus))}</div><div class="connection-count" title="${esc(c.session_count_detail||'')}"><b>${sessionValue}</b><span class="muted" style="font-size:11px">${sessionNote}</span></div>`;connHost.appendChild(row);}if(!conns.length)connHost.innerHTML='<div class="muted">Chưa có connection metadata.</div>';
+  if(usage)renderTokenBars('overview-usage-bars',(usage.daily||[]).slice(-7));
+}
 
 async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('task-detail');try{
   const [statusRes,resultRes,inspectRes,feedbackRes]=await Promise.allSettled([api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/status`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/result`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/inspect`),api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/feedback`)]);
@@ -384,8 +514,11 @@ async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('t
   detail.querySelectorAll('[data-feedback]').forEach(btn=>btn.addEventListener('click',async()=>{const verdict=btn.dataset.feedback;const message=$('feedback-message').value.trim();setError('feedback-error');try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/feedback`,{method:'POST',body:JSON.stringify({verdict,message})});await loadTasks();}catch(err){setError('feedback-error',err.message);}}));
 }catch(err){detail.innerHTML=`<div class="notice error">${esc(err.message)}</div>`;}}
 
-async function boot(){try{await Promise.all([loadRuntime(),loadProjects(),loadTasks()]);pollTimer=setInterval(async()=>{await Promise.allSettled([loadRuntime(),loadTasks()]);},1500);}catch(err){$('work-readiness').className='notice error';$('work-readiness').textContent=err.message;}}
-window.addEventListener('beforeunload',()=>{if(pollTimer)clearInterval(pollTimer);});boot();
+async function pollRuntime(){try{await loadRuntime();}catch(err){markRuntimeStale(err);}}
+async function pollOperational(){if(operationalPollInFlight)return;operationalPollInFlight=true;try{await Promise.allSettled([pollRuntime(),loadTasks()]);}finally{operationalPollInFlight=false;}}
+async function pollUsage(){if(usagePollInFlight)return;usagePollInFlight=true;try{await loadUsage();}catch{}finally{usagePollInFlight=false;}}
+async function boot(){try{await Promise.all([loadRuntime(),loadProjects(),loadTasks()]);await loadUsage();pollTimer=setInterval(()=>{void pollOperational();},2000);usageTimer=setInterval(()=>{void pollUsage();},30000);}catch(err){markRuntimeStale(err);$('work-readiness').className='notice error';$('work-readiness').textContent=err.message;}}
+window.addEventListener('beforeunload',()=>{if(pollTimer)clearInterval(pollTimer);if(usageTimer)clearInterval(usageTimer);});boot();
 </script>
 </body>
 </html>

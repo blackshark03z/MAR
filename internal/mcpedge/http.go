@@ -16,10 +16,13 @@ import (
 
 const remoteMCPMaxRequestBytes int64 = 1 << 20
 
+const RemoteMCPSessionTimeout = 30 * time.Minute
+
 type RemoteHTTPEvent struct {
 	At            time.Time `json:"at"`
 	HTTPMethod    string    `json:"http_method"`
 	JSONRPCMethod string    `json:"jsonrpc_method,omitempty"`
+	SessionID     string    `json:"session_id,omitempty"`
 	Host          string    `json:"host,omitempty"`
 	Origin        string    `json:"origin,omitempty"`
 }
@@ -46,7 +49,7 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		JSONResponse:                 true,
 		Stateless:                    opts.Stateless,
-		SessionTimeout:               30 * time.Minute,
+		SessionTimeout:               RemoteMCPSessionTimeout,
 		DisableLocalhostProtection:   true, // secret-path + Origin guard below; tunnel forwards the public Host to loopback.
 		MaxRequestBodyBytes:          remoteMCPMaxRequestBytes,
 		PropagateRequestCancellation: true,
@@ -88,6 +91,7 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 				At:            time.Now().UTC(),
 				HTTPMethod:    r.Method,
 				JSONRPCMethod: rpcMethod,
+				SessionID:     strings.TrimSpace(r.Header.Get("Mcp-Session-Id")),
 				Host:          r.Host,
 				Origin:        strings.TrimSpace(r.Header.Get("Origin")),
 			})

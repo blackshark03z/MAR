@@ -30,24 +30,28 @@ const (
 	remoteStableProbeTimeout     = 3 * time.Second
 	remoteQuickProbeAttemptLimit = 15 * time.Second
 	remoteQuickStartAttempts     = 3
+	remoteSessionTelemetryLimit  = 256
 )
 
 type remoteConnectorState struct {
-	ID            string     `json:"id"`
-	Status        string     `json:"status"`
-	PreferredMode string     `json:"preferred_mode"`
-	PublicURL     string     `json:"public_url,omitempty"`
-	StableBaseURL string     `json:"stable_base_url,omitempty"`
-	StableURL     string     `json:"stable_url,omitempty"`
-	TemporaryURL  string     `json:"temporary_url,omitempty"`
-	LocalTarget   string     `json:"local_target,omitempty"`
-	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
-	LastHealthAt  *time.Time `json:"last_health_at,omitempty"`
-	Initialized   bool       `json:"initialized"`
-	ToolsListed   bool       `json:"tools_listed"`
-	Requests      int64      `json:"requests"`
-	RouteReady    bool       `json:"route_ready"`
-	LastError     string     `json:"last_error,omitempty"`
+	ID                      string     `json:"id"`
+	Status                  string     `json:"status"`
+	PreferredMode           string     `json:"preferred_mode"`
+	PublicURL               string     `json:"public_url,omitempty"`
+	StableBaseURL           string     `json:"stable_base_url,omitempty"`
+	StableURL               string     `json:"stable_url,omitempty"`
+	TemporaryURL            string     `json:"temporary_url,omitempty"`
+	LocalTarget             string     `json:"local_target,omitempty"`
+	LastSeenAt              *time.Time `json:"last_seen_at,omitempty"`
+	LastHealthAt            *time.Time `json:"last_health_at,omitempty"`
+	Initialized             bool       `json:"initialized"`
+	ToolsListed             bool       `json:"tools_listed"`
+	Requests                int64      `json:"requests"`
+	ActiveSessions          int        `json:"active_sessions,omitempty"`
+	ActiveSessionsAvailable bool       `json:"active_sessions_available"`
+	ActiveSessionsReason    string     `json:"active_sessions_reason,omitempty"`
+	RouteReady              bool       `json:"route_ready"`
+	LastError               string     `json:"last_error,omitempty"`
 }
 
 type remoteBridgeState struct {
@@ -69,13 +73,16 @@ type remoteBridgeState struct {
 type remoteTunnelStartFunc func(context.Context, string, string) (string, func() error, <-chan error, error)
 
 type remoteConnectorTelemetry struct {
-	lastSeenAt   time.Time
-	initialized  bool
-	toolsListed  bool
-	requests     int64
-	stableReady  bool
-	lastHealthAt time.Time
-	stableError  string
+	lastSeenAt                     time.Time
+	initialized                    bool
+	toolsListed                    bool
+	requests                       int64
+	sessions                       map[string]time.Time
+	sessionTrackingSeen            bool
+	sessionTrackingUnreliableUntil time.Time
+	stableReady                    bool
+	lastHealthAt                   time.Time
+	stableError                    string
 }
 
 type remoteBridgeManager struct {
@@ -261,11 +268,36 @@ func (m *remoteBridgeManager) stateLocked() remoteBridgeState {
 	return state
 }
 
+func pruneRemoteSessionTelemetry(telemetry *remoteConnectorTelemetry, now time.Time) {
+	if telemetry == nil {
+		return
+	}
+	for sessionID, lastSeen := range telemetry.sessions {
+		if now.Sub(lastSeen) > mcpedge.RemoteMCPSessionTimeout {
+			delete(telemetry.sessions, sessionID)
+		}
+	}
+	if !telemetry.sessionTrackingUnreliableUntil.IsZero() && !now.Before(telemetry.sessionTrackingUnreliableUntil) {
+		telemetry.sessionTrackingUnreliableUntil = time.Time{}
+	}
+}
+
 func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnectorProfile, telemetry *remoteConnectorTelemetry) remoteConnectorState {
+	now := time.Now().UTC()
+	pruneRemoteSessionTelemetry(telemetry, now)
+	sessionsAvailable := telemetry.sessionTrackingSeen && telemetry.sessionTrackingUnreliableUntil.IsZero()
 	state := remoteConnectorState{
 		ID: profile.ID, PreferredMode: profile.PreferredMode, StableBaseURL: profile.StableBaseURL,
 		LocalTarget: m.localBaseURL, Initialized: telemetry.initialized, ToolsListed: telemetry.toolsListed,
-		Requests: telemetry.requests, LastError: telemetry.stableError,
+		Requests: telemetry.requests, LastError: telemetry.stableError, ActiveSessionsAvailable: sessionsAvailable,
+	}
+	switch {
+	case !telemetry.sessionTrackingSeen:
+		state.ActiveSessionsReason = "NOT_OBSERVED"
+	case !sessionsAvailable:
+		state.ActiveSessionsReason = "CARDINALITY_LIMIT"
+	default:
+		state.ActiveSessions = len(telemetry.sessions)
 	}
 	if !telemetry.lastSeenAt.IsZero() {
 		last := telemetry.lastSeenAt
@@ -311,6 +343,14 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 	}
 
 	if telemetry.initialized {
+		if state.ActiveSessionsAvailable {
+			if state.ActiveSessions > 0 {
+				state.Status = "CONNECTED"
+			} else {
+				state.Status = "IDLE"
+			}
+			return state
+		}
 		if !telemetry.lastSeenAt.IsZero() && time.Since(telemetry.lastSeenAt) <= remoteConnectedWindow {
 			state.Status = "CONNECTED"
 		} else {
@@ -547,8 +587,28 @@ func (m *remoteBridgeManager) observe(connectorID string, event mcpedge.RemoteHT
 		telemetry = &remoteConnectorTelemetry{}
 		m.telemetry[connectorID] = telemetry
 	}
+	at := event.At.UTC()
+	if event.At.IsZero() {
+		at = time.Now().UTC()
+	}
 	telemetry.requests++
-	telemetry.lastSeenAt = event.At
+	telemetry.lastSeenAt = at
+	pruneRemoteSessionTelemetry(telemetry, at)
+	if sessionID := strings.TrimSpace(event.SessionID); sessionID != "" {
+		telemetry.sessionTrackingSeen = true
+		if telemetry.sessions == nil {
+			telemetry.sessions = make(map[string]time.Time)
+		}
+		if event.HTTPMethod == http.MethodDelete {
+			delete(telemetry.sessions, sessionID)
+		} else if _, exists := telemetry.sessions[sessionID]; exists {
+			telemetry.sessions[sessionID] = at
+		} else if len(telemetry.sessions) < remoteSessionTelemetryLimit {
+			telemetry.sessions[sessionID] = at
+		} else {
+			telemetry.sessionTrackingUnreliableUntil = at.Add(mcpedge.RemoteMCPSessionTimeout)
+		}
+	}
 	if event.JSONRPCMethod == "initialize" {
 		telemetry.initialized = true
 	}

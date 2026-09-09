@@ -18,13 +18,41 @@ ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a v
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
+## Owner Operations Console v2 — 2026-09-09
+
+**Accepted implementation base before this slice:** `71a884a3e17d42e0b39c4b8e525ff40d9444f383`
+
+**Status:** `ENGINEERING_STABLE`
+
+The already accepted V1 Secure Tunnel + ChatGPT plugin path remains `PRODUCT_ACCEPTED`. This slice does not reopen transport architecture; it adds the Owner Operations Console v2 and observability surface on top of that accepted base.
+
+The Console now exposes `Overview / Tasks / Workspaces / Connections / Usage / Diagnostics`, a persistent workspace selector, native Windows folder picker, actionable Attention Center, fresh/stale telemetry semantics, and WCAG 2.2 AA-oriented interaction behavior. Token usage is aggregated only from durable MAR `ResourceSummary` counters, with input/output/total for today, local calendar week, all time, and the last 30 days. Missing token counters remain explicitly unavailable instead of being inferred as zero, and provider attribution is explicitly `UNAVAILABLE` because current durable usage does not contain provider identity.
+
+GPT/Claude connection telemetry is intentionally transport-aware. OpenAI Secure MCP Tunnel is stateless, so MAR does not fabricate an active-session count from connectivity or recent activity. Stateful Streamable HTTP connectors track observed `Mcp-Session-Id` values, expire them with the runtime 30-minute MCP session timeout, remove them immediately on explicit `DELETE`, and cap tracked identities at 256; if that bound would be exceeded the count fails closed instead of publishing a partial metric. Request counters are runtime-local and labeled as `requests / run`.
+
+Attention Center combines real task state, verification verdict, unresolved risks, integration state, workspace readiness, sandbox state and GPT/Claude connection state. Task attention includes severity, reason and next action. Polling is bounded so the 2-second operational cycle and 30-second usage cycle cannot overlap themselves when backend requests are slow; failed runtime refresh marks telemetry stale and never preserves a stale `CONNECTED` claim as live.
+
+Final engineering evidence for this slice:
+
+- Windows elevated sandbox preparation completed and `sandbox-host-check` returned `sandbox_host_ready: true` on `D:\MAR\.mar\runtime\host-readiness`.
+- Isolated `TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate`: PASS after host preparation.
+- Final low-memory sequential regression using managed Go: **all 21 repository packages PASS**, including `cmd/mar`, `internal/aci`, `internal/orchestrator`, `internal/processctl`, `internal/verification`, `internal/worker`, and `internal/workspace`.
+- Managed-Go `go vet ./...`: PASS.
+- Release build to `D:\MAR\.mar\runtime\mar-owner-console-v2.exe`: PASS.
+- `git diff --check`: PASS.
+- Owner UI JavaScript syntax check: PASS.
+- Changed-file credential-pattern scan: PASS.
+- `Tunnel_api.txt` remained untracked and intentionally untouched.
+
+The first unconstrained parallel `go test ./...` attempt hit the Windows commit/pagefile limit rather than a code assertion. The release gate therefore uses the same tests sequentially (`-p 1` / package-by-package), which passed completely without changing verification policy. No fake metrics, network push or deployment were introduced.
+
 ## Current release gate — 2026-09-08, self-hosting closeout
 
 The runtime-source engineering release gate passed at `0716bcc9037e8a5f116d6e6c425453b60972bd6b`: vet, build, full sequential regression, real sandbox-host check, and diff-check all exited 0, with clean Git identity and binary SHA256 `C91F118B33C809DFB728AD6428BFBCD469C1F3A019CDC34DCE804F3094C34812` recorded locally. MAR later advanced `master` by one docs-only self-hosted integration and this handoff closeout will advance it once more. Therefore the final current-head claim still requires one last `D:\MAR\.mar\runtime\v1-release-final.json` refresh after this handoff commit. The record must match that final Git HEAD, every gate must exit 0, and `git_clean` must remain true.
 
-`PRODUCT_ACCEPTED` remains unclaimed pending explicit Owner real-use acceptance. The engineering evidence now supports `MAR_V1_STABLE` and `MAR_SELF_HOSTING_READY` once the final current-head release record above is refreshed successfully. OpenAI Secure MCP Tunnel remains optional/backlog and does not block the current MCP-Link path.
+The V1 Secure Tunnel + ChatGPT plugin path is already `PRODUCT_ACCEPTED` at the accepted pre-Console-v2 checkpoint. Owner Operations Console v2 is engineering-stable by the 2026-09-09 evidence above; explicit Owner real-use feedback remains the product-experience gate for the new Console surface only. Secure Tunnel is the current GPT primary path, while Server URL / Quick Tunnel is fallback/debug.
 
-### Current transport decision — 2026-09-08
+### Historical transport decision — 2026-09-08 (superseded by 2026-09-09 Secure Tunnel primary)
 
 Owner selected **MCP LINK** as the temporary/current GPT path instead of requiring OpenAI Secure MCP Tunnel. The existing hardened Streamable HTTP bridge treats `chatgpt-web` and `claude-web` as peer connector profiles with independent capability URLs, stable/temporary settings, secret-link rotation and telemetry. The public Quick Tunnel process may be shared infrastructure, but traffic/state cannot promote the other connector. Secure MCP Tunnel implementation remains intact as an optional advanced/future path.
 
