@@ -18,6 +18,14 @@ ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a v
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
+## Owner Console startup availability fix — 2026-09-09
+
+Owner real-use immediately exposed a runtime packaging gap after the Console v2 engineering release: `http://127.0.0.1:8787` returned `ERR_CONNECTION_REFUSED` because no Owner UI process was listening after the release-gate process exited. The stable binary itself remained valid. The immediate recovery launched `D:\MAR\.mar\runtime\mar-v1-stable.exe ui` against `D:\MAR\.mar\mar.db` / `D:\MAR\.mar` / managed Go and verified HTTP 200 plus `<title>MAR Console</title>` on loopback.
+
+The bounded product fix adds `scripts/start-owner-console.ps1`: an idempotent Windows launcher that verifies an existing MAR Console, fails closed if another process owns port 8787, otherwise starts the stable Owner UI with the persisted data root and managed toolchain, waits for an actual MAR HTML response, and optionally opens the browser. The current single-user installation registers this launcher at `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\MAR Owner Console.lnk` so the Console is available after sign-in without manual terminal work. This launcher does not create a second daemon/task authority; it starts the same `ui` runtime only when the loopback Console is absent.
+
+Runtime acceptance evidence for this fix: PowerShell parser check PASS; invoking the launcher while the Console was already live preserved the same listener PID; an absent-listener restart harness stopped owned MAR UI PID 16052 and the launcher established a new MAR UI PID 14736 with HTTP 200 and the expected MAR title; the production Console was then restored as PID 2900 and again returned HTTP 200. The Startup shortcut target/arguments were re-read after creation and matched the repository launcher. This closes the observed `ERR_CONNECTION_REFUSED` packaging/startup gap without changing MAR's frozen execution architecture.
+
 ## Owner Operations Console v2 — 2026-09-09
 
 **Accepted implementation base before this slice:** `71a884a3e17d42e0b39c4b8e525ff40d9444f383`

@@ -81,6 +81,8 @@ mar ui -db <data-root>/mar.db -data-root <data-root> -brain web
 
 Then open `http://127.0.0.1:8787`.
 
+For the single-owner Windows installation, `scripts/start-owner-console.ps1` is the idempotent launcher used by the user Startup shortcut. It exits successfully when the verified MAR Console is already listening, refuses to reuse port 8787 if another process owns it, and otherwise starts the current stable binary with the persisted MAR database/data root and managed Go toolchain. This keeps the localhost Console available after Windows sign-in without creating a second runtime authority.
+
 The Console exposes four normal surfaces:
 
 - **Work** — current/recent durable tasks, attention queue, result/evidence, MAR-measured token usage and Owner feedback;
