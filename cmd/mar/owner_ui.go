@@ -689,6 +689,7 @@ func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http
 	}
 	next.ClientPath = strings.TrimSpace(req.ClientPath)
 	next.AdminBaseURL = strings.TrimRight(strings.TrimSpace(req.AdminBaseURL), "/")
+	next.DesiredRunning = next.TunnelID != ""
 	next.UpdatedAt = time.Now().UTC()
 	if err := next.Validate(); err != nil {
 		writeOwnerError(w, http.StatusBadRequest, err)
@@ -711,7 +712,8 @@ func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http
 		writeOwnerError(w, http.StatusBadRequest, err)
 		return
 	}
-	if changed && wasActive {
+	state := b.openAITunnel.State()
+	if next.DesiredRunning && !state.Running && state.Configured && state.ClientFound && state.AuthConfigured {
 		if _, err := b.openAITunnel.Start(); err != nil {
 			writeOwnerError(w, http.StatusServiceUnavailable, err)
 			return
@@ -866,24 +868,17 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
-		nextAction = "MAR tự chuẩn bị MCP Link cho GPT/ChatGPT khi khởi động; mở Kết nối AI để sao chép URL khi route sẵn sàng."
-		for _, connector := range bridge.Connectors {
-			if connector.ID == store.RemoteConnectorChatGPTWeb {
-				switch connector.Status {
-				case "CONNECTING":
-					nextAction = "MAR đang tự chuẩn bị GPT MCP Link; không cần bấm tạo link."
-				case "CONNECTED":
-					nextAction = "GPT MCP Link đang trao đổi traffic với MAR."
-				case "LINK_READY", "IDLE":
-					nextAction = "GPT MCP Link đã sẵn sàng; sao chép MCP URL vào ChatGPT để bắt đầu dùng MAR."
-				}
-			}
-			if connector.ID == store.RemoteConnectorClaudeWeb && connector.Status == "CONNECTED" && !strings.HasPrefix(nextAction, "GPT MCP Link") {
-				nextAction = "Claude MCP Link đang trao đổi traffic với MAR."
-			}
-		}
-		if tunnel.Connected && !strings.HasPrefix(nextAction, "GPT MCP Link") {
-			nextAction = "OpenAI Secure MCP Tunnel (tùy chọn) đang kết nối; MCP Link vẫn là đường V1 hiện tại."
+		switch {
+		case tunnel.Connected:
+			nextAction = "GPT đang kết nối qua OpenAI Secure MCP Tunnel. MAR sẽ tự dùng lại cùng tunnel ID sau khi khởi động lại."
+		case tunnel.Running || tunnel.Status == "CONNECTING":
+			nextAction = "GPT Secure Tunnel đang kết nối lại bằng tunnel ID đã lưu; không tạo link mới."
+		case tunnel.Configured && (!tunnel.ClientFound || !tunnel.AuthConfigured):
+			nextAction = "GPT Secure Tunnel đã lưu tunnel ID. Hoàn tất tunnel-client và runtime API key một lần; MAR sẽ tự kết nối lại về sau."
+		case tunnel.Configured:
+			nextAction = "GPT Secure Tunnel đã cấu hình và sẽ tự kết nối bằng cùng tunnel ID khi đủ điều kiện."
+		default:
+			nextAction = "Thiết lập GPT một lần: tạo Tunnel trong OpenAI Platform, nhập Tunnel ID tại đây, rồi trong ChatGPT Plugins chọn Tunnel và cùng Tunnel ID."
 		}
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
@@ -894,12 +889,22 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 
 	stdioArgs := b.webStdioArgs()
 	connections := make([]ownerConnectionView, 0, 5)
+	connections = append(connections, ownerConnectionView{
+		ID: "openai-tunnel", Name: "GPT · OpenAI Secure Tunnel", Status: tunnel.Status, Transport: tunnel.Transport,
+		Summary:    "Đường ChatGPT chính. Thiết lập tunnel ID một lần; MAR tự dùng lại cùng identity và tự kết nối lại sau restart.",
+		Configured: tunnel.Configured, Running: tunnel.Running, Healthy: tunnel.Healthy, Ready: tunnel.Ready, Connected: tunnel.Connected,
+		Identifier: tunnel.Identifier, ProfileName: tunnel.ProfileName, APIKeyEnv: tunnel.APIKeyEnv, AuthConfigured: tunnel.AuthConfigured,
+		ClientFound: tunnel.ClientFound, ClientPath: tunnel.ClientPath, InstallURL: tunnel.InstallURL, LocalTarget: tunnel.LocalTarget,
+		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
+		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
+		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
+	})
 	for _, connector := range bridge.Connectors {
-		name := "Claude"
-		summary := "Claude MCP Link có capability URL và telemetry traffic riêng."
+		name := "Claude Web"
+		summary := "Kết nối Claude độc lập với GPT Secure Tunnel; capability URL và telemetry được tách riêng."
 		if connector.ID == store.RemoteConnectorChatGPTWeb {
-			name = "OpenAI / GPT"
-			summary = "GPT MCP Link có capability URL và telemetry traffic riêng; đây là đường V1 hiện tại."
+			name = "GPT Server URL fallback"
+			summary = "Fallback/debug cho ChatGPT. Quick Tunnel là tạm thời và hostname có thể đổi sau restart hoặc khi tunnel được tạo lại."
 		}
 		connections = append(connections, ownerConnectionView{
 			ID: connector.ID, Name: name, Status: connector.Status, Transport: "streamable-http", Summary: summary,
@@ -910,16 +915,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
 		})
 	}
-	connections = append(connections, ownerConnectionView{
-		ID: "openai-tunnel", Name: "OpenAI Secure Tunnel (optional)", Status: tunnel.Status, Transport: tunnel.Transport,
-		Summary:    "Tùy chọn nâng cao/future path; không còn chặn MCP Link V1 hiện tại.",
-		Configured: tunnel.Configured, Running: tunnel.Running, Healthy: tunnel.Healthy, Ready: tunnel.Ready, Connected: tunnel.Connected,
-		Identifier: tunnel.Identifier, ProfileName: tunnel.ProfileName, APIKeyEnv: tunnel.APIKeyEnv, AuthConfigured: tunnel.AuthConfigured,
-		ClientFound: tunnel.ClientFound, ClientPath: tunnel.ClientPath, InstallURL: tunnel.InstallURL, LocalTarget: tunnel.LocalTarget,
-		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
-		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
-		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
-	})
+
 	connections = append(connections, ownerConnectionView{ID: "claude-desktop", Name: "Claude Desktop (optional)", Status: "AVAILABLE_LOCAL", Transport: "stdio", Summary: "Optional local client path only; not required for Claude Web.", Command: b.executable, Args: stdioArgs, SetupAction: "DOWNLOAD_MCPB"})
 	providerStatus := "NOT_CONFIGURED"
 	if providerReady {

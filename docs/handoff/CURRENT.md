@@ -12,6 +12,10 @@
 
 **Remote state:** local `master` is ahead of `origin/master`; nothing was pushed or deployed.
 
+**Product transport decision — 2026-09-09:** `OPENAI_SECURE_TUNNEL_PRIMARY`
+
+ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a valid Tunnel ID arms durable desired-running state; MAR reuses the same tunnel identity and attempts automatic recovery on later launches when the local client and credential prerequisite are present. Server URL / Quick Tunnel remains an explicitly temporary fallback/debug path and is not presented as stable primary. Claude Web remains independent from GPT Secure Tunnel state and keeps its separate capability URL/telemetry path. Tunnel API-key values are environment-only and must never be persisted or rendered.
+
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
 ## Current release gate — 2026-09-08, self-hosting closeout

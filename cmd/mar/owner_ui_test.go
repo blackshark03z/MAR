@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -81,7 +82,7 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 	if payload["provider_ready"] != true {
 		t.Fatalf("expected configured provider alternative, got %#v", payload)
 	}
-	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "MCP Link") || !strings.Contains(rec.Body.String(), "chatgpt-web") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "openai-tunnel") {
+	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "Tunnel") || !strings.Contains(rec.Body.String(), "chatgpt-web") || !strings.Contains(rec.Body.String(), "claude-web") || !strings.Contains(rec.Body.String(), "openai-tunnel") {
 		t.Fatalf("missing actionable Web MCP guidance: %#v", payload)
 	}
 	if strings.Contains(rec.Body.String(), "super-secret-value") {
@@ -343,7 +344,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 }
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
+	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
 		if !strings.Contains(ownerUIHTML, required) {
 			t.Fatalf("Connection Hub is missing %q", required)
 		}
@@ -681,6 +682,155 @@ func TestOwnerUIRecentWorkRestoresWithoutTaskIDAndPrematureAcceptanceFails(t *te
 	}
 }
 
+func ownerRuntimeConnectionContract(t *testing.T) string {
+	t.Helper()
+	backend := &ownerUIBackend{brainMode: "web", executable: "mar.exe", dataRoot: t.TempDir(), sessionToken: "test-owner-token", sandboxCheck: func(context.Context, string, string) (bool, string) { return true, "prepared" }}
+	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
+	req.Host = "127.0.0.1:8787"
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("runtime status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+func TestOwnerUIGPTSecureTunnelPrimary(t *testing.T) {
+	body := ownerRuntimeConnectionContract(t)
+	primary, fallback := strings.Index(body, `"id":"openai-tunnel"`), strings.Index(body, `"id":"chatgpt-web"`)
+	if primary < 0 || fallback < 0 || primary >= fallback || !strings.Contains(body, `"name":"GPT · OpenAI Secure Tunnel"`) {
+		t.Fatalf("Secure Tunnel is not primary: %s", body)
+	}
+	for _, marker := range []string{"OpenAI Secure MCP Tunnel</strong> làm đường kết nối chính", "connection-primary", "Secure MCP Tunnel · ChatGPT primary", "Khuyến nghị"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("missing primary UX %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIGPTQuickTunnelIsFallback(t *testing.T) {
+	body := ownerRuntimeConnectionContract(t)
+	for _, marker := range []string{"GPT Server URL fallback", "Fallback/debug cho ChatGPT", "hostname có thể đổi"} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("missing fallback semantics %q: %s", marker, body)
+		}
+	}
+	for _, marker := range []string{"Server URL / Quick Tunnel chỉ là fallback tạm thời", "connection-fallback"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("missing fallback UX %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIOpenAITunnelSaveArmsAutoResume(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager := newOpenAITunnelManager(ctx, service.NewTaskService(db), t.TempDir())
+	makeOpenAITunnelPassiveForTest(manager)
+	defer manager.Close()
+	process := newFakeTunnelProcess()
+	manager.findClient = func(store.OpenAITunnelConfig, string) (string, error) { return `C:\fake\tunnel-client.exe`, nil }
+	manager.runCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		if len(args) > 0 && args[0] == "doctor" {
+			return "doctor ready", nil
+		}
+		return "", nil
+	}
+	manager.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) { return process, nil }
+	config, err := db.EnsureOpenAITunnelConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Configure(config); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAR_UI_AUTOSTART_KEY", "unit-test-autostart-secret")
+	backend := &ownerUIBackend{db: db, svc: service.NewTaskService(db), openAITunnel: manager, sessionToken: "test-owner-token"}
+	req := httptest.NewRequest(http.MethodPost, "/api/connections/openai-tunnel/config", strings.NewReader(`{"tunnel_id":"tunnel_0123456789abcdef","api_key_env":"MAR_UI_AUTOSTART_KEY"}`))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "unit-test-autostart-secret") {
+		t.Fatalf("save/autostart failed or leaked secret: %d %s", rec.Code, rec.Body.String())
+	}
+	persisted, err := db.GetOpenAITunnelConfig(ctx)
+	if err != nil || !persisted.DesiredRunning || persisted.TunnelID != "tunnel_0123456789abcdef" {
+		t.Fatalf("auto-resume not armed: %+v err=%v", persisted, err)
+	}
+	state := manager.State()
+	if !state.Running || state.Identifier != persisted.TunnelID {
+		t.Fatalf("save did not start tunnel: %+v", state)
+	}
+}
+
+func TestOwnerUIOpenAITunnelIdentitySurvivesRestart(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	config, err := db.EnsureOpenAITunnelConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.TunnelID = "tunnel_feedfacecafebeef"
+	config.DesiredRunning = true
+	config.UpdatedAt = time.Now().UTC()
+	if err := db.UpsertOpenAITunnelConfig(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	manager := newOpenAITunnelManager(ctx, service.NewTaskService(db), t.TempDir())
+	makeOpenAITunnelPassiveForTest(manager)
+	defer manager.Close()
+	persisted, err := db.GetOpenAITunnelConfig(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Configure(persisted); err != nil {
+		t.Fatal(err)
+	}
+	state := manager.State()
+	if state.Identifier != "tunnel_feedfacecafebeef" || !state.DesiredRunning {
+		t.Fatalf("restart lost identity: %+v", state)
+	}
+}
+func TestOwnerUIConnectionUXAccessibilityContract(t *testing.T) {
+	for _, marker := range []string{":focus-visible", "min-width: 44px", "min-height: 44px", `role="status" aria-live="polite" aria-atomic="true"`, `role="alert"`, `aria-label="Thiết lập ChatGPT một lần"`} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("accessibility contract missing %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIConnectionUXResponsivePrimaryFlow(t *testing.T) {
+	for _, marker := range []string{"connection-primary { grid-column: span 2", "@media(max-width:360px)", ".identifier-row{grid-template-columns:1fr;}", ".actions>button{width:100%;}", "Lưu &amp; kết nối"} {
+		if !strings.Contains(ownerUIHTML, marker) {
+			t.Fatalf("responsive primary flow missing %q", marker)
+		}
+	}
+}
+
+func TestOwnerUIClaudeConnectionRemainsIndependent(t *testing.T) {
+	body := ownerRuntimeConnectionContract(t)
+	for _, marker := range []string{`"id":"claude-web"`, `"name":"Claude Web"`, "Kết nối Claude độc lập với GPT Secure Tunnel"} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("Claude independence missing %q: %s", marker, body)
+		}
+	}
+	if strings.Index(body, `"id":"claude-web"`) == strings.Index(body, `"id":"chatgpt-web"`) {
+		t.Fatal("Claude and GPT fallback collapsed into one connector")
+	}
+}
 func runOwnerGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
 	git := requireGitTool(t)
