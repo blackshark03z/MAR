@@ -18,6 +18,26 @@ ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a v
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
+## Owner Operations Console v3 — 2026-09-09
+
+**Design baseline:** `docs/design/OWNER_CONSOLE_V3.md`
+
+**Status before final current-head release binding:** `V3_CANDIDATE_BROWSER_ACCEPTED`
+
+Owner real-use on Console v2 showed that feature completeness was not enough: the Overview could say `Healthy` while GPT had an actionable error, historical engineering failures inflated the owner attention count, and the desktop sidebar visually broke. The v3 redesign is therefore interaction-led rather than CSS-led. Its accepted principles are answer-first, action-first, directed browsing, progressive disclosure, semantic status separation, evidence-bound telemetry, calm hierarchy, and WCAG 2.2 AA-oriented interaction behavior.
+
+The Overview now answers operational readiness before showing analytics. Aggregate state is derived from fresh runtime telemetry, sandbox readiness, and the primary GPT/Claude connection paths: `Operational`, `Degraded`, `Action required`, or `Telemetry unavailable`. It can no longer report a healthy/operational answer solely because the sandbox is ready. On the current real MAR state, the browser-rendered answer is `Degraded` with the explanation `GPT · OpenAI Secure Tunnel: Lỗi · Claude Web: Link sẵn sàng`, matching actual subsystem state.
+
+Overview Action Center is intentionally narrower than the broader engineering attention model. It shows actionable-now owner/system conditions: sandbox preparation, provider recovery/configuration, unsupported workspace readiness, and tasks in `INPUT_REQUIRED`. Historical `BLOCKED`/`FAILED`, unverified results, unresolved risks, or non-integrated results remain visible in Tasks/Diagnostics but do not inflate the Owner action counter. On the current real state the old `10` attention items became `1` actionable Owner item without deleting any durable evidence.
+
+Tasks now expose owner-facing stages (`Preparing`, `Working`, `Checking result`, `Needs your input`, `Completed`, `Could not complete`) while preserving exact technical state as secondary evidence. A selected task explains whether Owner action is required and what happens next; `INPUT_REQUIRED` gets one primary `Gửi và tiếp tục` action. Connections now separates `Configuration`, `Transport`, and `Live activity`; `Link ready` is explicitly not equivalent to `Connected`, and transports without authoritative session identity continue to show session count unavailable rather than an inferred number. First-time ChatGPT setup and deep diagnostics use progressive disclosure.
+
+The sidebar defect was found mechanically during browser UAT. The fixed `nav` was nested inside a sticky/backdrop-filter header, which created an unexpected containing block: Chrome measured the desktop nav at only ~36px high while its buttons overflowed outside it. v3 moves `<nav>` outside `<header>` instead of masking the symptom with CSS. Browser/CDP acceptance on the real live Console at desktop viewport ~1582x904 then measured nav `248x831`, bottom exactly at viewport bottom, main content starting at x=248, zero horizontal overflow, and every navigation label with `scrollWidth == clientWidth`. At compact 800x1000, nav becomes horizontal, main starts at x=0, and horizontal overflow remains zero.
+
+Browser interaction acceptance also verified that the Connections KPI routes to the Connections view and updates `aria-current`; real Overview state rendered `Degraded`; current Owner action count rendered `1`; and the live v3 Console remained HTTP 200. Targeted JavaScript syntax, `cmd/mar`, `internal/mcpedge`, `internal/store`, and `git diff --check` gates passed after the redesign. No token/session/provider metric was invented, and `Tunnel_api.txt` remained untracked and untouched.
+
+The professional design research used for this baseline reinforces the same constraints: operations dashboards should answer concrete questions and move from overview to detail; status/focus/target interactions require explicit accessible semantics; and telemetry names/availability must preserve what is actually measured rather than infer missing data. This redesign does not reopen MAR's frozen execution architecture.
+
 ## Owner Console startup availability fix — 2026-09-09
 
 Owner real-use immediately exposed a runtime packaging gap after the Console v2 engineering release: `http://127.0.0.1:8787` returned `ERR_CONNECTION_REFUSED` because no Owner UI process was listening after the release-gate process exited. The stable binary itself remained valid. The immediate recovery launched `D:\MAR\.mar\runtime\mar-v1-stable.exe ui` against `D:\MAR\.mar\mar.db` / `D:\MAR\.mar` / managed Go and verified HTTP 200 plus `<title>MAR Console</title>` on loopback.

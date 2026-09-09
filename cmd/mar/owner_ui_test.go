@@ -185,9 +185,9 @@ func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
 }
 
 func TestOwnerUIOperationsOverviewInformationArchitecture(t *testing.T) {
-	for _, marker := range []string{`data-view="overview" class="active" aria-current="page"`, `data-view="work">✓&nbsp; Tasks`, `data-view="projects">▣&nbsp; Workspaces`, `data-view="connections">⇄&nbsp; Connections`, `data-view="usage">◒&nbsp; Usage`, `data-view="advanced">⚙&nbsp; Diagnostics`, `id="workspace-filter"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="usage-daily-rows"`, `id="usage-coverage"`, "AI providers connected", "MAR-measured only", `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "sessions unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()"} {
+	for _, marker := range []string{`data-view="overview" class="active" aria-current="page">Overview`, `data-view="work">Tasks`, `data-view="projects">Workspaces`, `data-view="connections">Connections`, `data-view="usage">Usage`, `data-view="advanced">Diagnostics`, `id="workspace-filter"`, `id="operational-answer"`, "Operational readiness", "Needs your action", `id="overview-action-center"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="usage-daily-rows"`, `id="usage-coverage"`, "MAR-measured only", `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "session count unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "function operationalHealth()", "String(t.state||'').toUpperCase()==='INPUT_REQUIRED'", "taskStageLabel"} {
 		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("operations overview contract missing %q", marker)
+			t.Fatalf("operations overview v3 contract missing %q", marker)
 		}
 	}
 }
@@ -908,7 +908,7 @@ func TestOwnerUIGPTSecureTunnelPrimary(t *testing.T) {
 	if primary < 0 || fallback < 0 || primary >= fallback || !strings.Contains(body, `"name":"GPT · OpenAI Secure Tunnel"`) {
 		t.Fatalf("Secure Tunnel is not primary: %s", body)
 	}
-	for _, marker := range []string{"OpenAI Secure MCP Tunnel</strong> làm đường kết nối chính", "connection-primary", "Secure MCP Tunnel · ChatGPT primary", "Khuyến nghị"} {
+	for _, marker := range []string{"OpenAI Secure MCP Tunnel là đường ChatGPT chính", "connection-primary", "Secure MCP Tunnel · ChatGPT primary", "Khuyến nghị", "Link ready không đồng nghĩa Connected", "connection-state-grid"} {
 		if !strings.Contains(ownerUIHTML, marker) {
 			t.Fatalf("missing primary UX %q", marker)
 		}
@@ -1045,7 +1045,7 @@ func TestOwnerUIUsageChartsDoNotCreateDecorativeKeyboardStops(t *testing.T) {
 }
 
 func TestOwnerUIConnectionUXResponsivePrimaryFlow(t *testing.T) {
-	for _, marker := range []string{"connection-primary { grid-column: span 2", "@media(max-width:360px)", ".identifier-row{grid-template-columns:1fr;}", ".actions>button{width:100%;}", "Lưu &amp; kết nối"} {
+	for _, marker := range []string{".connection-primary { grid-column:auto; border-width:1px; }", "@media(max-width:360px)", ".identifier-row{grid-template-columns:1fr;}", ".actions>button{width:100%;}", ".connection-state-grid{grid-template-columns:1fr;}", "Lưu &amp; kết nối"} {
 		if !strings.Contains(ownerUIHTML, marker) {
 			t.Fatalf("responsive primary flow missing %q", marker)
 		}
