@@ -253,7 +253,7 @@ func (m *openAITunnelManager) Start() (openAITunnelState, error) {
 	localTarget := m.localTarget
 	m.clientPath = clientPath
 	m.mu.Unlock()
-	if _, err := m.runCommandWithTimeout(startCtx, 30*time.Second, clientPath, "init", "--sample", "sample_mcp_stdio_local", "--profile", config.ProfileName, "--tunnel-id", config.TunnelID, "--mcp-server-url", localTarget); err != nil {
+	if _, err := m.runCommandWithTimeout(startCtx, 30*time.Second, clientPath, "init", "--force", "--sample", "sample_mcp_with_dcr", "--profile", config.ProfileName, "--tunnel-id", config.TunnelID, "--mcp-server-url", localTarget); err != nil {
 		return m.failStart(epoch, fmt.Errorf("initialize tunnel-client profile: %w", err))
 	}
 	diagnostic, err := m.runCommandWithTimeout(startCtx, 45*time.Second, clientPath, "doctor", "--profile", config.ProfileName, "--explain")
@@ -384,7 +384,7 @@ func (m *openAITunnelManager) Diagnose(ctx context.Context) (openAITunnelState, 
 		m.setError(err)
 		return m.State(), err
 	}
-	if output, initErr := m.runCommand(ctx, clientPath, "init", "--sample", "sample_mcp_stdio_local", "--profile", config.ProfileName, "--tunnel-id", config.TunnelID, "--mcp-server-url", localTarget); initErr != nil {
+	if output, initErr := m.runCommand(ctx, clientPath, "init", "--force", "--sample", "sample_mcp_with_dcr", "--profile", config.ProfileName, "--tunnel-id", config.TunnelID, "--mcp-server-url", localTarget); initErr != nil {
 		redacted := redactTunnelOutput(output, os.Getenv(config.APIKeyEnv))
 		safeErr := newRedactedTunnelError(initErr, os.Getenv(config.APIKeyEnv), redacted)
 		m.setError(safeErr)

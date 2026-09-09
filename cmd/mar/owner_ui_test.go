@@ -344,10 +344,13 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 }
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()"} {
+	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "setInterval(async()=>", "await loadRuntime()", "card.className='card provider-card'"} {
 		if !strings.Contains(ownerUIHTML, required) {
 			t.Fatalf("Connection Hub is missing %q", required)
 		}
+	}
+	if strings.Contains(ownerUIHTML, "card.className=card provider-card") {
+		t.Fatal("Connection Hub contains malformed JavaScript for provider card className")
 	}
 }
 
