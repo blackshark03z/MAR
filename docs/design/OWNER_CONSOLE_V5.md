@@ -52,11 +52,10 @@ Primary realtime surface. It contains:
 - authoritative session summary;
 - reachable-route summary;
 - active-turn token total/rate;
-- GPT and Claude route summaries;
+- separate GPT and Claude live zones, each showing route readiness, authoritative sessions, requests, live paths and recent provider events;
+- one shared live-token monitor on the same screen (total, input, output, rate and trend);
 - execution-flow table keyed by task + run epoch;
-- route/session table;
-- bounded Event Stream;
-- active-turn token trend.
+- provider-specific route/session detail inside each zone instead of one mixed route table.
 
 ### Connections
 
@@ -77,7 +76,9 @@ v5 intentionally uses a light theme independent of OS preference:
 - emerald success, amber warning, red error;
 - soft borders/shadows instead of dark card chrome;
 - tables for scalable multi-flow information instead of one card per flow;
-- compact summary rails for high-level answers.
+- compact summary rails for high-level answers;
+- Overview stays intentionally terse; explanatory copy is moved to titles/details rather than repeated in every panel;
+- GPT and Claude remain visually separate zones so multiple routes/sessions can be scanned without provider mixing.
 
 The visual system should remain calm when the number of flows grows. Tables scroll inside bounded containers; page-level horizontal overflow is not allowed.
 
