@@ -28,6 +28,7 @@ type RemoteHTTPOptions struct {
 	PathToken          string
 	AllowedOriginHosts []string
 	Observe            func(RemoteHTTPEvent)
+	Stateless          bool
 }
 
 func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler, error) {
@@ -44,6 +45,7 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 	}
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		JSONResponse:                 true,
+		Stateless:                    opts.Stateless,
 		SessionTimeout:               30 * time.Minute,
 		DisableLocalhostProtection:   true, // secret-path + Origin guard below; tunnel forwards the public Host to loopback.
 		MaxRequestBodyBytes:          remoteMCPMaxRequestBytes,

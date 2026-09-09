@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -66,6 +67,28 @@ func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
 	defer mu.Unlock()
 	if !containsRemoteMethod(methods, "initialize") || !containsRemoteMethod(methods, "tools/list") {
 		t.Fatalf("remote MCP telemetry missed initialization/list-tools: %v", methods)
+	}
+}
+
+func TestRemoteHTTPStatelessAdvertisesModernMCPProtocol(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{PathToken: token, Stateless: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"jsonrpc":"2.0","id":"discover-modern","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"chatgpt-probe","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp/"+token, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+	req.Header.Set("Mcp-Method", "server/discover")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("modern discovery status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"supportedVersions":["2026-07-28"`) {
+		t.Fatalf("modern discovery did not advertise 2026-07-28: %s", rec.Body.String())
 	}
 }
 

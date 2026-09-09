@@ -441,7 +441,7 @@ func (m *openAITunnelManager) ensureLocalServer() error {
 		return err
 	}
 	handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
-		PathToken: token, AllowedOriginHosts: []string{"openai.com", "chatgpt.com"}, Observe: m.observeMCP,
+		PathToken: token, AllowedOriginHosts: []string{"openai.com", "chatgpt.com"}, Observe: m.observeMCP, Stateless: true,
 	})
 	if err != nil {
 		return fmt.Errorf("build OpenAI tunnel local MCP handler: %w", err)
