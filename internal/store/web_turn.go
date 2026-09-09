@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"mar/internal/domain"
@@ -150,6 +151,40 @@ func (s *SQLite) GetWebTurn(ctx context.Context, turnID string) (domain.WebTurn,
 		return domain.WebTurn{}, errors.New("web turn integrity is invalid")
 	}
 	return turn, nil
+}
+
+// ListWebTurnsByTaskEpoch returns a bounded chronological view of one execution
+// epoch. It is a read-only observability surface: callers may derive live
+// progress from already-durable Web Brain turn responses, but this method never
+// participates in execution authority or verification.
+func (s *SQLite) ListWebTurnsByTaskEpoch(ctx context.Context, taskID string, epoch int64, limit int) ([]domain.WebTurn, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" || epoch <= 0 {
+		return nil, errors.New("web turn listing requires task id and positive epoch")
+	}
+	if limit <= 0 || limit > 128 {
+		return nil, errors.New("web turn listing limit must be in [1,128]")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND run_epoch = ? ORDER BY created_at ASC LIMIT ?`, taskID, epoch, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	turns := make([]domain.WebTurn, 0, min(limit, 24))
+	for rows.Next() {
+		turn, err := scanWebTurn(rows)
+		if err != nil {
+			return nil, err
+		}
+		if !turn.IntegrityValid() {
+			return nil, errors.New("web turn integrity is invalid")
+		}
+		turns = append(turns, turn)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return turns, nil
 }
 
 type webTurnScanner interface {

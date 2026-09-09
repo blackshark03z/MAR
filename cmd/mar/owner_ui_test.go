@@ -21,6 +21,7 @@ import (
 	"mar/internal/domain"
 
 	"mar/internal/mcpedge"
+	"mar/internal/model"
 
 	"mar/internal/service"
 	"mar/internal/store"
@@ -185,10 +186,111 @@ func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
 }
 
 func TestOwnerUIOperationsOverviewInformationArchitecture(t *testing.T) {
-	for _, marker := range []string{`data-view="overview" class="active" aria-current="page">Overview`, `data-view="work">Tasks`, `data-view="projects">Workspaces`, `data-view="connections">Connections`, `data-view="usage">Usage`, `data-view="advanced">Diagnostics`, `id="workspace-filter"`, `id="operational-answer"`, "Operational readiness", "Needs your action", `id="overview-action-center"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="usage-daily-rows"`, `id="usage-coverage"`, "MAR-measured only", `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "session count unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "function operationalHealth()", "String(t.state||'').toUpperCase()==='INPUT_REQUIRED'", "taskStageLabel"} {
+	for _, marker := range []string{`data-view="overview" class="active" aria-current="page">Overview`, `data-view="live">Live Operations`, `data-view="work">Tasks`, `data-view="projects">Workspaces`, `data-view="connections">Connections`, `data-view="usage">Usage`, `data-view="advanced">Diagnostics`, `id="workspace-filter"`, `id="operational-answer"`, "Right now", "Needs your action", `id="overview-session-count"`, `id="overview-action-center"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="live-operations"`, `id="live-event-stream"`, `id="live-token-sparkline"`, `id="live-token-rate"`, `id="live-page-flow-count"`, `id="live-page-session-count"`, `id="live-page-route-count"`, `id="live-provider-summary"`, `id="live-flow-rows"`, `id="live-route-rows"`, "Authoritative sessions", "Live execution flows", "modern light operations system", "color-scheme:light", "#f6f8fb", "observing every 2s", "Active-turn tokens", `id="usage-daily-rows"`, `id="usage-coverage"`, `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "session count unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "function operationalHealth()", "function sessionSummary()", "function routeSummary()", "function liveFlowRows()", "waiting_for_ai_turn", "captureRealtimeObservation", "taskStageLabel"} {
 		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("operations overview v3 contract missing %q", marker)
+			t.Fatalf("operations overview v4 contract missing %q", marker)
 		}
+	}
+}
+
+func TestOwnerUITaskFlowIdentityIncludesRunEpoch(t *testing.T) {
+	payload, err := json.Marshal(ownerTaskView{ID: "task-1", ProjectID: "mar", Goal: "observe flow", State: domain.TaskRunning, RunEpoch: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(payload), `"run_epoch":7`) {
+		t.Fatalf("owner task flow identity lost run epoch: %s", payload)
+	}
+}
+
+func TestOwnerUILiveUsageUsesDurableWebTurnsAndBrainWaitIsNotOwnerAttention(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := service.NewTaskService(db)
+	if _, _, err := svc.RegisterProject(ctx, "live-project", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "Observe live model progress",
+		Acceptance:          []string{"Live model usage is visible without fake billing data"},
+		Boundaries:          []string{"local project only"},
+		NonGoals:            []string{"no deployment"},
+		ProjectID:           "live-project",
+		BaseRevision:        "base-revision",
+		Authority:           domain.Authority{LocalFileWrite: true},
+		VerificationProfile: "go-standard",
+		Priority:            "P2",
+	}
+	task, _, err := svc.Submit(ctx, "live-ui-task", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker", "daemon", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := model.TurnRequest{
+		RequestID:       "live-turn-001",
+		Model:           "gpt-5.6-sol",
+		Messages:        []model.Message{{Role: model.RoleSystem, Content: "bounded worker"}, {Role: model.RoleUser, Content: "inspect README"}},
+		Tools:           []model.ToolDefinition{{Name: "read_file", Parameters: json.RawMessage(`{"type":"object"}`), Strict: true}},
+		MaxOutputTokens: 1024,
+	}
+	turn, _, err := svc.RequestWebTurnForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &ownerUIBackend{db: db, svc: svc, brainMode: "web"}
+	waitingTask, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := backend.liveUsageForTask(ctx, waitingTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live == nil || !live.Available || live.TokensAvailable || !live.PendingTurn || live.Source != "WEB_TURN_DURABLE_ESTIMATE" {
+		t.Fatalf("pending live turn truth is wrong: %+v", live)
+	}
+	rec := httptest.NewRecorder()
+	httpReq := httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
+	httpReq.Host = "127.0.0.1:8787"
+	backend.routes().ServeHTTP(rec, httpReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tasks status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload struct {
+		Tasks []ownerTaskView `json:"tasks"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || len(payload.Tasks) != 1 {
+		t.Fatalf("decode tasks: %+v err=%v body=%s", payload, err, rec.Body.String())
+	}
+	if !payload.Tasks[0].WaitingForAITurn || payload.Tasks[0].NeedsAttention {
+		t.Fatalf("Web Brain wait was misclassified as Owner attention: %+v", payload.Tasks[0])
+	}
+	message := model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-live-1", Name: "read_file", Arguments: `{"path":"README.md"}`}}}
+	if _, _, err := svc.RespondWebTurn(ctx, task.ID, turn.ID, message, "tool_calls"); err != nil {
+		t.Fatal(err)
+	}
+	runningTask, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err = backend.liveUsageForTask(ctx, runningTask)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live == nil || !live.Available || !live.TokensAvailable || live.PendingTurn || !live.Estimated || live.Turns != 1 || live.TotalTokens <= 0 || live.InputTokens <= 0 || live.OutputTokens <= 0 {
+		t.Fatalf("completed live turn usage is wrong: %+v", live)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+	"mar/internal/model"
 	"mar/internal/service"
 	"mar/internal/store"
 )
@@ -95,11 +96,25 @@ type ownerFeedbackRequest struct {
 	Message        string                      `json:"message,omitempty"`
 }
 
+type ownerLiveUsageView struct {
+	Available       bool       `json:"available"`
+	TokensAvailable bool       `json:"tokens_available"`
+	Estimated       bool       `json:"estimated"`
+	Source          string     `json:"source"`
+	Turns           int        `json:"turns"`
+	InputTokens     int64      `json:"input_tokens"`
+	OutputTokens    int64      `json:"output_tokens"`
+	TotalTokens     int64      `json:"total_tokens"`
+	PendingTurn     bool       `json:"pending_turn"`
+	LastTurnAt      *time.Time `json:"last_turn_at,omitempty"`
+}
+
 type ownerTaskView struct {
 	ID                  string                 `json:"id"`
 	ProjectID           string                 `json:"project_id"`
 	Goal                string                 `json:"goal"`
 	State               domain.TaskState       `json:"state"`
+	RunEpoch            int64                  `json:"run_epoch"`
 	UpdatedAt           time.Time              `json:"updated_at"`
 	NeedsAttention      bool                   `json:"needs_attention"`
 	AttentionSeverity   string                 `json:"attention_severity,omitempty"`
@@ -110,6 +125,8 @@ type ownerTaskView struct {
 	CandidateRevision   string                 `json:"candidate_revision,omitempty"`
 	OwnerFeedback       *domain.OwnerFeedback  `json:"owner_feedback,omitempty"`
 	Usage               domain.ResourceSummary `json:"usage"`
+	LiveUsage           *ownerLiveUsageView    `json:"live_usage,omitempty"`
+	WaitingForAITurn    bool                   `json:"waiting_for_ai_turn,omitempty"`
 }
 
 type ownerUsageTotals struct {
@@ -1263,6 +1280,46 @@ func setOwnerTaskAttention(view *ownerTaskView, severity, reason, nextAction str
 	view.AttentionNextAction = nextAction
 }
 
+func (b *ownerUIBackend) liveUsageForTask(ctx context.Context, task domain.Task) (*ownerLiveUsageView, error) {
+	if b.db == nil || b.brainMode != "web" || task.RunEpoch <= 0 {
+		return nil, nil
+	}
+	switch task.State {
+	case domain.TaskRunning, domain.TaskInputRequired, domain.TaskVerifying, domain.TaskReviewing:
+	default:
+		return nil, nil
+	}
+	turns, err := b.db.ListWebTurnsByTaskEpoch(ctx, task.ID, task.RunEpoch, 128)
+	if err != nil {
+		return nil, err
+	}
+	view := &ownerLiveUsageView{Available: true, Estimated: true, Source: "WEB_TURN_DURABLE_ESTIMATE"}
+	for _, turn := range turns {
+		stamp := turn.CreatedAt
+		if turn.RespondedAt == nil || len(turn.Response) == 0 {
+			view.PendingTurn = true
+			view.LastTurnAt = &stamp
+			continue
+		}
+		stamp = turn.RespondedAt.UTC()
+		view.LastTurnAt = &stamp
+		var response model.TurnResponse
+		if err := json.Unmarshal(turn.Response, &response); err != nil {
+			return nil, fmt.Errorf("decode live web turn %s: %w", turn.ID, err)
+		}
+		if response.Usage.InputTokens < 0 || response.Usage.OutputTokens < 0 || response.Usage.TotalTokens < 0 {
+			return nil, fmt.Errorf("live web turn %s has invalid token accounting", turn.ID)
+		}
+		view.Turns++
+		view.TokensAvailable = true
+		view.Estimated = view.Estimated || response.Usage.Estimated
+		view.InputTokens += response.Usage.InputTokens
+		view.OutputTokens += response.Usage.OutputTokens
+		view.TotalTokens += response.Usage.TotalTokens
+	}
+	return view, nil
+}
+
 func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 	tasks, err := b.db.ListRecentTasks(r.Context(), 30)
 	if err != nil {
@@ -1271,9 +1328,18 @@ func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]ownerTaskView, 0, len(tasks))
 	for _, task := range tasks {
-		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, Goal: task.Contract.Goal, State: task.State, UpdatedAt: task.UpdatedAt}
-		if needed, severity, reason, nextAction := ownerTaskAttentionFromState(task.State); needed {
-			setOwnerTaskAttention(&view, severity, reason, nextAction)
+		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, Goal: task.Contract.Goal, State: task.State, RunEpoch: task.RunEpoch, UpdatedAt: task.UpdatedAt}
+		liveUsage, liveErr := b.liveUsageForTask(r.Context(), task)
+		if liveErr != nil {
+			writeOwnerError(w, http.StatusInternalServerError, fmt.Errorf("read live usage for %s: %w", task.ID, liveErr))
+			return
+		}
+		view.LiveUsage = liveUsage
+		view.WaitingForAITurn = liveUsage != nil && liveUsage.PendingTurn
+		if !(task.State == domain.TaskInputRequired && view.WaitingForAITurn) {
+			if needed, severity, reason, nextAction := ownerTaskAttentionFromState(task.State); needed {
+				setOwnerTaskAttention(&view, severity, reason, nextAction)
+			}
 		}
 		result, ok, resultErr := b.db.LatestTaskResult(r.Context(), task.ID)
 		if resultErr != nil {

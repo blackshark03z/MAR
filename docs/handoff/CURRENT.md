@@ -18,6 +18,34 @@ ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a v
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
+## Owner Operations Console v5 light + multi-flow redesign — 2026-09-09
+
+Owner real-use of the v4 candidate requested two concrete changes: move to a modern light visual system and make concurrency understandable when multiple GPT/Claude connection paths and MAR execution flows exist at the same time. v5 therefore stops using a single ambiguous `connected` number and separates **routes**, **authoritative sessions**, and **live execution flows**.
+
+`docs/design/OWNER_CONSOLE_V5.md` is the current design/observability contract. The sidebar now includes a dedicated **Live Operations** view. Overview is reduced to executive operational answers: aggregate readiness, live flows, authoritative sessions, provider-route readiness, owner action count and durable tokens today. Live Operations owns scalable realtime detail: provider summaries, execution-flow table, route/session table, Event Stream and active-turn token trend.
+
+A live execution flow is one active `task_id + run_epoch`. `run_epoch` is now exposed in Owner task telemetry so retries/replacement attempts cannot be visually conflated. Stateful MCP routes contribute authoritative session counts; stateless transports remain unknown, so a mixed system can correctly display a value such as `5 + ?` instead of converting the unknown route to zero. Route readiness remains separate from session/activity truth.
+
+The light visual system is intentional and OS-theme independent: page background `#F6F8FB`, white surfaces, slate text, blue primary action, emerald/amber/red semantic statuses, soft borders/shadows and tables for multi-flow density. This avoids the dark/card-heavy appearance rejected in owner UAT and scales better when flow count grows.
+
+Live Web Brain usage still comes only from durable WebTurn responses for the exact task/run epoch and remains labelled estimated (`~`), not provider billing. WebTurn records currently do not contain the responding connector identity, so v5 explicitly leaves per-flow provider attribution unavailable rather than guessing GPT vs Claude. Durable day/week/30-day Usage remains TaskResult-based and separate.
+
+Current pre-release evidence: v5 targeted `cmd/mar + internal/store + internal/service` tests PASS, Owner JS syntax PASS and `git diff --check` PASS. The v5 candidate is live on loopback HTTP 200 and a real Chrome headless run executed the UI JavaScript and showed seeded GPT/Claude/route Event Stream entries. A Chrome unique-profile headless mode on this installation returns zero-byte output and is not used as an acceptance oracle. Full repository regression, vet/build, commit and revision-bound release binding are still required before declaring v5 ENGINEERING_STABLE.
+
+## Owner Operations Console v4 live-observability refinement — 2026-09-09
+
+Owner real-use rejected the v3 surface as still too static/card-heavy and specifically required realtime connection observation and token usage. v4 keeps the v3 interaction architecture but changes the visual hierarchy to an operations/event-stream surface and adds a process-safe live telemetry path.
+
+`docs/design/OWNER_CONSOLE_V4.md` is the current interaction/observability contract. Overview now uses a compact summary rail plus one dominant Live Operations panel with current connection activity, active-turn token totals, observed token-rate, completed model-turn count, a small token trend and a bounded Event Stream. Current Work/Action Center/Connections are rendered as operational lists with less nested card chrome.
+
+Realtime connection events are derived from the existing non-overlapping 2-second authoritative runtime/task snapshots: status transitions, request deltas, authoritative session-count changes, last-activity changes and task product-stage changes. The Event Stream is seeded from the first real snapshot so known GPT/Claude state appears immediately instead of showing an empty waiting panel.
+
+Live token telemetry is deliberately separate from durable Usage. For Web Brain executions, MAR reads the already-durable SQLite `web_turns` for the exact task/run epoch and aggregates completed `TurnResponse.Usage` values before the final TaskResult exists. The source is `WEB_TURN_DURABLE_ESTIMATE`: it is durable and process-safe but estimated runtime budgeting, not provider billing. UI labels live totals/rates with `~`. Provider-mode executions without an authoritative cross-process per-turn source remain unavailable instead of being inferred. Today/week/30-day usage continues to come only from latest durable TaskResult ResourceSummary values.
+
+A Web Brain turn temporarily uses technical `INPUT_REQUIRED` while waiting for the AI response. v4 now distinguishes this as **Waiting for AI** and suppresses Owner attention for it; only a genuine agent `request_input` remains **Needs your input**.
+
+Targeted evidence before final release closeout: `cmd/mar + internal/store + internal/service` PASS; Owner UI JS parse PASS; diff-check PASS. Browser-level desktop/compact UAT on the real local runtime PASSed layout/overflow, and a browser-only synthetic delta verified the client renderer: active-turn total moved from ~1,000 to ~1,500, completed turns to 2, Event Stream emitted `+500 estimated tokens`, and the sparkline rendered. No backend/task mutation was used for that renderer probe. Full revision-bound regression/release record still must be refreshed after the v4 commit before claiming engineering-stable.
+
 ## Owner Operations Console v3 — 2026-09-09
 
 **Design baseline:** `docs/design/OWNER_CONSOLE_V3.md`

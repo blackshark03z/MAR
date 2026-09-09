@@ -258,6 +258,188 @@
     .setup-disclosure summary { color:var(--v3-muted); }
     .connection-primary { grid-column:auto; border-width:1px; }
     @media(max-width:700px){ .connection-state-grid{grid-template-columns:1fr;} }
+    /* v4 — live observability visual system: fewer boxes, stronger hierarchy, event-stream first. */
+    body { font-family:"Segoe UI Variable Text","Segoe UI Variable","Segoe UI",system-ui,sans-serif; background:#080b10; }
+    header { background:rgba(8,11,16,.94); border-color:#1e2937; }
+    .topbar { min-height:68px; }
+    nav { top:69px; width:230px; padding:20px 12px; background:#0a0e14; border-color:#1b2430; }
+    nav button { min-height:44px; border-radius:8px; font-weight:600; color:#8e9aaa; }
+    nav button.active { background:#111d2e; border-color:#253b59; color:#eaf2ff; box-shadow:inset 2px 0 0 #67a5ff; }
+    main { width:calc(100% - 230px); margin-left:230px; padding:24px 34px 56px; max-width:1700px; }
+    .v4-heading { max-width:none; display:flex; justify-content:space-between; align-items:end; gap:20px; margin-bottom:18px; }
+    .v4-heading h1 { font-size:23px; font-weight:680; }
+    .live-clock { display:flex; align-items:center; gap:9px; color:#758397; font:600 11px/1 ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .live-beacon,.live-mini { display:inline-flex; align-items:center; gap:7px; color:#77d9ad; font-size:10px; font-weight:750; letter-spacing:.08em; }
+    .live-beacon i,.live-mini i { width:7px; height:7px; border-radius:50%; background:#45d59a; box-shadow:0 0 0 4px rgba(69,213,154,.10); }
+    @keyframes livePulse { 50% { opacity:.38; transform:scale(.78); } }
+    @media(prefers-reduced-motion:no-preference){ .live-beacon i,.live-mini i { animation:livePulse 1.8s ease-in-out infinite; } }
+    .ops-answer { min-height:118px; margin-bottom:0; padding:20px 22px; border:0; border-left:3px solid #6b9fff; border-radius:8px; background:linear-gradient(105deg,#111822 0%,#0e141c 58%,#101927 100%); box-shadow:none; }
+    .ops-answer[data-state="operational"] { border-left-color:#45d59a; }
+    .ops-answer[data-state="degraded"] { border-left-color:#e9b75c; }
+    .ops-answer[data-state="action"],.ops-answer[data-state="unavailable"] { border-left-color:#f07178; }
+    .ops-answer-line h2 { font-size:22px; font-weight:690; }
+    .ops-eyebrow { font-size:10px; }
+    .summary-rail { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0 0 18px; border-bottom:1px solid #1d2733; background:#0a0e14; }
+    .summary-item { min-height:92px; padding:14px 18px; border:0; border-right:1px solid #1d2733; border-radius:0; background:transparent; text-align:left; color:inherit; }
+    .summary-item:last-child { border-right:0; }
+    .summary-item:hover:not(:disabled) { background:#0e141c; border-color:#1d2733; }
+    .summary-item > span { display:block; color:#78879a; font-size:10px; font-weight:700; letter-spacing:.045em; text-transform:uppercase; }
+    .summary-item strong { display:block; margin:5px 0 2px; font-size:23px; font-weight:670; letter-spacing:-.025em; }
+    .summary-item small { display:block; color:#7e8b9c; font-size:11px; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .overview-v4-grid { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(330px,.6fr); gap:18px; align-items:start; }
+    .v4-main-stack,.v4-side-stack { display:grid; gap:16px; }
+    .panel { border:0; border-radius:9px; background:#0e131a; box-shadow:inset 0 0 0 1px #1b2531; }
+    .panel-head { margin-bottom:15px; }
+    .panel-head h3 { font-size:13px; font-weight:650; letter-spacing:.005em; }
+    .panel-head p { color:#728095; }
+    .section-action { border:0; background:transparent; color:#7eaef5; font-size:11px; font-weight:650; min-height:34px; }
+    .live-operations-panel { padding:20px 20px 17px; background:linear-gradient(145deg,#101720 0%,#0c1118 72%); box-shadow:inset 0 0 0 1px #213043; }
+    .live-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); padding:13px 0 15px; border-top:1px solid #1d2936; border-bottom:1px solid #1d2936; }
+    .live-metrics > div { min-width:0; padding:0 15px; border-right:1px solid #1d2936; }
+    .live-metrics > div:first-child { padding-left:0; }
+    .live-metrics > div:last-child { border-right:0; }
+    .live-metrics span,.micro-label { display:block; color:#65758a; font-size:9px; font-weight:760; letter-spacing:.08em; text-transform:uppercase; }
+    .live-metrics strong { display:block; margin:5px 0 2px; font-size:19px; font-weight:650; }
+    .live-metrics small { display:block; color:#748398; font-size:10px; line-height:1.3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .live-body { display:grid; grid-template-columns:minmax(220px,.72fr) minmax(320px,1.28fr); gap:20px; padding-top:16px; }
+    .live-trend,.live-stream-wrap { min-width:0; }
+    .sparkline { min-height:122px; display:flex; align-items:center; justify-content:center; margin-top:8px; color:#5e9cff; border-bottom:1px solid #1d2936; }
+    .sparkline span { color:#5f6d80; font-size:11px; }
+    .sparkline svg { display:block; width:100%; height:122px; overflow:visible; }
+    .sparkline .spark-area { fill:rgba(76,144,255,.08); }
+    .sparkline .spark-line { fill:none; stroke:currentColor; stroke-width:2; vector-effect:non-scaling-stroke; }
+    .sparkline .spark-point { fill:#87b4ff; }
+    .live-event-stream { margin-top:8px; max-height:152px; overflow:auto; }
+    .live-event { display:grid; grid-template-columns:54px 74px minmax(0,1fr); gap:8px; align-items:start; padding:7px 0; border-bottom:1px solid #17212c; font-size:11px; }
+    .live-event:last-child { border-bottom:0; }
+    .live-event time { color:#59697e; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+    .live-event .event-source { color:#84a9dc; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .live-event .event-text { color:#b7c1ce; line-height:1.35; }
+    .live-event.event-error .event-source { color:#ef7f86; }
+    .live-event.event-token .event-source { color:#64cfaa; }
+    .live-empty { padding:16px 0; color:#667589; font-size:11px; }
+    .current-work-panel .task { background:transparent; border:0; border-top:1px solid #1b2531; border-radius:0; }
+    .current-work-panel .task:first-child { border-top:0; }
+    .attention-item { border:0; border-top:1px solid #202b38; border-radius:0; background:transparent; padding:12px 2px; }
+    .attention-item:first-child { border-top:0; }
+    .attention-item:hover { background:#111923; }
+    .overview-connection { border:0; border-top:1px solid #1c2733; border-radius:0; background:transparent; padding:12px 2px; grid-template-columns:minmax(0,1fr) auto; }
+    .overview-connection:first-child { border-top:0; }
+    .overview-connection .connection-count { grid-column:1/-1; text-align:left; display:flex; gap:6px; align-items:baseline; }
+    .overview-connection:hover { background:#111923; border-color:#1c2733; }
+    .usage-mini-panel .usage-bars { min-height:86px; }
+    .usage-mini-panel .usage-legend { font-size:10px; }
+    .card { background:#0e131a; border-color:#202a36; }
+    .provider-card { background:#0e131a; }
+    .connection-state-grid > div { background:#0b1016; border-color:#1e2936; }
+    @media(max-width:1180px){ .overview-v4-grid{grid-template-columns:1fr;} .v4-side-stack{grid-template-columns:repeat(2,minmax(0,1fr));} .usage-mini-panel{grid-column:1/-1;} }
+    @media(max-width:900px){ nav{width:auto;top:auto;} main{width:100%;margin-left:0;} .summary-rail{grid-template-columns:repeat(2,minmax(0,1fr));} .summary-item:nth-child(2){border-right:0;} .live-body{grid-template-columns:1fr;} }
+    @media(max-width:700px){ .live-metrics{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:14px;} .live-metrics>div:nth-child(2){border-right:0;} .v4-side-stack{grid-template-columns:1fr;} .usage-mini-panel{grid-column:auto;} }
+    @media(max-width:560px){ .v4-heading{align-items:flex-start;flex-direction:column;} .summary-rail{grid-template-columns:1fr;} .summary-item{border-right:0;border-bottom:1px solid #1d2733;} .live-metrics{grid-template-columns:1fr;} .live-metrics>div{padding:10px 0;border-right:0;border-bottom:1px solid #1d2936;} .live-metrics>div:last-child{border-bottom:0;} }
+    /* v5 — modern light operations system. Light is intentional, not OS-theme dependent. */
+    :root { color-scheme:light; --v5-bg:#f6f8fb; --v5-surface:#ffffff; --v5-surface-soft:#f8fafc; --v5-surface-blue:#f3f7ff; --v5-border:#e2e8f0; --v5-border-strong:#cbd5e1; --v5-text:#0f172a; --v5-muted:#64748b; --v5-subtle:#94a3b8; --v5-primary:#2563eb; --v5-primary-hover:#1d4ed8; --v5-primary-soft:#eaf2ff; --v5-success:#059669; --v5-success-soft:#ecfdf5; --v5-warning:#d97706; --v5-warning-soft:#fffbeb; --v5-danger:#dc2626; --v5-danger-soft:#fef2f2; --v5-cyan:#0891b2; --v5-shadow:0 8px 28px rgba(15,23,42,.055); }
+    html,body { background:var(--v5-bg); color:var(--v5-text); }
+    body { font-family:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,sans-serif; }
+    header { background:rgba(255,255,255,.94); border-color:var(--v5-border); box-shadow:0 1px 0 rgba(15,23,42,.02); }
+    .topbar { min-height:68px; }
+    .brand strong { color:var(--v5-text); }
+    .brand .muted,.muted,.scope-note { color:var(--v5-muted); }
+    .badge,.chip { background:var(--v5-surface-soft); border-color:var(--v5-border); color:var(--v5-muted); }
+    .workspace-filter select,button,input,textarea,select { background:var(--v5-surface); border-color:var(--v5-border); color:var(--v5-text); }
+    button:hover:not(:disabled) { background:var(--v5-surface-soft); border-color:var(--v5-border-strong); }
+    button.primary { background:var(--v5-primary); border-color:var(--v5-primary); color:#fff; box-shadow:0 4px 12px rgba(37,99,235,.16); }
+    button.primary:hover:not(:disabled) { background:var(--v5-primary-hover); border-color:var(--v5-primary-hover); }
+    nav { top:69px; width:230px; padding:20px 12px; background:#fbfcfe; border-color:var(--v5-border); }
+    nav::before { color:var(--v5-subtle); }
+    nav button { min-height:44px; color:var(--v5-muted); }
+    nav button:hover { color:var(--v5-text); background:#f1f5f9; border-color:transparent; }
+    nav button.active { color:var(--v5-primary); background:var(--v5-primary-soft); border-color:#cfe0ff; box-shadow:inset 3px 0 0 var(--v5-primary); }
+    main { width:calc(100% - 230px); margin-left:230px; max-width:1700px; padding:28px 36px 64px; }
+    .page-heading h1,.v4-heading h1 { color:var(--v5-text); font-weight:720; letter-spacing:-.025em; }
+    .page-heading p,.panel-head p { color:var(--v5-muted); }
+    .page-kicker { display:block; margin-bottom:5px; color:var(--v5-primary); font-size:10px; font-weight:800; letter-spacing:.12em; }
+    .live-clock { color:var(--v5-muted); }
+    .live-beacon,.live-mini { color:var(--v5-success); }
+    .live-beacon i,.live-mini i { background:#10b981; box-shadow:0 0 0 4px rgba(16,185,129,.10); }
+    .ops-answer { background:linear-gradient(112deg,#fff 0%,#f8fbff 100%); border:1px solid var(--v5-border); border-left:4px solid var(--v5-primary); box-shadow:var(--v5-shadow); }
+    .ops-answer[data-state="operational"] { border-left-color:var(--v5-success); }
+    .ops-answer[data-state="degraded"] { border-left-color:var(--v5-warning); background:linear-gradient(112deg,#fff 0%,#fffcf5 100%); }
+    .ops-answer[data-state="action"],.ops-answer[data-state="unavailable"] { border-left-color:var(--v5-danger); background:linear-gradient(112deg,#fff 0%,#fff8f8 100%); }
+    .ops-state-mark { background:var(--v5-muted); }
+    .ops-answer[data-state="operational"] .ops-state-mark { background:var(--v5-success); }
+    .ops-answer[data-state="degraded"] .ops-state-mark { background:var(--v5-warning); }
+    .ops-answer[data-state="action"] .ops-state-mark,.ops-answer[data-state="unavailable"] .ops-state-mark { background:var(--v5-danger); }
+    .summary-rail { grid-template-columns:repeat(5,minmax(0,1fr)); margin-bottom:20px; background:var(--v5-surface); border:1px solid var(--v5-border); border-radius:14px; box-shadow:var(--v5-shadow); overflow:hidden; }
+    .summary-item { min-height:92px; border-right:1px solid var(--v5-border); background:#fff; }
+    .summary-item:last-child { border-right:0; }
+    .summary-item:hover:not(:disabled) { background:var(--v5-surface-blue); border-color:var(--v5-border); }
+    .summary-item > span,.live-metrics span,.micro-label,.live-summary-strip span { color:var(--v5-subtle); }
+    .summary-item strong,.live-metrics strong,.live-summary-strip strong { color:var(--v5-text); }
+    .summary-item small,.live-metrics small { color:var(--v5-muted); }
+    .panel,.card,.provider-card { background:var(--v5-surface); border:1px solid var(--v5-border); box-shadow:var(--v5-shadow); }
+    .live-operations-panel { background:#fff; box-shadow:var(--v5-shadow); }
+    .live-metrics { border-color:var(--v5-border); }
+    .live-metrics > div { border-color:var(--v5-border); }
+    .sparkline { color:var(--v5-primary); border-color:var(--v5-border); }
+    .sparkline span,.live-empty { color:var(--v5-muted); }
+    .sparkline .spark-area { fill:rgba(37,99,235,.08); }
+    .sparkline .spark-point { fill:#3b82f6; }
+    .live-event { border-color:#eef2f7; }
+    .live-event time { color:var(--v5-subtle); }
+    .live-event .event-source { color:#2563eb; }
+    .live-event .event-text { color:#475569; }
+    .live-event.event-error .event-source { color:var(--v5-danger); }
+    .live-event.event-token .event-source { color:var(--v5-success); }
+    .attention-item,.overview-connection,.current-work-panel .task { border-color:#edf1f5; background:transparent; }
+    .attention-item:hover,.overview-connection:hover,.current-work-panel .task:hover { background:var(--v5-surface-soft); }
+    .attention-title { color:var(--v5-text); }
+    .attention-detail { color:var(--v5-muted); }
+    .attention-next,.section-action { color:var(--v5-primary); }
+    .status-dot.connected { background:var(--v5-success); }
+    .status-dot.connecting,.status-dot.link-ready,.status-dot.ready-to-start,.status-dot.idle { background:var(--v5-warning); }
+    .status-dot.degraded,.status-dot.error,.status-dot.misconfigured,.status-dot.route-offline,.status-dot.bridge-runtime-missing { background:var(--v5-danger); }
+    .connection-state-grid > div,.connector-telemetry > div,.connection-url,pre,.notice,.task { background:var(--v5-surface-soft); border-color:var(--v5-border); color:var(--v5-text); }
+    .provider-remedy { background:var(--v5-warning-soft); }
+    .notice { border-left-color:var(--v5-primary); }
+    .notice.error { background:var(--v5-danger-soft); border-left-color:var(--v5-danger); }
+    .notice.warn { background:var(--v5-warning-soft); border-left-color:var(--v5-warning); }
+    .usage-bar { background:linear-gradient(180deg,#60a5fa,#2563eb); opacity:1; }
+    .live-page-heading { max-width:none; display:flex; justify-content:space-between; align-items:end; gap:20px; margin-bottom:20px; }
+    .live-page-heading h1 { margin:0 0 5px; font-size:28px; }
+    .live-summary-strip { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); margin-bottom:18px; background:#fff; border:1px solid var(--v5-border); border-radius:14px; box-shadow:var(--v5-shadow); overflow:hidden; }
+    .live-summary-strip > div { min-width:0; padding:16px 18px; border-right:1px solid var(--v5-border); }
+    .live-summary-strip > div:last-child { border-right:0; }
+    .live-summary-strip span { display:block; font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .live-summary-strip strong { display:block; margin:5px 0 2px; font-size:25px; letter-spacing:-.025em; }
+    .live-summary-strip small { display:block; color:var(--v5-muted); font-size:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .provider-summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:18px; }
+    .provider-summary-card { display:grid; grid-template-columns:minmax(0,1fr) repeat(3,auto); gap:18px; align-items:center; padding:16px 18px; background:#fff; border:1px solid var(--v5-border); border-radius:14px; box-shadow:var(--v5-shadow); }
+    .provider-summary-card h3 { margin:0 0 3px; font-size:15px; }
+    .provider-summary-card p { margin:0; color:var(--v5-muted); font-size:11px; }
+    .provider-summary-card .provider-stat { min-width:72px; text-align:right; }
+    .provider-summary-card .provider-stat span { display:block; color:var(--v5-subtle); font-size:9px; font-weight:760; text-transform:uppercase; letter-spacing:.06em; }
+    .provider-summary-card .provider-stat b { display:block; margin-top:3px; font-size:16px; }
+    .live-page-grid { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(360px,.65fr); gap:16px; align-items:start; }
+    .live-table-panel { grid-column:1/-1; }
+    .live-page-events-panel,.live-page-token-panel { min-height:280px; }
+    .ops-table-wrap { overflow:auto; border:1px solid var(--v5-border); border-radius:10px; }
+    .ops-table { width:100%; border-collapse:collapse; min-width:780px; font-size:12px; }
+    .ops-table th { position:sticky; top:0; z-index:1; padding:9px 12px; background:#f8fafc; color:var(--v5-muted); font-size:9px; font-weight:800; letter-spacing:.06em; text-align:left; text-transform:uppercase; border-bottom:1px solid var(--v5-border); }
+    .ops-table td { padding:11px 12px; color:#334155; border-bottom:1px solid #edf2f7; vertical-align:middle; }
+    .ops-table tr:last-child td { border-bottom:0; }
+    .ops-table tbody tr:hover td { background:#f8fbff; }
+    .flow-id { display:block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--v5-text); font-weight:650; }
+    .flow-sub { display:block; margin-top:2px; color:var(--v5-subtle); font-size:10px; }
+    .flow-state { display:inline-flex; align-items:center; min-height:25px; padding:3px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:10px; font-weight:700; }
+    .flow-state.waiting { background:#fef3c7; color:#92400e; }
+    .flow-state.error { background:#fee2e2; color:#991b1b; }
+    .flow-state.checking { background:#ecfeff; color:#0e7490; }
+    .flow-state.owner { background:#fff7ed; color:#c2410c; }
+    .inline-metric { color:var(--v5-primary); font-size:15px; font-weight:700; }
+    .live-page-event-stream { max-height:230px; }
+    @media(max-width:1250px){ .summary-rail,.live-summary-strip{grid-template-columns:repeat(3,minmax(0,1fr));} .summary-item:nth-child(3),.live-summary-strip>div:nth-child(3){border-right:0;} .provider-summary-grid{grid-template-columns:1fr;} .live-page-grid{grid-template-columns:1fr;} }
+    @media(max-width:900px){ main{width:100%;margin-left:0;} .summary-rail,.live-summary-strip{grid-template-columns:repeat(2,minmax(0,1fr));} .provider-summary-card{grid-template-columns:1fr repeat(3,auto);} }
+    @media(max-width:620px){ .summary-rail,.live-summary-strip{grid-template-columns:1fr;} .summary-item,.live-summary-strip>div{border-right:0;border-bottom:1px solid var(--v5-border);} .provider-summary-card{grid-template-columns:1fr 1fr;}.provider-summary-card>div:first-child{grid-column:1/-1;} .live-page-heading{align-items:flex-start;flex-direction:column;} }
   </style>
 </head>
 <body>
@@ -273,6 +455,7 @@
 </header>
 <nav aria-label="MAR sections">
   <button data-view="overview" class="active" aria-current="page">Overview</button>
+  <button data-view="live">Live Operations</button>
   <button data-view="work">Tasks</button>
   <button data-view="projects">Workspaces</button>
   <button data-view="connections">Connections</button>
@@ -281,26 +464,70 @@
 </nav>
 <main>
   <section id="view-overview" class="view active">
-    <div class="page-heading"><h1>Operations overview</h1><p>MAR trả lời trước: có dùng được không, có gì cần bạn làm, và hệ thống đang làm gì.</p></div>
+    <div class="page-heading v4-heading"><div><h1>Operations</h1><p>Trạng thái hiện tại, thay đổi vừa xảy ra và việc Owner cần xử lý.</p></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> LIVE</span><span id="live-poll-state">observing every 2s</span></div></div>
     <section id="operational-answer" class="ops-answer" data-state="unavailable" aria-live="polite" aria-atomic="true">
-      <div><span class="ops-eyebrow">Operational readiness</span><div class="ops-answer-line"><span class="ops-state-mark" aria-hidden="true"></span><h2 id="overview-health">Đang kiểm tra…</h2></div><p id="overview-health-detail">Đang đọc sandbox, connections và telemetry hiện tại.</p></div>
+      <div><span class="ops-eyebrow">Right now</span><div class="ops-answer-line"><span class="ops-state-mark" aria-hidden="true"></span><h2 id="overview-health">Đang kiểm tra…</h2></div><p id="overview-health-detail">Đang đọc sandbox, connections và telemetry hiện tại.</p></div>
       <div class="answer-actions"><button type="button" id="overview-primary-action" class="primary">Mở Connections</button><span id="overview-scope-answer" class="answer-scope">Tất cả workspaces</span></div>
     </section>
-    <div class="overview-kpis" aria-label="Operational shortcuts">
-      <button type="button" class="kpi" data-kpi-view="work"><span class="kpi-label">Active tasks</span><strong id="overview-active">0</strong><small id="overview-active-detail">Đang tải task hiện hoạt</small></button>
-      <button type="button" class="kpi" id="overview-attention-kpi"><span class="kpi-label">Needs your action</span><strong id="overview-attention" aria-live="polite">0</strong><small>Chỉ việc có thể hành động ngay</small></button>
-      <button type="button" class="kpi" data-kpi-view="connections"><span class="kpi-label">AI providers</span><strong id="overview-connections-count" aria-live="polite">—</strong><small id="overview-connections-detail">GPT + Claude</small></button>
-      <button type="button" class="kpi" data-kpi-view="usage"><span class="kpi-label">Measured tokens today</span><strong id="overview-tokens">—</strong><small id="overview-tokens-detail">MAR-measured only</small></button>
+    <div class="summary-rail" aria-label="Operational shortcuts">
+      <button type="button" class="summary-item" data-kpi-view="live"><span>Live flows</span><strong id="overview-active">0</strong><small id="overview-active-detail">Execution flows đang hoạt động</small></button>
+      <button type="button" class="summary-item" data-kpi-view="live"><span>Authoritative sessions</span><strong id="overview-session-count">—</strong><small id="overview-session-detail">Chỉ session identity đo được</small></button>
+      <button type="button" class="summary-item" data-kpi-view="connections"><span>Provider routes</span><strong id="overview-connections-count" aria-live="polite">—</strong><small id="overview-connections-detail">Reachable / configured routes</small></button>
+      <button type="button" class="summary-item" id="overview-attention-kpi"><span>Needs your action</span><strong id="overview-attention" aria-live="polite">0</strong><small>Actionable now</small></button>
+      <button type="button" class="summary-item" data-kpi-view="usage"><span>Durable tokens today</span><strong id="overview-tokens">—</strong><small id="overview-tokens-detail">Completed results</small></button>
     </div>
-    <div class="overview-v3-grid">
-      <div class="overview-v3-stack">
-        <section class="panel" id="overview-action-center"><div class="panel-head"><div><h3>Action Center</h3><p>Chỉ những việc đang cần Owner can thiệp hoặc quyết định.</p></div><button type="button" class="section-action" data-kpi-view="work">All task states</button></div><div id="overview-attention-list" class="attention-list"></div></section>
-        <section class="panel"><div class="panel-head"><div><h3>Current activity</h3><p>Task đang thực thi trong workspace scope hiện tại.</p></div><button type="button" class="section-action" data-kpi-view="work">Open Tasks</button></div><div id="overview-active-list" class="task-list"></div></section>
+    <div class="overview-v4-grid">
+      <div class="v4-main-stack">
+        <section class="panel live-operations-panel" id="live-operations">
+          <div class="panel-head"><div><h3>Live operations</h3><p>Observed deltas từ connection snapshots và durable Web Brain turns. Không phải provider billing.</p></div><span class="live-mini"><i aria-hidden="true"></i><span id="live-last-observed">waiting…</span></span></div>
+          <div class="live-metrics" aria-label="Live observed metrics">
+            <div><span>Connection activity</span><strong id="live-connection-activity">—</strong><small id="live-connection-detail">Chưa có snapshot</small></div>
+            <div><span>Active-turn tokens</span><strong id="live-token-total">—</strong><small id="live-token-detail">Chờ model turn đầu tiên</small></div>
+            <div><span>Observed token rate</span><strong id="live-token-rate">—</strong><small>delta / phút · estimated khi Web Brain</small></div>
+            <div><span>Completed model turns</span><strong id="live-turns">—</strong><small id="live-turn-detail">Current execution epoch</small></div>
+          </div>
+          <div class="live-body">
+            <div class="live-trend"><div class="micro-label">ACTIVE-TURN TOKEN TREND</div><div id="live-token-sparkline" class="sparkline" role="img" aria-label="Live active-turn token trend"><span>Chưa có live token samples.</span></div></div>
+            <div class="live-stream-wrap"><div class="micro-label">EVENT STREAM</div><div id="live-event-stream" class="live-event-stream" aria-live="polite"><div class="live-empty">Đang chờ thay đổi trạng thái. Snapshot vẫn được cập nhật mỗi 2 giây.</div></div></div>
+          </div>
+        </section>
+        <section class="panel current-work-panel"><div class="panel-head"><div><h3>Current work</h3><p>Task đang làm việc hoặc đang chờ AI turn trong workspace scope.</p></div><button type="button" class="section-action" data-kpi-view="work">Open Tasks</button></div><div id="overview-active-list" class="task-list"></div></section>
       </div>
-      <div class="overview-v3-stack">
-        <section class="panel"><div class="panel-head"><div><h3>AI connections</h3><p>Readiness, live activity và session truth là các khái niệm riêng.</p></div><button type="button" class="section-action" data-kpi-view="connections">Manage</button></div><div id="overview-connections" class="overview-connection-list"></div></section>
-        <section class="panel"><div class="panel-head"><div><h3>Measured usage · 7 days</h3><p id="overview-usage-scope">Tất cả workspaces</p></div><button type="button" class="section-action" data-kpi-view="usage">Open Usage</button></div><div id="overview-usage-bars" class="usage-bars" aria-label="Token usage 7 ngày"></div><div class="usage-legend"><span>7 ngày trước</span><span>Hôm nay</span></div></section>
-      </div>
+      <aside class="v4-side-stack">
+        <section class="panel" id="overview-action-center"><div class="panel-head"><div><h3>Action Center</h3><p>Chỉ việc Owner có thể xử lý ngay.</p></div><button type="button" class="section-action" data-kpi-view="work">All states</button></div><div id="overview-attention-list" class="attention-list"></div></section>
+        <section class="panel connections-panel"><div class="panel-head"><div><h3>AI connections</h3><p>Live state, last activity và sessions.</p></div><button type="button" class="section-action" data-kpi-view="connections">Manage</button></div><div id="overview-connections" class="overview-connection-list"></div></section>
+        <section class="panel usage-mini-panel"><div class="panel-head"><div><h3>Durable usage · 7 days</h3><p id="overview-usage-scope">Tất cả workspaces</p></div><button type="button" class="section-action" data-kpi-view="usage">Details</button></div><div id="overview-usage-bars" class="usage-bars" aria-label="Token usage 7 ngày"></div><div class="usage-legend"><span>7 ngày trước</span><span>Hôm nay</span></div></section>
+      </aside>
+    </div>
+  </section>
+
+  <section id="view-live" class="view">
+    <div class="page-heading live-page-heading"><div><span class="page-kicker">REALTIME OBSERVABILITY</span><h1>Live Operations</h1><p>Luồng thực thi, route, session và token delta được tách riêng để không đánh đồng “configured” với “đang hoạt động”.</p></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> LIVE</span><span id="live-page-poll-state">observing every 2s</span></div></div>
+    <div class="live-summary-strip" aria-label="Live operation summary">
+      <div><span>Live execution flows</span><strong id="live-page-flow-count">0</strong><small>task + run epoch đang active</small></div>
+      <div><span>Waiting for AI</span><strong id="live-page-ai-wait">0</strong><small>không phải Owner input</small></div>
+      <div><span>Authoritative sessions</span><strong id="live-page-session-count">—</strong><small id="live-page-session-detail">session identity thật</small></div>
+      <div><span>Reachable routes</span><strong id="live-page-route-count">—</strong><small id="live-page-route-detail">transport readiness</small></div>
+      <div><span>Active-turn tokens</span><strong id="live-page-token-total">—</strong><small>estimated khi Web Brain</small></div>
+    </div>
+    <div id="live-provider-summary" class="provider-summary-grid" aria-label="Provider realtime summary"></div>
+    <div class="live-page-grid">
+      <section class="panel live-table-panel">
+        <div class="panel-head"><div><h3>Execution flows</h3><p>Một flow = một task execution epoch. Provider attribution chỉ hiện khi MAR có evidence.</p></div><span class="live-mini"><i aria-hidden="true"></i><span id="live-page-last-observed">waiting…</span></span></div>
+        <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Flow</th><th>State</th><th>Workspace</th><th>Live tokens</th><th>Turns</th><th>Last activity</th><th>Telemetry source</th></tr></thead><tbody id="live-flow-rows"></tbody></table></div>
+      </section>
+      <section class="panel live-route-panel">
+        <div class="panel-head"><div><h3>Routes & sessions</h3><p>Route readiness và active session count là hai tín hiệu độc lập.</p></div><button type="button" class="section-action" data-kpi-view="connections">Manage</button></div>
+        <div class="ops-table-wrap"><table class="ops-table"><thead><tr><th>Provider</th><th>Route</th><th>Status</th><th>Sessions</th><th>Requests</th><th>Last activity</th></tr></thead><tbody id="live-route-rows"></tbody></table></div>
+      </section>
+      <section class="panel live-page-events-panel">
+        <div class="panel-head"><div><h3>Event stream</h3><p>Snapshot ban đầu + delta trạng thái, request, session và token theo thời gian.</p></div></div>
+        <div id="live-page-event-stream" class="live-event-stream live-page-event-stream" aria-live="polite"><div class="live-empty">Đang đọc snapshot realtime…</div></div>
+      </section>
+      <section class="panel live-page-token-panel">
+        <div class="panel-head"><div><h3>Active-turn token trend</h3><p>Không phải provider billing; durable daily usage nằm ở Usage.</p></div><strong id="live-page-token-rate" class="inline-metric">—</strong></div>
+        <div id="live-page-token-sparkline" class="sparkline" role="img" aria-label="Live active-turn token trend"><span>Chưa đủ live token samples.</span></div>
+      </section>
     </div>
   </section>
 
@@ -388,7 +615,7 @@ const activeWorkStates=new Set(['SUBMITTED','PREFLIGHT','WAITING_RESOURCE','WORK
 const workspaceStorageKey='mar.owner.workspace.v2';
 function storedWorkspace(){try{return localStorage.getItem(workspaceStorageKey)||'';}catch{return '';}}
 function persistWorkspace(value){try{if(value)localStorage.setItem(workspaceStorageKey,value);else localStorage.removeItem(workspaceStorageKey);}catch{}}
-let runtime=null, projects=[], tasks=[], usage=null, selectedTaskId='', selectedWorkspace=storedWorkspace(), pollTimer=null, usageTimer=null, runtimeFresh=false, runtimeLastSuccessAt=0, operationalPollInFlight=false, usagePollInFlight=false;
+let runtime=null, projects=[], tasks=[], usage=null, selectedTaskId='', selectedWorkspace=storedWorkspace(), pollTimer=null, usageTimer=null, runtimeFresh=false, runtimeLastSuccessAt=0, operationalPollInFlight=false, usagePollInFlight=false, previousRealtimeSnapshot=null, liveEvents=[], liveTokenSamples=[], liveEventSequence=0;
 function esc(v){const d=document.createElement('div');d.textContent=v??'';return d.innerHTML;}
 function fmtTokens(n){n=Number(n||0);return new Intl.NumberFormat('vi-VN').format(n);}
 function fmtTime(v){try{return new Date(v).toLocaleString('vi-VN');}catch{return v||'';}}
@@ -406,14 +633,36 @@ document.querySelectorAll('[data-jump-view]').forEach(btn=>btn.addEventListener(
 document.querySelectorAll('[data-kpi-view]').forEach(btn=>btn.addEventListener('click',()=>activateView(btn.dataset.kpiView)));
 $('overview-attention-kpi').addEventListener('click',()=>{$('overview-action-center').scrollIntoView({behavior:'smooth',block:'start'});$('overview-action-center').setAttribute('tabindex','-1');$('overview-action-center').focus({preventScroll:true});});
 $('overview-primary-action').addEventListener('click',e=>activateView(e.currentTarget.dataset.targetView||'connections'));
-$('workspace-filter').addEventListener('change',async e=>{selectedWorkspace=e.target.value;persistWorkspace(selectedWorkspace);renderUsage();renderTasks();renderOverview();await loadUsage();});
+$('workspace-filter').addEventListener('change',async e=>{selectedWorkspace=e.target.value;persistWorkspace(selectedWorkspace);resetRealtimeObservation();renderUsage();renderTasks();renderOverview();await loadUsage();captureRealtimeObservation(true);});
 $('refresh-usage').addEventListener('click',loadUsage);
 
 function scopedTasks(){return selectedWorkspace?tasks.filter(t=>t.project_id===selectedWorkspace):tasks;}
-function taskStageLabel(state){state=String(state||'').toUpperCase();if(['SUBMITTED','PREFLIGHT','WAITING_RESOURCE','WORKSPACE_READY'].includes(state))return 'Preparing';if(['RUNNING','RETRY_WAIT'].includes(state))return 'Working';if(['VERIFYING','REVIEWING','READY_TO_INTEGRATE','INTEGRATING'].includes(state))return 'Checking result';if(state==='INPUT_REQUIRED')return 'Needs your input';if(state==='COMPLETE')return 'Completed';if(state==='CANCELLED')return 'Cancelled';if(['BLOCKED','FAILED'].includes(state))return 'Could not complete';return state||'Unknown';}
+function taskStageLabel(state,task=null){state=String(state||'').toUpperCase();if(task?.waiting_for_ai_turn)return 'Waiting for AI';if(['SUBMITTED','PREFLIGHT','WAITING_RESOURCE','WORKSPACE_READY'].includes(state))return 'Preparing';if(['RUNNING','RETRY_WAIT'].includes(state))return 'Working';if(['VERIFYING','REVIEWING','READY_TO_INTEGRATE','INTEGRATING'].includes(state))return 'Checking result';if(state==='INPUT_REQUIRED')return 'Needs your input';if(state==='COMPLETE')return 'Completed';if(state==='CANCELLED')return 'Cancelled';if(['BLOCKED','FAILED'].includes(state))return 'Could not complete';return state||'Unknown';}
 function taskOwnerNarrative(state,status,brain){state=String(state||'').toUpperCase();if(brain)return 'Tech Lead/Web brain đang xử lý lượt reasoning; Owner chưa cần làm gì.';if(state==='INPUT_REQUIRED')return status?.next_action||status?.detail||status?.state_detail||'MAR cần một thông tin hoặc quyết định của bạn để tiếp tục.';if(['BLOCKED','FAILED'].includes(state))return status?.detail||status?.state_detail||status?.next_action||'Task không thể tiếp tục. Mở evidence để Tech Lead xác định nguyên nhân.';if(state==='COMPLETE')return 'MAR đã hoàn thành task. Kiểm tra result/evidence và phản hồi nếu đây là candidate bạn cần dùng thử.';if(['VERIFYING','REVIEWING','READY_TO_INTEGRATE','INTEGRATING'].includes(state))return 'MAR đang kiểm tra và tích hợp candidate; Owner chưa cần can thiệp.';return status?.detail||status?.state_detail||status?.next_action||'MAR đang xử lý task này; Owner chưa cần can thiệp.';}
 function activeConnector(c){return !!c&&(c.connected===true||c.status==='CONNECTED'||(c.active_sessions_available===true&&Number(c.active_sessions||0)>0));}
-function primaryConnections(){const all=runtime?.connections||[];const tunnel=all.find(c=>c.id==='openai-tunnel');const fallback=all.find(c=>c.id==='chatgpt-web');const claude=all.find(c=>c.id==='claude-web');const gpt=activeConnector(tunnel)?tunnel:(activeConnector(fallback)?fallback:((tunnel?.configured?tunnel:null)||fallback||tunnel));return [gpt,claude].filter(Boolean);}
+function operationalConnectors(){const wanted=new Set(['openai-tunnel','chatgpt-web','claude-web']);return (runtime?.connections||[]).filter(c=>wanted.has(c.id));}
+function primaryConnections(){const all=operationalConnectors();const tunnel=all.find(c=>c.id==='openai-tunnel');const fallback=all.find(c=>c.id==='chatgpt-web');const claude=all.find(c=>c.id==='claude-web');const gpt=activeConnector(tunnel)?tunnel:(activeConnector(fallback)?fallback:((tunnel?.configured?tunnel:null)||fallback||tunnel));return [gpt,claude].filter(Boolean);}
+function connectorProvider(c){return c?.id==='claude-web'?'Claude':'GPT';}
+function routeReachable(c){const status=String(c?.status||'').toUpperCase();return !!c&&(c.connected===true||c.ready===true||c.route_ready===true||['CONNECTED','LINK_READY','IDLE','READY','AVAILABLE_LOCAL'].includes(status));}
+function sessionSummary(){const conns=operationalConnectors();let sessions=0,measuredRoutes=0,unknownRoutes=0;for(const c of conns){if(c.active_sessions_available===true){sessions+=Number(c.active_sessions||0);measuredRoutes++;}else unknownRoutes++;}return {sessions,measuredRoutes,unknownRoutes,totalRoutes:conns.length,available:measuredRoutes>0};}
+function routeSummary(){const conns=operationalConnectors();const reachable=runtimeFresh?conns.filter(routeReachable).length:0;return {total:conns.length,reachable,errors:conns.filter(connectionHasActionableError).length};}
+function realtimeTaskActive(t){const state=String(t?.state||'').toUpperCase();return activeWorkStates.has(state)||!!t?.waiting_for_ai_turn;}
+function liveUsageAggregate(){const active=scopedTasks().filter(realtimeTaskActive);let input=0,output=0,total=0,turns=0,pending=0,telemetryTasks=0,tokenTasks=0;for(const t of active){const live=t.live_usage;if(!live?.available)continue;telemetryTasks++;if(live.pending_turn)pending++;if(live.tokens_available){tokenTasks++;input+=Number(live.input_tokens||0);output+=Number(live.output_tokens||0);total+=Number(live.total_tokens||0);turns+=Number(live.turns||0);}}return {activeTasks:active.length,telemetryTasks,tokenTasks,input,output,total,turns,pending,tokensAvailable:tokenTasks>0,available:telemetryTasks>0};}
+function resetRealtimeObservation(){previousRealtimeSnapshot=null;liveEvents=[];liveTokenSamples=[];renderLiveOperations();}
+function realtimeSnapshot(){const connections={};for(const c of operationalConnectors()){connections[c.id]={id:c.id,name:c.name,status:String(c.status||''),requests:Number(c.requests||0),sessions:c.active_sessions_available?Number(c.active_sessions||0):null,last:c.last_activity_at||c.last_seen_at||''};}const taskStates={};for(const t of scopedTasks()){taskStates[t.id]={goal:t.goal||t.id,state:String(t.state||''),stage:taskStageLabel(t.state,t),active:realtimeTaskActive(t)};}return {at:Date.now(),connections,taskStates,live:liveUsageAggregate()};}
+function pushLiveEvent(kind,source,text,at=Date.now()){if(!text)return;const latest=liveEvents[0];if(latest&&latest.kind===kind&&latest.source===source&&latest.text===text&&at-latest.at<3000)return;liveEvents.unshift({id:++liveEventSequence,kind,source,text,at});if(liveEvents.length>40)liveEvents.length=40;}
+function captureRealtimeObservation(initial=false){const next=realtimeSnapshot();if(!previousRealtimeSnapshot||initial){previousRealtimeSnapshot=next;liveEvents=[];for(const c of Object.values(next.connections)){pushLiveEvent(connectionHasActionableError(c)?'error':'connection',c.name,`Snapshot · ${humanConnectorStatus(c.status)}`,next.at);}for(const t of Object.values(next.taskStates)){if(t.active)pushLiveEvent('task',t.goal,`Snapshot · ${t.stage}`,next.at);}if(next.live.tokensAvailable){liveTokenSamples=[{at:next.at,total:next.live.total}];pushLiveEvent('token','Model usage',`Snapshot · ${fmtTokens(next.live.total)} estimated active-turn tokens`,next.at);}else liveTokenSamples=[];renderLiveOperations();return;}const prev=previousRealtimeSnapshot;for(const [id,c] of Object.entries(next.connections)){const before=prev.connections[id];if(!before){pushLiveEvent('connection',c.name,`Observed ${humanConnectorStatus(c.status)}`,next.at);continue;}if(c.status!==before.status)pushLiveEvent(connectionHasActionableError(c)?'error':'connection',c.name,`${humanConnectorStatus(before.status)} → ${humanConnectorStatus(c.status)}`,next.at);const requestDelta=c.requests-before.requests;if(requestDelta>0)pushLiveEvent('connection',c.name,`+${fmtTokens(requestDelta)} MCP request${requestDelta===1?'':'s'}`,next.at);if(c.sessions!==null&&before.sessions!==null&&c.sessions!==before.sessions)pushLiveEvent('connection',c.name,`active sessions ${before.sessions} → ${c.sessions}`,next.at);if(c.last&&c.last!==before.last&&requestDelta<=0)pushLiveEvent('connection',c.name,'New MCP activity observed',next.at);}for(const [id,t] of Object.entries(next.taskStates)){const before=prev.taskStates[id];if(before&&t.stage!==before.stage)pushLiveEvent('task',t.goal,`${before.stage} → ${t.stage}`,next.at);else if(!before&&t.active)pushLiveEvent('task',t.goal,`Entered ${t.stage}`,next.at);}if(next.live.tokensAvailable){const beforeTotal=prev.live.tokensAvailable?prev.live.total:0;const delta=next.live.total-beforeTotal;if(delta>0)pushLiveEvent('token','Model usage',`+${fmtTokens(delta)} estimated tokens · ${fmtTokens(next.live.total)} active-turn total`,next.at);liveTokenSamples.push({at:next.at,total:next.live.total});if(liveTokenSamples.length>40)liveTokenSamples.shift();}else liveTokenSamples=[];previousRealtimeSnapshot=next;renderLiveOperations();}
+function observedTokenRate(){if(liveTokenSamples.length<2)return null;const last=liveTokenSamples[liveTokenSamples.length-1];let first=liveTokenSamples[0];for(let i=liveTokenSamples.length-2;i>=0;i--){if(last.at-liveTokenSamples[i].at>=10000){first=liveTokenSamples[i];break;}}const seconds=(last.at-first.at)/1000;if(seconds<=0)return null;return Math.max(0,(last.total-first.total)*60/seconds);}
+function renderLiveSparkline(hostId='live-token-sparkline'){const host=$(hostId);if(!host)return;const samples=liveTokenSamples;if(samples.length<2){host.innerHTML='<span>Chưa đủ live token samples để vẽ trend.</span>';host.setAttribute('aria-label','Chưa đủ live token samples');return;}const values=samples.map(s=>s.total),min=Math.min(...values),max=Math.max(...values),range=Math.max(1,max-min),w=320,h=110,pad=6;const pts=samples.map((s,i)=>{const x=pad+i*(w-pad*2)/Math.max(1,samples.length-1),y=h-pad-(s.total-min)*(h-pad*2)/range;return [x,y];});const line=pts.map(p=>p.join(',')).join(' '),area=`${pad},${h-pad} ${line} ${w-pad},${h-pad}`;host.innerHTML=`<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><polygon class="spark-area" points="${area}"></polygon><polyline class="spark-line" points="${line}"></polyline><circle class="spark-point" cx="${pts[pts.length-1][0]}" cy="${pts[pts.length-1][1]}" r="3"></circle></svg>`;host.setAttribute('aria-label',`Active-turn token trend from ${fmtTokens(values[0])} to ${fmtTokens(values[values.length-1])} estimated tokens`);}
+function renderEventStream(hostId){const stream=$(hostId);if(!stream)return;if(!liveEvents.length){stream.innerHTML='<div class="live-empty">Đang chờ thay đổi trạng thái. Snapshot vẫn được cập nhật mỗi 2 giây.</div>';return;}stream.innerHTML=liveEvents.slice(0,12).map(e=>`<div class="live-event event-${esc(e.kind)}"><time>${new Date(e.at).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time><span class="event-source">${esc(e.source)}</span><span class="event-text">${esc(e.text)}</span></div>`).join('');}
+function liveFlowRows(){return scopedTasks().filter(realtimeTaskActive).map(t=>{const live=t.live_usage||null;const state=taskStageLabel(t.state,t);const last=live?.last_turn_at||t.updated_at||'';return {task:t,flowId:`${t.id}#${Number(t.run_epoch||0)}`,state,last,tokens:live?.tokens_available?Number(live.total_tokens||0):null,turns:live?.available?Number(live.turns||0):null,source:live?.available?'Web Brain durable estimate':'Runtime lifecycle only',waitingAI:!!t.waiting_for_ai_turn};});}
+function flowStateClass(row){const s=String(row?.state||'').toLowerCase();if(row?.waitingAI)return 'waiting';if(s.includes('checking'))return 'checking';if(s.includes('needs your input'))return 'owner';if(s.includes('could not'))return 'error';return 'live';}
+function renderProviderSummary(){const host=$('live-provider-summary');if(!host)return;const groups={GPT:[],Claude:[]};for(const c of operationalConnectors())groups[connectorProvider(c)].push(c);host.innerHTML='';for(const [provider,conns] of Object.entries(groups)){const reachable=runtimeFresh?conns.filter(routeReachable).length:0;const errors=conns.filter(connectionHasActionableError).length;let sessions=0,known=0,unknown=0;for(const c of conns){if(c.active_sessions_available){sessions+=Number(c.active_sessions||0);known++;}else unknown++;}const card=document.createElement('button');card.type='button';card.className='provider-summary-card';card.innerHTML=`<div><h3>${esc(provider)}</h3><p>${conns.length} route${conns.length===1?'':'s'} · ${errors?`${errors} cần kiểm tra`:'không có route error'}</p></div><div class="provider-stat"><span>Reachable</span><b>${runtimeFresh?`${reachable}/${conns.length}`:'—'}</b></div><div class="provider-stat"><span>Sessions</span><b>${known?(unknown?`${fmtTokens(sessions)} + ?`:fmtTokens(sessions)):'—'}</b></div><div class="provider-stat"><span>Live activity</span><b>${runtimeFresh?conns.filter(activeConnector).length:'—'}</b></div>`;card.addEventListener('click',()=>activateView('connections'));host.appendChild(card);}}
+function renderFlowTable(){const host=$('live-flow-rows');if(!host)return;const rows=liveFlowRows();if(!rows.length){host.innerHTML='<tr><td colspan="7">Không có execution flow đang hoạt động trong workspace scope này.</td></tr>';return;}host.innerHTML=rows.map(r=>`<tr><td><span class="flow-id" title="${esc(r.flowId)}">${esc(r.task.goal||r.task.id)}</span><span class="flow-sub">${esc(r.task.id.slice(0,12))} · epoch ${fmtTokens(r.task.run_epoch||0)}</span></td><td><span class="flow-state ${flowStateClass(r)}">${esc(r.state)}</span></td><td>${esc(r.task.project_id||'—')}</td><td>${r.tokens===null?'—':`~${fmtTokens(r.tokens)}`}</td><td>${r.turns===null?'—':fmtTokens(r.turns)}</td><td>${r.last?fmtTime(r.last):'—'}</td><td>${esc(r.source)}</td></tr>`).join('');}
+function renderRouteTable(){const host=$('live-route-rows');if(!host)return;const rows=operationalConnectors();if(!rows.length){host.innerHTML='<tr><td colspan="6">Chưa có route telemetry.</td></tr>';return;}host.innerHTML=rows.map(c=>{const sessions=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';const last=c.last_activity_at||c.last_seen_at||'';return `<tr><td>${esc(connectorProvider(c))}</td><td><span class="flow-id">${esc(c.name||c.id)}</span><span class="flow-sub">${esc(c.transport||'')}</span></td><td><span class="flow-state ${connectionHasActionableError(c)?'error':(routeReachable(c)?'live':'waiting')}">${esc(runtimeFresh?humanConnectorStatus(c.status):'Telemetry stale')}</span></td><td title="${esc(c.session_count_detail||'')}">${sessions}</td><td>${Number.isFinite(Number(c.requests))?fmtTokens(c.requests||0):'—'}</td><td>${last?fmtTime(last):'—'}</td></tr>`;}).join('');}
+function renderLivePage(){const flows=liveFlowRows();const sessions=sessionSummary();const routes=routeSummary();const aggregate=liveUsageAggregate();const waiting=flows.filter(f=>f.waitingAI).length;$('live-page-flow-count').textContent=fmtTokens(flows.length);$('live-page-ai-wait').textContent=fmtTokens(waiting);$('live-page-session-count').textContent=sessions.available?(sessions.unknownRoutes?`${fmtTokens(sessions.sessions)} + ?`:fmtTokens(sessions.sessions)):'—';$('live-page-session-detail').textContent=sessions.available?`${sessions.measuredRoutes} route đo được${sessions.unknownRoutes?` · ${sessions.unknownRoutes} không có session identity`:''}`:'Không transport nào cung cấp authoritative session count';$('live-page-route-count').textContent=runtimeFresh?`${routes.reachable}/${routes.total}`:'—';$('live-page-route-detail').textContent=runtimeFresh?`${routes.errors} route cần kiểm tra`:'Telemetry stale';$('live-page-token-total').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.total)}`:'—';const rate=observedTokenRate();$('live-page-token-rate').textContent=rate===null?'—':`~${fmtTokens(Math.round(rate))}/min`;$('live-page-last-observed').textContent=runtimeFresh?`observed ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`:'stale';$('live-page-poll-state').textContent=runtimeFresh?'observing every 2s':'observation stale';renderProviderSummary();renderFlowTable();renderRouteTable();renderEventStream('live-page-event-stream');renderLiveSparkline('live-page-token-sparkline');}
+function renderLiveOperations(){const aggregate=liveUsageAggregate();const routes=routeSummary();const activity=$('live-connection-activity');if(activity)activity.textContent=runtimeFresh?`${routes.reachable} / ${routes.total}`:'—';const detail=$('live-connection-detail');if(detail)detail.textContent=runtimeFresh?(operationalConnectors().map(c=>`${connectorProvider(c)} ${c.id==='openai-tunnel'?'tunnel':'route'}: ${humanConnectorStatus(c.status)}`).join(' · ')||'No route metadata'):'Telemetry stale';const total=$('live-token-total');if(total)total.textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.total)}`:'—';const tokenDetail=$('live-token-detail');if(tokenDetail)tokenDetail.textContent=aggregate.available?(aggregate.tokensAvailable?`${fmtTokens(aggregate.input)} in · ${fmtTokens(aggregate.output)} out · ${aggregate.pending} pending`:'Waiting for first completed Web Brain turn'):'No active Web Brain telemetry';const rate=observedTokenRate();const rateEl=$('live-token-rate');if(rateEl)rateEl.textContent=rate===null?'—':`~${fmtTokens(Math.round(rate))}/min`;const turns=$('live-turns');if(turns)turns.textContent=aggregate.available?fmtTokens(aggregate.turns):'—';const turnDetail=$('live-turn-detail');if(turnDetail)turnDetail.textContent=aggregate.available?`${aggregate.telemetryTasks}/${aggregate.activeTasks} active flow${aggregate.activeTasks===1?'':'s'} observable`:'Current execution epoch';const last=$('live-last-observed');if(last)last.textContent=runtimeFresh?`observed ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`:'stale';const poll=$('live-poll-state');if(poll)poll.textContent=runtimeFresh?'observing every 2s':'observation stale';renderLiveSparkline();renderEventStream('live-event-stream');renderLivePage();}
+
 function renderFreshness(){const el=$('telemetry-freshness');if(runtimeFresh){el.textContent=`Telemetry: live · ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`;}else{el.textContent='Telemetry: stale / unavailable';}}
 function markRuntimeStale(err){runtimeFresh=false;renderFreshness();$('connection-summary').textContent=`Telemetry runtime tạm thời không cập nhật${err?.message?`: ${err.message}`:''}. Trạng thái Connected cũ không được coi là live.`;if(runtime?.connections)renderConnections(runtime.connections.map(c=>({...c,status:'STALE',connected:false})));renderOverview();}
 
@@ -590,7 +839,7 @@ $('refresh-projects').addEventListener('click',loadProjects);
 
 async function loadTasks(){const data=await api('/api/tasks');tasks=data.tasks||[];const scoped=scopedTasks();renderUsage();renderTasks();renderOverview();if(selectedTaskId&&!scoped.some(t=>t.id===selectedTaskId))selectedTaskId='';if(!selectedTaskId&&scoped.length){const first=scoped.find(t=>t.needs_attention)||scoped[0];selectedTaskId=first.id;}if(selectedTaskId)await refreshSelectedTask();}
 function renderUsage(){let input=0,output=0,total=0;const scoped=scopedTasks();for(const t of scoped){input+=Number(t.usage?.model_input_tokens||0);output+=Number(t.usage?.model_output_tokens||0);total+=Number(t.usage?.model_total_tokens||0);}$('usage-tasks').textContent=scoped.length;$('usage-input').textContent=fmtTokens(input);$('usage-output-total').textContent=`${fmtTokens(output)} / ${fmtTokens(total)}`;}
-function taskButton(t){const b=document.createElement('button');b.type='button';b.className=`task ${t.needs_attention?'status-attention':''} ${t.id===selectedTaskId?'selected':''}`;const fb=t.owner_feedback?.verdict?` · Owner ${t.owner_feedback.verdict}`:'';const attentionMeta=t.needs_attention&&t.attention_reason?`<span>${esc(t.attention_reason)}</span>`:'';const technical=String(t.state||'UNKNOWN').toUpperCase();b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(t.goal||'Untitled goal')}</span><span class="chip product-stage" title="Technical state: ${esc(technical)}">${esc(taskStageLabel(technical))}</span></div><div class="task-meta muted"><span>${esc(t.project_id)}</span><span>${fmtTime(t.updated_at)}</span><span>${fmtTokens(t.usage?.model_total_tokens||0)} tokens${esc(fb)}</span>${attentionMeta}</div>`;b.addEventListener('click',async()=>{selectedTaskId=t.id;activateView('work');renderTasks();await refreshSelectedTask();});return b;}
+function taskButton(t){const b=document.createElement('button');b.type='button';b.className=`task ${t.needs_attention?'status-attention':''} ${t.id===selectedTaskId?'selected':''}`;const fb=t.owner_feedback?.verdict?` · Owner ${t.owner_feedback.verdict}`:'';const attentionMeta=t.needs_attention&&t.attention_reason?`<span>${esc(t.attention_reason)}</span>`:'';const technical=String(t.state||'UNKNOWN').toUpperCase();const stage=taskStageLabel(technical,t);const live=t.live_usage;const tokenText=live?.tokens_available?`~${fmtTokens(live.total_tokens||0)} live tokens${live.estimated?' est.':''}`:`${fmtTokens(t.usage?.model_total_tokens||0)} durable tokens`;b.innerHTML=`<div class="task-top"><span class="task-goal">${esc(t.goal||'Untitled goal')}</span><span class="chip product-stage" title="Technical state: ${esc(technical)}">${esc(stage)}</span></div><div class="task-meta muted"><span>${esc(t.project_id)}</span><span>${fmtTime(t.updated_at)}</span><span>${esc(tokenText)}${esc(fb)}</span>${t.waiting_for_ai_turn?'<span class="live-task-hint">AI turn pending</span>':''}${attentionMeta}</div>`;b.addEventListener('click',async()=>{selectedTaskId=t.id;activateView('work');renderTasks();await refreshSelectedTask();});return b;}
 function renderTasks(){const scoped=scopedTasks();const attention=scoped.filter(t=>t.needs_attention);$('attention-count').textContent=attention.length;const ah=$('attention-list');ah.innerHTML='';attention.forEach(t=>ah.appendChild(taskButton(t)));if(!attention.length)ah.innerHTML='<div class="muted">Không có việc nào cần bạn can thiệp.</div>';const rh=$('recent-list');rh.innerHTML='';scoped.forEach(t=>rh.appendChild(taskButton(t)));if(!scoped.length)rh.innerHTML='<div class="empty">Chưa có task trong workspace này.</div>';}
 $('refresh-work').addEventListener('click',loadTasks);
 
@@ -601,19 +850,20 @@ function usageMeasuredField(total,field){const measured=Number(total?.results_wi
 function usageDetail(total){const measured=Number(total?.results_with_token_data||0);const results=Number(total?.results||0);if(results>0&&!measured)return 'Không có token counters đo được trong phạm vi này';return `${fmtTokens(total?.input_tokens||0)} input · ${fmtTokens(total?.output_tokens||0)} output`;}
 function renderUsageDailyRows(days){const host=$('usage-daily-rows');host.innerHTML='';for(const day of [...(days||[])].reverse()){const tr=document.createElement('tr');const measured=Number(day.results_with_token_data||0),results=Number(day.results||0);for(const value of [day.date||'—',usageMeasuredField(day,'input_tokens'),usageMeasuredField(day,'output_tokens'),usageMeasuredField(day,'total_tokens'),`${measured}/${results}`]){const td=document.createElement('td');td.textContent=value;tr.appendChild(td);}host.appendChild(tr);}if(!days?.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='Chưa có usage data.';tr.appendChild(td);host.appendChild(tr);}}
 function renderUsageView(){if(!usage)return;const scope=selectedWorkspace?`Workspace: ${selectedWorkspace}`:'Tất cả workspaces';$('usage-scope').textContent=scope;$('overview-usage-scope').textContent=scope;$('usage-today-total').textContent=usageMeasuredValue(usage.today);$('usage-today-detail').textContent=usageDetail(usage.today);$('usage-week-total').textContent=usageMeasuredValue(usage.week);$('usage-week-detail').textContent=`${usageDetail(usage.week)} · tuần lịch local`;$('usage-all-total').textContent=usageMeasuredValue(usage.all_time);$('usage-all-detail').textContent=usageDetail(usage.all_time);const all=usage.all_time||{};$('usage-coverage').textContent=`${fmtTokens(all.results_with_token_data||0)} latest task results có token counters; ${fmtTokens(all.results_without_token_data||0)} latest results không có token counters. Bucket ngày/tuần dùng durable result created_at theo giờ local; đây không phải provider billing timeline. Provider attribution hiện ${usage.provider_attribution==='UNAVAILABLE'?'chưa có trong durable usage':'có sẵn'}. MAR không suy đoán phần không được đo.`;renderTokenBars('usage-bars',usage.daily||[]);renderTokenBars('overview-usage-bars',(usage.daily||[]).slice(-7));renderUsageDailyRows(usage.daily||[]);}
-function ownerAttentionItems(){const items=[],seen=new Set();const add=item=>{if(!item?.id||seen.has(item.id))return;seen.add(item.id);items.push(item);};for(const item of runtime?.attention||[])add({...item,kind:'system'});for(const p of projects){if(selectedWorkspace&&p.id!==selectedWorkspace)continue;if(!p.supported)add({id:`workspace-${p.id}`,kind:'workspace',severity:'medium',title:`Workspace ${p.id} chưa sẵn sàng`,detail:p.support_reason||p.head_error||'',next_action:'Mở workspace để kiểm tra readiness',view:'projects'});}for(const t of scopedTasks()){if(String(t.state||'').toUpperCase()==='INPUT_REQUIRED')add({id:`task-${t.id}`,kind:'task',severity:'high',title:t.goal||'Task cần input',detail:t.attention_reason||`MAR đang chờ input · ${t.project_id}`,next_action:t.attention_next_action||'Mở task và gửi thông tin MAR đang cần',view:'work',task:t});}const rank={critical:4,high:3,medium:2,low:1};return items.sort((a,b)=>(rank[String(b.severity||'medium').toLowerCase()]||2)-(rank[String(a.severity||'medium').toLowerCase()]||2));}
+function ownerAttentionItems(){const items=[],seen=new Set();const add=item=>{if(!item?.id||seen.has(item.id))return;seen.add(item.id);items.push(item);};for(const item of runtime?.attention||[])add({...item,kind:'system'});for(const p of projects){if(selectedWorkspace&&p.id!==selectedWorkspace)continue;if(!p.supported)add({id:`workspace-${p.id}`,kind:'workspace',severity:'medium',title:`Workspace ${p.id} chưa sẵn sàng`,detail:p.support_reason||p.head_error||'',next_action:'Mở workspace để kiểm tra readiness',view:'projects'});}for(const t of scopedTasks()){if(String(t.state||'').toUpperCase()==='INPUT_REQUIRED'&&!t.waiting_for_ai_turn)add({id:`task-${t.id}`,kind:'task',severity:'high',title:t.goal||'Task cần input',detail:t.attention_reason||`MAR đang chờ input · ${t.project_id}`,next_action:t.attention_next_action||'Mở task và gửi thông tin MAR đang cần',view:'work',task:t});}const rank={critical:4,high:3,medium:2,low:1};return items.sort((a,b)=>(rank[String(b.severity||'medium').toLowerCase()]||2)-(rank[String(a.severity||'medium').toLowerCase()]||2));}
 function attentionButton(item){const b=document.createElement('button');b.type='button';const severity=String(item.severity||'medium').toLowerCase();b.className=`attention-item severity-${severity}`;const detail=[item.detail,item.next_action].filter(Boolean).join(' · ')||'Mở để xử lý';b.innerHTML=`<span class="attention-severity" aria-hidden="true"></span><span><span class="attention-title">${esc(item.title||'Cần chú ý')}</span><span class="attention-detail">${esc(detail)}</span></span><span class="attention-next">Open →</span>`;b.setAttribute('aria-label',`${item.title||'Cần chú ý'}. ${detail}`);b.addEventListener('click',async()=>{if(item.kind==='task'&&item.task){selectedTaskId=item.task.id;activateView('work');renderTasks();await refreshSelectedTask();return;}activateView(item.view||'overview');});return b;}
 function connectionHasActionableError(c){return !!c&&['ERROR','MISCONFIGURED','DEGRADED','ROUTE_OFFLINE','BRIDGE_RUNTIME_MISSING','STABLE_URL_REQUIRED','REMOTE_BRIDGE_REQUIRED'].includes(String(c.status||'').toUpperCase());}
 function operationalHealth(){if(!runtime||!runtimeFresh)return {state:'unavailable',label:'Telemetry unavailable',detail:'MAR không thể xác nhận trạng thái hiện tại. Connected state cũ không được coi là live.',view:'advanced',action:'Open Diagnostics'};if(!runtime.sandbox_host_ready)return {state:'action',label:'Action required',detail:`Sandbox chưa sẵn sàng${runtime.sandbox_detail?` · ${runtime.sandbox_detail}`:''}`,view:'connections',action:'Prepare sandbox'};const conns=primaryConnections();if(!conns.length)return {state:'action',label:'Action required',detail:'Chưa có metadata cho GPT/Claude connections.',view:'connections',action:'Open Connections'};const problems=conns.filter(connectionHasActionableError);const usable=conns.filter(c=>activeConnector(c)||['LINK_READY','IDLE'].includes(String(c.status||'').toUpperCase()));const summary=conns.map(c=>`${c.name}: ${humanConnectorStatus(c.status)}`).join(' · ');if(problems.length&&usable.length)return {state:'degraded',label:'Degraded',detail:summary,view:'connections',action:'Resolve connections'};if(problems.length)return {state:'action',label:'Action required',detail:summary,view:'connections',action:'Resolve connections'};return {state:'operational',label:'Operational',detail:`Sandbox ready · ${summary}`,view:'work',action:'Open Tasks'};}
 function renderOverview(){
-  const scoped=scopedTasks();const active=scoped.filter(t=>activeWorkStates.has(String(t.state||'').toUpperCase()));const attention=ownerAttentionItems();const conns=primaryConnections();const connected=runtimeFresh?conns.filter(activeConnector):[];const health=operationalHealth();
+  const scoped=scopedTasks();const active=scoped.filter(realtimeTaskActive);const attention=ownerAttentionItems();const conns=primaryConnections();const health=operationalHealth();const sessions=sessionSummary();const routes=routeSummary();
   const answer=$('operational-answer');answer.dataset.state=health.state;$('overview-health').textContent=health.label;$('overview-health-detail').textContent=health.detail;const primary=$('overview-primary-action');primary.textContent=health.action;primary.dataset.targetView=health.view;$('overview-scope-answer').textContent=selectedWorkspace?`Workspace: ${selectedWorkspace}`:'Tất cả workspaces';
-  $('overview-active').textContent=active.length;$('overview-active-detail').textContent=active.length?`${active.length} task đang thực thi · ${scoped.length} task gần đây`:`Không có task đang chạy · ${scoped.length} task gần đây`;$('overview-attention').textContent=attention.length;$('overview-connections-count').textContent=runtimeFresh?`${connected.length} / ${conns.length}`:'—';$('overview-connections-detail').textContent=runtimeFresh?`${conns.length} provider path · ${connected.length} có live activity/session`:'Telemetry stale · không xác nhận Connected';
+  $('overview-active').textContent=active.length;$('overview-active-detail').textContent=active.length?`${active.length} execution flow${active.length===1?'':'s'} đang hoạt động`:`Không có execution flow đang hoạt động`;$('overview-attention').textContent=attention.length;$('overview-session-count').textContent=sessions.available?(sessions.unknownRoutes?`${fmtTokens(sessions.sessions)} + ?`:fmtTokens(sessions.sessions)):'—';$('overview-session-detail').textContent=sessions.available?`${sessions.measuredRoutes}/${sessions.totalRoutes} route cung cấp session identity`:'Session identity chưa đo được trên các transport hiện tại';$('overview-connections-count').textContent=runtimeFresh?`${routes.reachable} / ${routes.total}`:'—';$('overview-connections-detail').textContent=runtimeFresh?`${routes.errors} route cần kiểm tra · readiness không đồng nghĩa session`:'Telemetry stale · không xác nhận route';
   if(usage){$('overview-tokens').textContent=usageMeasuredValue(usage.today);$('overview-tokens-detail').textContent=`${usageDetail(usage.today)} · MAR-measured`;}
   const activeHost=$('overview-active-list');activeHost.innerHTML='';active.slice(0,5).forEach(t=>activeHost.appendChild(taskButton(t)));if(!active.length)activeHost.innerHTML='<div class="compact-empty">Không có task đang hoạt động trong scope này.</div>';
   const attentionHost=$('overview-attention-list');attentionHost.innerHTML='';attention.slice(0,5).forEach(item=>attentionHost.appendChild(attentionButton(item)));if(!attention.length)attentionHost.innerHTML='<div class="compact-empty">Không có việc nào cần Owner can thiệp ngay.</div>';
   const connHost=$('overview-connections');connHost.innerHTML='';for(const c of conns){const activity=c.last_activity_at||c.last_seen_at||'';const measured=[];if(Number.isFinite(Number(c.requests))&&Number(c.requests)>0)measured.push(`${fmtTokens(c.requests)} requests/run`);if(activity)measured.push(`last ${fmtTime(activity)}`);const sessionValue=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';const sessionNote=c.active_sessions_available?'active sessions':'session count unavailable';const shownStatus=runtimeFresh?c.status:'STALE';const row=document.createElement('button');row.type='button';row.className='overview-connection';row.setAttribute('aria-label',`${c.name}: ${humanConnectorStatus(shownStatus)}. ${sessionNote}`);row.innerHTML=`<div><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.transport||'')}${measured.length?` · ${esc(measured.join(' · '))}`:''}</div></div><div class="health-line"><span class="status-dot ${statusClass(shownStatus)}" aria-hidden="true"></span>${esc(humanConnectorStatus(shownStatus))}</div><div class="connection-count" title="${esc(c.session_count_detail||'')}"><b>${sessionValue}</b><span class="muted" style="font-size:11px">${sessionNote}</span></div>`;row.addEventListener('click',()=>activateView('connections'));connHost.appendChild(row);}if(!conns.length)connHost.innerHTML='<div class="compact-empty">Chưa có connection metadata.</div>';
   if(usage)renderTokenBars('overview-usage-bars',(usage.daily||[]).slice(-7));
+  renderLiveOperations();
 }
 
 async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('task-detail');try{
@@ -628,9 +878,9 @@ async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('t
 }catch(err){detail.innerHTML=`<div class="notice error">${esc(err.message)}</div>`;}}
 
 async function pollRuntime(){try{await loadRuntime();}catch(err){markRuntimeStale(err);}}
-async function pollOperational(){if(operationalPollInFlight)return;operationalPollInFlight=true;try{await Promise.allSettled([pollRuntime(),loadTasks()]);}finally{operationalPollInFlight=false;}}
+async function pollOperational(){if(operationalPollInFlight)return;operationalPollInFlight=true;try{await Promise.allSettled([pollRuntime(),loadTasks()]);captureRealtimeObservation(false);}finally{operationalPollInFlight=false;}}
 async function pollUsage(){if(usagePollInFlight)return;usagePollInFlight=true;try{await loadUsage();}catch{}finally{usagePollInFlight=false;}}
-async function boot(){try{await Promise.all([loadRuntime(),loadProjects(),loadTasks()]);await loadUsage();pollTimer=setInterval(()=>{void pollOperational();},2000);usageTimer=setInterval(()=>{void pollUsage();},30000);}catch(err){markRuntimeStale(err);$('work-readiness').className='notice error';$('work-readiness').textContent=err.message;}}
+async function boot(){try{await Promise.all([loadRuntime(),loadProjects(),loadTasks()]);await loadUsage();captureRealtimeObservation(true);pollTimer=setInterval(()=>{void pollOperational();},2000);usageTimer=setInterval(()=>{void pollUsage();},30000);}catch(err){markRuntimeStale(err);$('work-readiness').className='notice error';$('work-readiness').textContent=err.message;}}
 window.addEventListener('beforeunload',()=>{if(pollTimer)clearInterval(pollTimer);if(usageTimer)clearInterval(usageTimer);});boot();
 </script>
 </body>
