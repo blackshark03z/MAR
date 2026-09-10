@@ -133,6 +133,7 @@ const (
 	methodControlsSince        = "controls_since"
 	methodEnterInputRequired   = "enter_input_required"
 	methodPersistObservation   = "persist_observation"
+	methodDecisionProjection   = "decision_projection_state"
 	methodWebTurn              = "web_turn"
 )
 

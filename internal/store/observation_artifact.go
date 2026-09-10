@@ -114,6 +114,41 @@ FROM observation_artifacts WHERE handle = ?`, handle).Scan(&a.Handle, &a.TaskID,
 	return a, nil
 }
 
+func (s *SQLite) ListObservationArtifacts(ctx context.Context, taskID, attemptID string, epoch int64, limit int) ([]domain.ObservationArtifact, error) {
+	if strings.TrimSpace(taskID) == "" || strings.TrimSpace(attemptID) == "" || epoch <= 0 || limit <= 0 || limit > 32 {
+		return nil, errors.New("observation artifact list identity or bound is invalid")
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT handle, task_id, attempt_id, run_epoch, tool_call_id, kind, content_sha256, captured_bytes, source_bytes, complete, truncated, created_at
+FROM observation_artifacts
+WHERE task_id = ? AND attempt_id = ? AND run_epoch = ?
+ORDER BY created_at DESC, handle DESC
+LIMIT ?`, taskID, attemptID, epoch, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]domain.ObservationArtifact, 0, limit)
+	for rows.Next() {
+		var a domain.ObservationArtifact
+		var complete, truncated int
+		var created string
+		if err := rows.Scan(&a.Handle, &a.TaskID, &a.AttemptID, &a.RunEpoch, &a.ToolCallID, &a.Kind, &a.SHA256, &a.CapturedBytes, &a.SourceBytes, &complete, &truncated, &created); err != nil {
+			return nil, err
+		}
+		a.Complete, a.Truncated = complete != 0, truncated != 0
+		a.CreatedAt, err = time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (s *SQLite) ReadObservationArtifact(ctx context.Context, taskID, attemptID string, epoch int64, handle string, offset int64, maxBytes int) (domain.ObservationArtifactChunk, error) {
 	if offset < 0 || maxBytes <= 0 || maxBytes > maxObservationArtifactReadBytes {
 		return domain.ObservationArtifactChunk{}, errors.New("observation artifact read is outside bounded range")

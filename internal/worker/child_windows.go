@@ -122,6 +122,10 @@ type persistObservationResponse struct {
 	Artifact domain.ObservationArtifact `json:"artifact"`
 }
 
+type decisionProjectionResponse struct {
+	State contextengine.DecisionProjectionState `json:"state"`
+}
+
 type webTurnRequest struct {
 	TaskID    string            `json:"task_id"`
 	AttemptID string            `json:"attempt_id"`
@@ -252,7 +256,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	loop.WithControlStream(rpc).WithObservationStore(rpc)
+	loop.WithControlStream(rpc).WithObservationStore(rpc).WithDecisionProjectionSource(rpc)
 	result, err := loop.Run(ctx, agent.RunRequest{
 		TaskID:           start.Task.ID,
 		AttemptID:        start.Attempt.ID,
@@ -320,6 +324,15 @@ func (c *rpcClient) PersistObservation(ctx context.Context, taskID, attemptID st
 		return domain.ObservationArtifact{}, err
 	}
 	return response.Artifact, nil
+}
+
+func (c *rpcClient) DecisionProjectionState(ctx context.Context, taskID, attemptID string, epoch int64) (contextengine.DecisionProjectionState, error) {
+	var response decisionProjectionResponse
+	request := authorityRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch}
+	if err := c.call(ctx, methodDecisionProjection, request, &response); err != nil {
+		return contextengine.DecisionProjectionState{}, err
+	}
+	return response.State, nil
 }
 
 func (c *rpcClient) WebTurn(ctx context.Context, taskID, attemptID string, epoch int64, req model.TurnRequest) (model.TurnResponse, error) {

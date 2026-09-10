@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mar/internal/agent"
+	"mar/internal/contextengine"
 	"mar/internal/domain"
 	"mar/internal/model"
 	"mar/internal/processctl"
@@ -27,6 +28,7 @@ type ControlBackend interface {
 	ControlsSince(context.Context, string, int64, int) ([]domain.TaskControl, error)
 	RequestInputForAttempt(context.Context, string, string, int64) error
 	PersistObservation(context.Context, string, string, int64, string, string, string, int64, bool) (domain.ObservationArtifact, error)
+	DecisionProjectionState(context.Context, string, string, int64) (contextengine.DecisionProjectionState, error)
 	RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error)
 	WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error)
 }
@@ -271,6 +273,16 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		}
 		artifact, err := r.backend.PersistObservation(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.ToolCallID, payload.Kind, payload.Raw, payload.SourceBytes, payload.SourceComplete)
 		return respond(persistObservationResponse{Artifact: artifact}, err)
+	case methodDecisionProjection:
+		var payload authorityRequest
+		if err := json.Unmarshal(request.Payload, &payload); err != nil {
+			return respond(nil, err)
+		}
+		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
+			return respond(nil, errors.New("worker decision projection request escaped assigned attempt"))
+		}
+		state, err := r.backend.DecisionProjectionState(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch)
+		return respond(decisionProjectionResponse{State: state}, err)
 	case methodWebTurn:
 		var payload webTurnRequest
 		if err := json.Unmarshal(request.Payload, &payload); err != nil {

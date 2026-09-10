@@ -864,6 +864,68 @@ func TestCompletedCandidateDoesNotTransitionDurableTaskToVerified(t *testing.T) 
 	}
 }
 
+type fakeDecisionProjectionSource struct {
+	state contextengine.DecisionProjectionState
+	calls int
+}
+
+func (f *fakeDecisionProjectionSource) DecisionProjectionState(_ context.Context, taskID, attemptID string, epoch int64) (contextengine.DecisionProjectionState, error) {
+	f.calls++
+	if taskID != f.state.TaskID || attemptID != f.state.AttemptID || epoch != f.state.RunEpoch {
+		return contextengine.DecisionProjectionState{}, errors.New("projection request identity mismatch")
+	}
+	return f.state, nil
+}
+
+func decisionProjectionStateForRequest(t *testing.T, req RunRequest) contextengine.DecisionProjectionState {
+	t.Helper()
+	hash, err := req.Contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contextengine.DecisionProjectionState{
+		TaskID: req.TaskID, GoalHash: hash, TaskState: domain.TaskRunning, ProjectID: req.Contract.ProjectID,
+		WorkspaceID: "workspace-test", WorkspaceState: domain.WorkspaceReady, BaseRevision: req.Contract.BaseRevision, CurrentRevision: req.ExpectedRevision,
+		AttemptID: req.AttemptID, RunEpoch: req.RunEpoch, AttemptAuthority: domain.AttemptActive, CreatedAt: time.Now().UTC(),
+	}
+}
+
+func TestLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t *testing.T) {
+	req := testRunRequest(false)
+	source := &fakeDecisionProjectionSource{state: decisionProjectionStateForRequest(t, req)}
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, Content: "FIRST_ASSISTANT_MARKER", ToolCalls: []model.ToolCall{{ID: "call-one", Name: "read_file", Arguments: `{}`}}}),
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, Content: "SECOND_ASSISTANT_MARKER", ToolCalls: []model.ToolCall{{ID: "call-two", Name: "read_file", Arguments: `{}`}}}),
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish-projection-tail", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"bounded tail"}`}}}),
+	}}
+	loop := newTestLoop(t, gateway, newFakeTools(true, "read_file"), testConfig()).WithDecisionProjectionSource(source)
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || len(gateway.requests) != 3 || source.calls != 3 {
+		t.Fatalf("projection loop did not complete expected three turns: result=%+v requests=%d projection_calls=%d", result, len(gateway.requests), source.calls)
+	}
+	if len(gateway.requests[0].Messages) != 2 || len(gateway.requests[1].Messages) != 4 || len(gateway.requests[2].Messages) != 4 {
+		t.Fatalf("protocol tail cardinality is not bounded: %d %d %d", len(gateway.requests[0].Messages), len(gateway.requests[1].Messages), len(gateway.requests[2].Messages))
+	}
+	if !strings.Contains(gateway.requests[0].Messages[1].Content, "MAR_DECISION_PROJECTION_JSON") {
+		t.Fatal("first production turn did not use DecisionProjection")
+	}
+	second := gateway.requests[1].Messages
+	if second[2].Role != model.RoleAssistant || second[2].Content != "FIRST_ASSISTANT_MARKER" || second[3].Role != model.RoleTool || second[3].ToolCallID != "call-one" {
+		t.Fatalf("second turn lacks exact immediate assistant/tool pair: %+v", second)
+	}
+	thirdRaw, err := json.Marshal(gateway.requests[2].Messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := string(thirdRaw)
+	if !strings.Contains(third, "SECOND_ASSISTANT_MARKER") || !strings.Contains(third, "call-two") || strings.Contains(third, "FIRST_ASSISTANT_MARKER") || strings.Contains(third, "call-one") {
+		t.Fatalf("older protocol history leaked into third request: %s", third)
+	}
+}
+
 func newTestLoop(t *testing.T, gateway ModelGateway, tools ToolRuntime, cfg Config) *Loop {
 	t.Helper()
 	return newTestLoopWithCheckpoints(t, gateway, tools, &fakeCheckpointStore{}, cfg)

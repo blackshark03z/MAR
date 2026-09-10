@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"mar/internal/agent"
+	"mar/internal/contextengine"
 	"mar/internal/domain"
 	"mar/internal/model"
 	"mar/internal/processctl"
@@ -82,6 +83,10 @@ func (b *fakeControlBackend) PersistObservation(_ context.Context, taskID, attem
 		ToolCallID: toolCallID, Kind: kind, SHA256: strings.Repeat("b", 64),
 		CapturedBytes: int64(len(raw)), SourceBytes: sourceBytes, Complete: sourceComplete, Truncated: !sourceComplete,
 	}, nil
+}
+
+func (b *fakeControlBackend) DecisionProjectionState(context.Context, string, string, int64) (contextengine.DecisionProjectionState, error) {
+	return contextengine.DecisionProjectionState{}, nil
 }
 
 func (b *fakeControlBackend) RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error) {

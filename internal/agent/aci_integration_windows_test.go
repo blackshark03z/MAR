@@ -306,6 +306,90 @@ func TestLoopPersistsAndResumesSemanticCheckpointAcrossReplacementAttempt(t *tes
 	}
 }
 
+func TestLoopRebuildsBoundedDecisionProjectionAcrossReplacementAttempt(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := service.NewTaskService(db)
+	ctx := context.Background()
+	project, _, err := svc.RegisterProject(ctx, "project-decision-projection-replacement", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{Goal: "rebuild bounded projection after replacement", Acceptance: []string{"replacement uses durable current decision state only"}, ProjectID: project.ID, BaseRevision: "rev-projection-replacement", VerificationProfile: "test", Priority: "P1"}
+	task, _, err := svc.Submit(ctx, "decision-projection-replacement", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attemptA, err := svc.BeginAttempt(ctx, task.ID, "worker-a", "supervisor-a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqA := RunRequest{TaskID: task.ID, AttemptID: attemptA.ID, RunEpoch: attemptA.RunEpoch, Root: project.Root, Contract: contract, ExpectedRevision: contract.BaseRevision}
+	sourceA := &fakeDecisionProjectionSource{state: decisionProjectionStateForRequest(t, reqA)}
+	gatewayA := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, Content: "STALE_ATTEMPT_TRANSCRIPT_MARKER", ToolCalls: []model.ToolCall{{ID: "old-read", Name: "read_file", Arguments: `{}`}}}),
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "old-finish", Name: finishToolName, Arguments: `{"status":"blocked","summary":"simulate replacement","blocker":"test replacement"}`}}}),
+	}}
+	loopA, err := New(gatewayA, newFakeTools(true, "read_file"), fakeContextBuilder{pack: contextengine.Pack{Revision: contract.BaseRevision}}, svc, svc, Profile{Model: "test-model", BaseInstructions: "You are the MAR coding worker."}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loopA.WithDecisionProjectionSource(sourceA)
+	resultA, err := loopA.Run(ctx, reqA)
+	if err != nil || resultA.Status != StatusBlocked {
+		t.Fatalf("attempt A did not reach replacement boundary: result=%+v err=%v", resultA, err)
+	}
+	checkpoint, err := svc.PublishCheckpoint(ctx, task.ID, attemptA.ID, attemptA.RunEpoch, contract.BaseRevision, domain.SemanticCheckpointPayload{CompletedWork: []string{"durable work survives replacement"}, CurrentHypothesis: "projection rebuilds from MAR durable state", VerificationStatus: "focused verification pending", RemainingWork: []string{"continue in replacement"}, NextAction: "continue-from-durable-projection", CriticalEvidenceRefs: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.LogicalFenceAttempt(ctx, task.ID, attemptA.ID, attemptA.RunEpoch); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ConfirmAttemptTerminated(ctx, task.ID, attemptA.ID, attemptA.RunEpoch, "test-confirmed-terminated", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RecoverForReplacement(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	attemptB, err := svc.BeginAttempt(ctx, task.ID, "worker-b", "supervisor-b", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reqB := RunRequest{TaskID: task.ID, AttemptID: attemptB.ID, RunEpoch: attemptB.RunEpoch, Root: project.Root, Contract: contract, ExpectedRevision: contract.BaseRevision}
+	stateB := decisionProjectionStateForRequest(t, reqB)
+	stateB.Checkpoint = &checkpoint
+	sourceB := &fakeDecisionProjectionSource{state: stateB}
+	gatewayB := &scriptedGateway{responses: []model.TurnResponse{assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "new-finish", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"replacement projection rebuilt"}`}}})}}
+	loopB, err := New(gatewayB, newFakeTools(true, "read_file"), fakeContextBuilder{pack: contextengine.Pack{Revision: contract.BaseRevision}}, svc, svc, Profile{Model: "test-model", BaseInstructions: "You are the MAR coding worker."}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loopB.WithDecisionProjectionSource(sourceB)
+	resultB, err := loopB.Run(ctx, reqB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resultB.Status != StatusCompletedCandidate || resultB.ResumeCheckpointID != checkpoint.ID || sourceB.calls != 1 || len(gatewayB.requests) != 1 || len(gatewayB.requests[0].Messages) != 2 {
+		t.Fatalf("replacement did not rebuild one bounded current projection: result=%+v calls=%d requests=%+v", resultB, sourceB.calls, gatewayB.requests)
+	}
+	current := gatewayB.requests[0].Messages[1].Content
+	if !strings.Contains(current, "MAR_DECISION_PROJECTION_JSON") || !strings.Contains(current, "continue-from-durable-projection") || !strings.Contains(current, attemptB.ID) || strings.Contains(current, "STALE_ATTEMPT_TRANSCRIPT_MARKER") {
+		t.Fatalf("replacement projection is missing current durable truth or replayed stale chatter: %s", current)
+	}
+	if attemptB.RunEpoch <= attemptA.RunEpoch {
+		t.Fatalf("replacement did not advance run_epoch: old=%d new=%d", attemptA.RunEpoch, attemptB.RunEpoch)
+	}
+}
+
 func runAgentGit(t *testing.T, root string, args ...string) {
 	t.Helper()
 	git := testsupport.RequireExecutable(t, "git")
