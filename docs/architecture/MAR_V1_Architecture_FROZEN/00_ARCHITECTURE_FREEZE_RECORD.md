@@ -2,9 +2,10 @@
 
 **Freeze status:** `ARCHITECTURE_FROZEN`  
 **Frozen baseline:** MAR V1 Architecture Freeze Candidate R3  
+**V1.1 architecture amendment:** `ARCHITECTURE_EVOLVE` — decision context, transcript ownership and bounded external cognition  
 **Final independent review verdict:** `ARCHITECTURE_READY_FOR_FREEZE`  
-**Remaining blockers:** `NONE`  
-**Contradictions:** `NONE`  
+**V1.1 remaining architecture blockers:** `NONE` for bounded external cognition plus optional internal providers  
+**Contradictions:** `NONE` after the V1.1 amendment below  
 **Freeze decision:** `YES`
 
 ---
@@ -16,6 +17,16 @@ MAR V1 is:
 > A single-owner, single-machine, MCP-native autonomous coding runtime that supports multiple clients, projects and concurrent tasks while keeping the inner model↔tool loop local to the runtime.
 
 MAR V1 is not a multi-user SaaS, distributed workflow platform, generic remote shell, cloud worker fabric or agent-swarm framework.
+
+### V1.1 context/cognition amendment
+
+MAR owns the single execution loop, durable coordination truth, observable transcript/evidence and current decision state. ChatGPT Web is a non-authoritative Tech Lead/reviewer and may participate only as a **bounded external cognition** adapter. Normal reasoning turns are reconstructed from bounded, revision/state-bound Decision Projections inside the existing context/service boundary instead of replaying an ever-growing transcript. Large source, log and diff payloads remain durable MAR artifacts and are referenced through bounded handles.
+
+Web cognition operates in bounded episodes. MAR does **not** guarantee constant Chrome/browser memory for an indefinitely growing third-party chat, and unlimited unattended Web-only execution in one permanent chat is not a supported product guarantee. Long unattended reasoning may instead use an optional internal model provider through the existing `model.Provider` / `Gateway` boundary; paid API execution is never mandatory for normal MAR use.
+
+Independent audit evidence confirmed MAR defects in full-history replay/context amplification, request/response echoing, and stale pending-turn selection. Tool-schema size by itself was not the dominant measured contributor. Exact attribution of the observed Chrome OOM crashes remains unproven and must be validated separately with browser-renderer and Windows commit/pagefile measurements.
+
+This amendment evolves the cognition/context boundary only. It does not replace the frozen sandbox, physical process fencing, immutable Goal Contract, revision-bound verification, effect reconciliation, serialized integration, or single-host coordination invariants.
 
 ---
 
@@ -47,7 +58,7 @@ Repository
 
 The architecture is considered correct only while these remain true:
 
-1. MCP is the control plane, not the inner coding loop.
+1. MCP is the control plane, not the inner execution/tool loop. MAR owns that loop; bounded external cognition may provide reasoning decisions without becoming execution authority.
 2. One mutable task owns one isolated mutable workspace.
 3. Parallel execution is allowed; authoritative project integration is serialized.
 4. Task truth is durable and independent of ChatWeb transport/session.

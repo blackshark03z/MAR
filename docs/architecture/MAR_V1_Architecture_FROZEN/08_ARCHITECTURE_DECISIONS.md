@@ -193,3 +193,24 @@ If neither can be proven, recovery blocks.
 **Why:** Prevent stale child processes or already-dispatched commands from corrupting the workspace used by a replacement worker.
 
 **V1 simplification:** Prefer kill-and-confirm. Do not build live write-revocation machinery unless implementation evidence later requires it.
+
+---
+
+## ADR-023 — Decision context, transcript ownership and external cognition boundary
+
+**Decision:** MAR owns the single execution/tool loop, durable observable transcript/evidence, current decision state and all execution authority. ChatGPT Web is a non-authoritative Tech Lead/reviewer and may provide reasoning only through bounded external cognition episodes. Each reasoning turn is built from a bounded, revision/state-bound Decision Projection inside the existing context/service code instead of replaying the complete historical transcript. Large source/log/diff/tool observations are durable artifacts referenced by bounded handles. Long unattended reasoning may use optional internal providers through the existing `model.Provider` / `Gateway` abstraction; API-backed execution is optional, not mandatory.
+
+**Why:** Independent source/runtime audit confirmed three MAR defects: full-history replay/context amplification, acknowledgement/response echoing of large requests, and stale pending-turn selection. The largest measured requests were dominated by accumulated tool observations rather than the public tool schema catalog. These defects can be corrected by evolving the current cognition/context boundary without replacing proven orchestration, sandbox, fencing, verification or integration mechanisms. Exact Chrome OOM attribution remains a separate browser/OS measurement question.
+
+**Invariants:**
+- SQLite remains the only durable coordination truth; large payloads live as referenced artifact content.
+- Browser/chat/provider history is replaceable working context, never task authority.
+- One current actionable decision binds task, attempt, epoch, projection/current-state identity and relevant workspace/revision facts; stale decisions fail closed.
+- Safety-critical facts, unresolved effects and verification freshness are never silently summarized away.
+- Web episodes have explicit delivery/turn budgets; MAR does not claim constant memory for an indefinitely retained third-party chat.
+- Provider-native sessions/compaction are optional adapter state and cannot redefine task lifecycle or evidence.
+- Existing physical fencing, immutable Goal Contract, revision-bound verification, effect reconciliation and serialized integration remain mandatory.
+
+**Do not add:** a second orchestrator, separate cognition gateway service, separate projection service/database, duplicate BrainAdapter framework, universal agent framework, mandatory paid API dependency, named-worker routing architecture, or parallel frozen-architecture tree unless later evidence proves the current boundary insufficient.
+
+**Implementation order:** P0 current-turn truth and small receipts; P0 durable observation/artifact capture; P0 bounded Decision Projection; P0 Web episode plus task-wide budgets; then public MCP contraction, Console telemetry/index improvements and optional provider continuation.

@@ -45,7 +45,7 @@
 ## 2. Architectural invariants
 
 ### I1 — MCP is control plane
-The external MCP layer does not host the inner coding loop.
+The external MCP layer does not host the inner execution/tool loop. MAR owns that loop. A Web client may provide **bounded external cognition** as a non-authoritative reasoning adapter, but task state, transcript/evidence, action eligibility and mutation authority remain inside MAR.
 
 ### I2 — Mutable task isolation
 One mutable task owns one isolated workspace.
@@ -237,6 +237,14 @@ Avoid unnecessary model switching inside one continuous phase because it weakens
 
 V1 may support one provider first while retaining a provider-neutral interface.
 
+### 8A. External cognition and provider continuation
+
+The existing model abstraction remains the only model boundary. Do not introduce a second BrainAdapter framework merely to wrap the same responsibility.
+
+ChatGPT Web may supply reasoning for bounded external episodes, but it is never the owner of task history, execution authority, `attempt_id`, `run_epoch`, verification state, or integration state. MAR reconstructs each actionable reasoning request from current durable facts and bounded evidence. A stale or superseded Web turn is historical evidence only and cannot become current because it is merely the latest unanswered row.
+
+Long unattended reasoning may use an optional internal provider through the same model boundary. Provider-native continuation or compaction is an optimization/cache and never replaces MAR durable truth. Loss of a provider session must remain recoverable from MAR facts, checkpoint and evidence.
+
 ---
 
 ## 9. Durable state
@@ -255,7 +263,7 @@ Store metadata only:
 - resource accounting;
 - artifact pointers.
 
-Large logs/transcripts belong in filesystem-backed append-only files.
+Large logs/transcripts belong in filesystem-backed append-only files. SQLite stores event/index metadata and durable references; large source/log/diff/model payloads remain artifact content rather than giant coordination rows.
 
 ---
 
@@ -278,6 +286,8 @@ context pack
 ```
 
 Do not require a global always-loaded vector database.
+
+For model execution, the context layer also builds a bounded **Decision Projection** from the immutable Goal, authority, current task/attempt/epoch, accepted controls, workspace/revision identity, unresolved effects, current verification/integration facts, working checkpoint and selected immutable evidence. Required safety facts may not be silently summarized away to satisfy a size limit; if they cannot fit the admitted envelope, the decision blocks explicitly. Large evidence is fetched lazily through bounded immutable handles. The projection is derived state inside the existing context/service boundary, not a new service or source of truth.
 
 Indexes should be:
 
