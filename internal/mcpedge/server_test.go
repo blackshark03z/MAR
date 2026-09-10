@@ -68,6 +68,21 @@ func (f *fakeBackend) ProjectContext(_ context.Context, projectID string) ([]ser
 
 type largeReadBackend struct{ fakeBackend }
 
+type largeReceiptBackend struct{ fakeBackend }
+
+func (b *largeReceiptBackend) Submit(_ context.Context, key string, contract domain.GoalContract) (domain.Task, bool, error) {
+	return domain.Task{ID: "task-large-receipt", IdempotencyKey: key, Contract: contract, ContractHash: "hash", State: domain.TaskSubmitted, CreatedAt: time.Unix(1, 0).UTC(), UpdatedAt: time.Unix(1, 0).UTC()}, true, nil
+}
+
+func (b *largeReceiptBackend) StatusSnapshot(_ context.Context, taskID string) (service.TaskStatusSnapshot, error) {
+	return service.TaskStatusSnapshot{Task: domain.Task{ID: taskID, State: domain.TaskInputRequired, RunEpoch: 4, Contract: domain.GoalContract{Goal: strings.Repeat("status-secret-marker-", 8<<10), ProjectID: "mar"}}, BrainTurnAvailable: true, Detail: "waiting", NextAction: "brain_turn"}, nil
+}
+
+func (b *largeReceiptBackend) RespondWebTurn(_ context.Context, taskID, turnID string, _ model.Message, _ string) (domain.WebTurn, bool, error) {
+	now := time.Unix(2, 0).UTC()
+	return domain.WebTurn{ID: turnID, TaskID: taskID, AttemptID: "attempt-current", RunEpoch: 4, RequestID: "request-current", Request: json.RawMessage(`{"secret":"` + strings.Repeat("brain-secret-marker-", 8<<10) + `"}`), ResponseHash: "response-hash", RespondedAt: &now}, true, nil
+}
+
 func (b *largeReadBackend) Result(_ context.Context, taskID string) (domain.TaskResult, bool, error) {
 	return domain.TaskResult{
 		ID:                   "result-large",
@@ -135,6 +150,37 @@ func TestPublicMCPSurfaceKeepsWorkerPrimitivesPrivateAndAddsBoundedProjectRead(t
 				t.Fatalf("low-level worker primitive leaked to public MCP: %s", forbidden)
 			}
 		}
+	}
+}
+
+func TestSubmitStatusAndBrainRespondUseCompactNoEchoReceipts(t *testing.T) {
+	session := connectTestMCP(t, &largeReceiptBackend{})
+	goalMarker := strings.Repeat("submit-secret-marker-", 8<<10)
+	submitResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{"idempotency_key": "compact-submit", "contract": map[string]any{"goal": goalMarker, "project_id": "mar", "base_revision": "abc", "verification_profile": "go-standard", "priority": "P2", "authority": map[string]any{}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, result := range map[string]*mcp.CallToolResult{"submit": submitResult} {
+		raw, _ := json.Marshal(result.StructuredContent)
+		if strings.Contains(string(raw), "submit-secret-marker-") || len(raw) > 4096 {
+			t.Fatalf("%s receipt echoed oversized request: len=%d", name, len(raw))
+		}
+	}
+	statusResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "status", Arguments: map[string]any{"task_id": "task-large-receipt"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	statusRaw, _ := json.Marshal(statusResult.StructuredContent)
+	if strings.Contains(string(statusRaw), "status-secret-marker-") || len(statusRaw) > 4096 {
+		t.Fatalf("status receipt echoed Goal Contract: len=%d", len(statusRaw))
+	}
+	brainResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_respond", Arguments: map[string]any{"task_id": "task-large-receipt", "turn_id": "turn-current", "content": "done"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	brainRaw, _ := json.Marshal(brainResult.StructuredContent)
+	if strings.Contains(string(brainRaw), "brain-secret-marker-") || len(brainRaw) > 4096 {
+		t.Fatalf("brain_respond receipt echoed request: len=%d", len(brainRaw))
 	}
 }
 

@@ -128,7 +128,22 @@ func (s *SQLite) RespondWebTurn(ctx context.Context, completed domain.WebTurn) (
 }
 
 func (s *SQLite) PendingWebTurn(ctx context.Context, taskID string) (domain.WebTurn, bool, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND responded_at IS NULL ORDER BY created_at DESC LIMIT 1`, taskID)
+	// A pending row is actionable only when it belongs to the task's current
+	// epoch and the exact active attempt while the task is waiting for Web
+	// cognition. Historical unanswered rows remain durable evidence but must
+	// never be rediscovered merely because they are the newest unanswered row.
+	row := s.db.QueryRowContext(ctx, `
+SELECT w.turn_id, w.task_id, w.attempt_id, w.run_epoch, w.request_id, w.request_json, w.response_json, w.request_hash, w.response_hash, w.integrity_hash, w.created_at, w.responded_at
+FROM web_turns w
+JOIN tasks t ON t.id = w.task_id
+JOIN execution_attempts a ON a.attempt_id = w.attempt_id AND a.task_id = w.task_id AND a.run_epoch = w.run_epoch
+WHERE w.task_id = ?
+  AND w.responded_at IS NULL
+  AND t.state = ?
+  AND t.run_epoch = w.run_epoch
+  AND a.authority_state = ?
+ORDER BY w.created_at DESC
+LIMIT 1`, taskID, string(domain.TaskInputRequired), string(domain.AttemptActive))
 	turn, err := scanWebTurn(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WebTurn{}, false, nil

@@ -10,6 +10,48 @@ import (
 	"mar/internal/model"
 )
 
+func TestPendingWebTurnStopsAdvertisingAfterCancellationFencesAttempt(t *testing.T) {
+	_, svc, _ := newHarness(t)
+	ctx := context.Background()
+	task, _, err := svc.Submit(ctx, "web-turn-stale-cancel", contract("wait for Web cognition"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker", "daemon", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := model.TurnRequest{RequestID: "stale-turn", Model: "gpt-5.6-sol", Messages: []model.Message{{Role: model.RoleUser, Content: "decide"}}, MaxOutputTokens: 128}
+	turn, _, err := svc.RequestWebTurnForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, available, err := svc.PendingWebTurn(ctx, task.ID); err != nil || !available {
+		t.Fatalf("current turn should be actionable: available=%v err=%v", available, err)
+	}
+	if _, _, err := svc.Cancel(ctx, task.ID, "cancel-stale-web-turn", domain.CancelPayload{Reason: "owner cancelled"}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, available, err := svc.PendingWebTurn(ctx, task.ID); err != nil || available {
+		t.Fatalf("fenced turn %s must be historical only: pending=%+v available=%v err=%v", turn.ID, pending, available, err)
+	}
+	snapshot, err := svc.StatusSnapshot(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.BrainTurnAvailable {
+		t.Fatalf("status advertised fenced Web turn: %+v", snapshot)
+	}
+	if _, _, err := svc.RespondWebTurn(ctx, task.ID, turn.ID, model.Message{Role: model.RoleAssistant, Content: "late"}, "stop"); err == nil {
+		t.Fatal("late fenced response unexpectedly accepted")
+	}
+}
+
 func TestWebTurnDurablyPausesAndResumesActiveAttempt(t *testing.T) {
 	_, svc, _ := newHarness(t)
 	ctx := context.Background()
@@ -75,6 +117,14 @@ func TestWebTurnDurablyPausesAndResumesActiveAttempt(t *testing.T) {
 	if err != nil || snapshot.BrainTurnAvailable || snapshot.NextAction == "" {
 		t.Fatalf("running status retained stale brain-turn UX: %+v err=%v", snapshot, err)
 	}
+	replayed, createdAgain, err := svc.RespondWebTurn(ctx, task.ID, turn.ID, message, "tool_calls")
+	if err != nil || createdAgain || replayed.ID != turn.ID {
+		t.Fatalf("identical response retry was not idempotent: turn=%+v created=%v err=%v", replayed, createdAgain, err)
+	}
+	if _, _, err := svc.RespondWebTurn(ctx, task.ID, turn.ID, model.Message{Role: model.RoleAssistant, Content: "different response"}, "stop"); err == nil {
+		t.Fatal("different second response unexpectedly replaced the accepted response")
+	}
+
 	response, available, err := svc.WebTurnResponse(ctx, turn.ID)
 	if err != nil || !available {
 		t.Fatalf("web turn response unavailable: %+v available=%v err=%v", response, available, err)

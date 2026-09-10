@@ -87,7 +87,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return nil, map[string]any{"created": created, "task": task}, nil
+			return nil, map[string]any{"created": created, "task": compactTaskReceipt(task)}, nil
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "status", Description: "Read the bounded durable status of one MAR task."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, map[string]any, error) {
@@ -95,7 +95,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return nil, map[string]any{"status": status}, nil
+			return nil, map[string]any{"status": compactStatusReceipt(status)}, nil
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "steer", Description: "Add bounded factual context, priority clarification, a blocked choice, request additional verification, or request cancellation without rewriting the Goal Contract."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args steerArgs) (*mcp.CallToolResult, map[string]any, error) {
@@ -148,7 +148,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			if err != nil {
 				return nil, nil, err
 			}
-			return nil, map[string]any{"created": created, "turn": turn}, nil
+			return nil, map[string]any{"created": created, "turn": compactWebTurnReceipt(turn)}, nil
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "project_read", Description: "Read one bounded UTF-8 text file from a registered MAR project without creating a task or Goal Contract. project_id is optional: MAR infers it when the absolute path or registered projects make the project unambiguous. No base_revision is required. Ask the owner only when the file identity or project remains genuinely ambiguous."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectReadArgs) (*mcp.CallToolResult, map[string]any, error) {
@@ -168,6 +168,49 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 		})
 
 	return server, nil
+}
+
+func compactTaskReceipt(task domain.Task) map[string]any {
+	return map[string]any{
+		"task_id":    task.ID,
+		"state":      task.State,
+		"run_epoch":  task.RunEpoch,
+		"created_at": task.CreatedAt,
+		"updated_at": task.UpdatedAt,
+	}
+}
+
+func compactStatusReceipt(status service.TaskStatusSnapshot) map[string]any {
+	receipt := map[string]any{
+		"task_id":              status.Task.ID,
+		"state":                status.Task.State,
+		"run_epoch":            status.Task.RunEpoch,
+		"cancel_requested":     status.CancelRequested,
+		"brain_turn_available": status.BrainTurnAvailable,
+		"detail":               status.Detail,
+		"next_action":          status.NextAction,
+		"updated_at":           status.Task.UpdatedAt,
+	}
+	if status.LatestControl != nil {
+		receipt["latest_control"] = map[string]any{
+			"control_id": status.LatestControl.ID,
+			"version":    status.LatestControl.Version,
+			"kind":       status.LatestControl.Kind,
+		}
+	}
+	return receipt
+}
+
+func compactWebTurnReceipt(turn domain.WebTurn) map[string]any {
+	return map[string]any{
+		"task_id":       turn.TaskID,
+		"turn_id":       turn.ID,
+		"attempt_id":    turn.AttemptID,
+		"run_epoch":     turn.RunEpoch,
+		"request_id":    turn.RequestID,
+		"response_hash": turn.ResponseHash,
+		"responded_at":  turn.RespondedAt,
+	}
 }
 
 func addRawTaskReadTool(server *mcp.Server, name, description string, read func(context.Context, string) (any, error)) {
