@@ -140,7 +140,9 @@ func TestAcceptanceT7CLIStdioDisconnectLetsActiveWorkerReachSafeTerminal(t *test
 		t.Fatalf("submit via CLI MCP failed: err=%v content=%+v stderr=%s", err, submit.Content, stderr.String())
 	}
 	var submitted struct {
-		Task domain.Task `json:"task"`
+		Task struct {
+			ID string `json:"task_id"`
+		} `json:"task"`
 	}
 	raw, _ := json.Marshal(submit.StructuredContent)
 	if err := json.Unmarshal(raw, &submitted); err != nil || submitted.Task.ID == "" {

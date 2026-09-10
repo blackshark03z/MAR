@@ -256,8 +256,10 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		t.Fatalf("MCP submit returned tool error: %+v", submit.Content)
 	}
 	var submitted struct {
-		Created bool        `json:"created"`
-		Task    domain.Task `json:"task"`
+		Created bool `json:"created"`
+		Task    struct {
+			ID string `json:"task_id"`
+		} `json:"task"`
 	}
 	raw, _ := json.Marshal(submit.StructuredContent)
 	if err := json.Unmarshal(raw, &submitted); err != nil {
@@ -287,22 +289,22 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		}
 		var status struct {
 			Status struct {
-				Task domain.Task `json:"task"`
+				State domain.TaskState `json:"state"`
 			} `json:"status"`
 		}
 		rawStatus, _ := json.Marshal(statusResult.StructuredContent)
 		if err := json.Unmarshal(rawStatus, &status); err != nil {
 			t.Fatal(err)
 		}
-		if status.Status.Task.State == domain.TaskInputRequired {
+		if status.Status.State == domain.TaskInputRequired {
 			break
 		}
-		if status.Status.Task.State == domain.TaskBlocked || status.Status.Task.State == domain.TaskFailed || status.Status.Task.State == domain.TaskCancelled || status.Status.Task.State == domain.TaskComplete {
-			t.Fatalf("task reached %s before INPUT_REQUIRED", status.Status.Task.State)
+		if status.Status.State == domain.TaskBlocked || status.Status.State == domain.TaskFailed || status.Status.State == domain.TaskCancelled || status.Status.State == domain.TaskComplete {
+			t.Fatalf("task reached %s before INPUT_REQUIRED", status.Status.State)
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("timed out waiting for INPUT_REQUIRED; last state=%s", status.Status.Task.State)
+			t.Fatalf("timed out waiting for INPUT_REQUIRED; last state=%s", status.Status.State)
 		case <-time.After(25 * time.Millisecond):
 		}
 	}
@@ -321,14 +323,14 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 		}
 		var status struct {
 			Status struct {
-				Task domain.Task `json:"task"`
+				State domain.TaskState `json:"state"`
 			} `json:"status"`
 		}
 		raw, _ := json.Marshal(statusResult.StructuredContent)
 		if err := json.Unmarshal(raw, &status); err != nil {
 			t.Fatal(err)
 		}
-		final = status.Status.Task
+		final = domain.Task{ID: submitted.Task.ID, State: status.Status.State}
 		if final.State == domain.TaskComplete || final.State == domain.TaskBlocked || final.State == domain.TaskFailed || final.State == domain.TaskCancelled {
 			break
 		}
@@ -524,7 +526,9 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 		t.Fatalf("web brain submit failed: err=%v result=%+v", err, submit)
 	}
 	var submitted struct {
-		Task domain.Task `json:"task"`
+		Task struct {
+			ID string `json:"task_id"`
+		} `json:"task"`
 	}
 	raw, _ := json.Marshal(submit.StructuredContent)
 	if err := json.Unmarshal(raw, &submitted); err != nil || submitted.Task.ID == "" {
@@ -539,14 +543,14 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 		}
 		var status struct {
 			Status struct {
-				Task domain.Task `json:"task"`
+				State domain.TaskState `json:"state"`
 			} `json:"status"`
 		}
 		rawStatus, _ := json.Marshal(statusResult.StructuredContent)
 		if err := json.Unmarshal(rawStatus, &status); err != nil {
 			t.Fatal(err)
 		}
-		switch status.Status.Task.State {
+		switch status.Status.State {
 		case domain.TaskInputRequired:
 			turnResult, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{"task_id": submitted.Task.ID}})
 			if err != nil || turnResult.IsError {
@@ -591,13 +595,13 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 		case domain.TaskBlocked, domain.TaskFailed, domain.TaskCancelled:
 			inspection, _ := runtime.Service.Inspect(context.Background(), submitted.Task.ID)
 			if inspection.Attempt != nil {
-				t.Fatalf("web brain task reached terminal failure %s: attempt=%+v inspection=%+v", status.Status.Task.State, *inspection.Attempt, inspection)
+				t.Fatalf("web brain task reached terminal failure %s: attempt=%+v inspection=%+v", status.Status.State, *inspection.Attempt, inspection)
 			}
-			t.Fatalf("web brain task reached terminal failure %s: %+v", status.Status.Task.State, inspection)
+			t.Fatalf("web brain task reached terminal failure %s: %+v", status.Status.State, inspection)
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("timed out waiting for web brain task; last state=%s", status.Status.Task.State)
+			t.Fatalf("timed out waiting for web brain task; last state=%s", status.Status.State)
 		case <-time.After(25 * time.Millisecond):
 		}
 	}

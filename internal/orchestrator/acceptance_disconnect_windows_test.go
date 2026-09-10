@@ -148,7 +148,9 @@ func TestAcceptanceT7ClientDisconnectDoesNotCancelActiveTask(t *testing.T) {
 		t.Fatalf("submit failed: err=%v content=%+v", err, submit.Content)
 	}
 	var submitted struct {
-		Task domain.Task `json:"task"`
+		Task struct {
+			ID string `json:"task_id"`
+		} `json:"task"`
 	}
 	raw, _ := json.Marshal(submit.StructuredContent)
 	if err := json.Unmarshal(raw, &submitted); err != nil {
