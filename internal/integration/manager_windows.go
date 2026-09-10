@@ -177,6 +177,98 @@ func (m *Manager) Integrate(ctx context.Context, taskID string) (domain.Integrat
 	return m.driveAttempt(ctx, attempt)
 }
 
+// RetryBlockedVerifiedIntegration handles only the post-verification case where
+// authoritative integration was blocked after a sealed candidate was already
+// verified. It never re-admits a coding worker: the exact latest verified
+// result/evidence is revalidated and, when safe, a new integration attempt is
+// prepared from the blocked result itself.
+func (m *Manager) RetryBlockedVerifiedIntegration(ctx context.Context, taskID string) (bool, error) {
+	task, err := m.store.GetTask(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	if task.State != domain.TaskBlocked {
+		return false, nil
+	}
+	latest, ok, err := m.store.LatestTaskResult(ctx, taskID)
+	if err != nil {
+		return false, err
+	}
+	if !ok || latest.Verdict != domain.ResultVerified || latest.IntegrationStatus != "BLOCKED" {
+		return false, nil
+	}
+
+	lock := m.projectLock(task.Contract.ProjectID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	ackBlocked := func(cause error) (bool, error) {
+		ackErr := m.store.AcknowledgeBlockedVerifiedIntegrationRetry(ctx, taskID, latest.ID, latest.Version, m.now().UTC())
+		return true, errors.Join(cause, ackErr)
+	}
+	if latest.TaskID != task.ID || latest.GoalHash != task.ContractHash || latest.BaseRevision != task.Contract.BaseRevision {
+		return ackBlocked(fmt.Errorf("%w: blocked verified result identity does not match task contract", ErrNotReady))
+	}
+	freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, taskID)
+	if gateErr != nil {
+		return ackBlocked(errors.Join(ErrNotReady, gateErr))
+	}
+	if !fresh || freshResult.ID != latest.ID || freshResult.Version != latest.Version || freshResult.EvidenceID != latest.EvidenceID || freshResult.FinalRevision != latest.FinalRevision {
+		return ackBlocked(fmt.Errorf("%w: blocked verified result evidence is stale or no longer latest", ErrNotReady))
+	}
+	workspace, err := m.store.GetWorkspaceByTask(ctx, taskID)
+	if err != nil {
+		return ackBlocked(err)
+	}
+	if workspace.State != domain.WorkspaceReady || workspace.BaseRevision != latest.BaseRevision || workspace.HeadRevision != latest.FinalRevision {
+		return ackBlocked(fmt.Errorf("%w: blocked verified workspace identity does not match result", ErrNotReady))
+	}
+	project, err := m.store.GetProject(ctx, task.Contract.ProjectID)
+	if err != nil {
+		return ackBlocked(err)
+	}
+	expectedRef, err := m.symbolicHead(ctx, taskID, project.Root)
+	if err != nil {
+		return ackBlocked(err)
+	}
+	actualHead, err := m.refHead(ctx, taskID, project.Root, expectedRef)
+	if err != nil {
+		return ackBlocked(err)
+	}
+	if actualHead != workspace.BaseRevision {
+		reason := fmt.Sprintf("authoritative head drift during verified integration retry: expected=%s observed=%s", workspace.BaseRevision, actualHead)
+		return ackBlocked(fmt.Errorf("%w: %s", ErrHeadDrift, reason))
+	}
+	clean, err := m.projectClean(ctx, taskID, project.Root)
+	if err != nil {
+		return ackBlocked(err)
+	}
+	if !clean {
+		return ackBlocked(fmt.Errorf("%w: authoritative project worktree is not clean before verified integration retry", ErrIntegrationBlocked))
+	}
+	if _, err := m.git.Run(ctx, taskID, project.Root, "merge-base", "--is-ancestor", workspace.BaseRevision, latest.FinalRevision); err != nil {
+		return ackBlocked(fmt.Errorf("%w: verified candidate is not a descendant of the resolved task base", ErrIntegrationBlocked))
+	}
+	seed := domain.IntegrationAttempt{
+		ID:                 newID("integration"),
+		TaskID:             taskID,
+		ProjectID:          task.Contract.ProjectID,
+		ExpectedRef:        expectedRef,
+		ExpectedHead:       workspace.BaseRevision,
+		TaskResultID:       latest.ID,
+		TaskResultVersion:  latest.Version,
+		TaskResultRevision: latest.FinalRevision,
+		CandidateRevision:  latest.FinalRevision,
+		EvidenceID:         latest.EvidenceID,
+	}
+	attempt, err := m.store.PrepareBlockedVerifiedIntegrationAttempt(ctx, seed, m.now().UTC())
+	if err != nil {
+		return true, err
+	}
+	_, _, err = m.driveAttempt(ctx, attempt)
+	return true, err
+}
+
 func (m *Manager) RecoverPending(ctx context.Context) error {
 	pending, err := m.store.ListPendingIntegrationAttempts(ctx)
 	if err != nil {

@@ -4,6 +4,18 @@
 
 **Branch:** `master`
 
+**Current engineering baseline:** `ENGINEERING_STABLE`
+
+**Baseline closeout source:** `84c39c168f6bb6560721a899216d6acb4807aab3` (`Stabilize owned tunnel process lifecycle`). The Owner Console v5/process-lifecycle closeout was already sealed and fully VERIFIED in the preceding self-hosted task; this repair carries that reviewed handoff forward while fixing the transient integration-retry defect that prevented authoritative promotion. `ENGINEERING_STABLE` is an engineering claim only: Owner Console v5 product-experience acceptance remains dependent on explicit Owner real-use feedback and is not promoted to `PRODUCT_ACCEPTED` by tests.
+
+## Verified integration retry recovery — 2026-09-10
+
+A sealed candidate had already passed complete MAR verification, but authoritative integration correctly blocked on a transient owner-worktree precondition. After that external precondition was resolved, the generic `blocked_choice` recovery path incorrectly used `RecoverForReplacement`, incrementing `run_epoch` and launching a new coding worker against the already-sealed workspace. Context construction then failed closed because the task contract still expected the original base revision while the workspace HEAD was the sealed candidate.
+
+The bounded repair routes only `BLOCKED` tasks whose latest result is fresh `VERIFIED` with `integration_status=BLOCKED` to an integration-only retry path. Before mutation it revalidates exact result/evidence/candidate/base identity, workspace identity, physical termination of every execution attempt, authoritative symbolic-ref HEAD, clean owner worktree, and candidate ancestry. Only then does it prepare a new integration attempt from the same verified result and drive authoritative integration. Unsafe or stale retries remain blocked; genuinely blocked coding tasks continue through the existing replacement-worker path. No verification, sandbox, process-fencing, connector, or transport authority is weakened.
+
+Targeted self-hosted evidence: `internal/store`, `internal/integration`, and `internal/orchestrator` PASS. `TestRetryBlockedVerifiedIntegrationReusesCandidateWithoutNewWorker` proves dirty-worktree block -> clean prerequisite -> same verified candidate integrates without changing the coding attempt/run epoch or resource/evidence identity. `TestRetryBlockedVerifiedIntegrationRejectsStaleEvidenceWithoutReplacement` proves stale evidence fails closed, and `TestDaemonBlockedChoiceResumesReplacementExactlyOnce` remains green for generic coding recovery. Final sealed full-repository test/vet/build verification and authoritative integration are still required for this repair candidate.
+
 **V1 stabilization implementation checkpoint:** `89a99d443de67672d5cc30a8fb41dd72d9a16a56`
 
 **Project-context checkpoint:** `bc0ae694b8f9f382a419d4ab08676e0d13bd7b1b`
@@ -26,7 +38,7 @@ Root cause was physical child-process ownership, not project context. Repeated h
 
 The bounded fix adds one shared infrastructure-process primitive. On Windows, both `cloudflared` and `tunnel-client` now start inside a Job Object with `KILL_ON_JOB_CLOSE`; abrupt MAR termination therefore causes Windows to terminate the owned child tree even when normal Stop cleanup cannot run. Other platforms retain explicit process termination behavior. No connector protocol, capability token, sandbox policy, or verification authority changed.
 
-Regression evidence: `cmd/mar + internal/processctl` targeted tests PASS; `TestOwnedCommandJobCloseKillsChild` proves a child exits when its Job Object handle closes; `git diff --check` PASS. Runtime acceptance then removed only stale MAR-owned tunnel processes, launched the candidate, and observed exactly one `cloudflared` plus one `tunnel-client`, both parented by the current MAR process. A deliberate hard kill of candidate MAR PID 16736 caused child PIDs 10860 and 528 to disappear automatically; relaunch produced a new healthy tree `MAR 3092 -> cloudflared 13760 + tunnel-client 2312` with Owner Console HTTP 200. Full repository release verification and final commit/promotion are still required before claiming this recovery engineering-stable.
+Regression evidence: `cmd/mar + internal/processctl` targeted tests PASS; `TestOwnedCommandJobCloseKillsChild` proves a child exits when its Job Object handle closes; `git diff --check` PASS. Runtime acceptance then removed only stale MAR-owned tunnel processes, launched the candidate, and observed exactly one `cloudflared` plus one `tunnel-client`, both parented by the current MAR process. A deliberate hard kill of candidate MAR PID 16736 caused child PIDs 10860 and 528 to disappear automatically; relaunch produced a new healthy tree `MAR 3092 -> cloudflared 13760 + tunnel-client 2312` with Owner Console HTTP 200. The recovery was committed at `84c39c168f6bb6560721a899216d6acb4807aab3`; that exact candidate passed the complete managed-Go sequential repository regression, vet, build and diff-check before commit. The current self-hosted repair preserves this process-lifecycle recovery while fixing only the later verified-integration retry defect.
 
 ## Owner Operations Console v5 light + multi-flow redesign — 2026-09-09
 
@@ -40,7 +52,7 @@ The light visual system is intentional and OS-theme independent: page background
 
 Live Web Brain usage still comes only from durable WebTurn responses for the exact task/run epoch and remains labelled estimated (`~`), not provider billing. WebTurn records currently do not contain the responding connector identity, so v5 explicitly leaves per-flow provider attribution unavailable rather than guessing GPT vs Claude. Durable day/week/30-day Usage remains TaskResult-based and separate.
 
-Current refinement evidence: targeted `cmd/mar + internal/store + internal/service` tests PASS, Owner JS syntax PASS and `git diff --check` PASS after the declutter/provider-zone change. The candidate is live on `127.0.0.1:8787` HTTP 200 with GPT/Claude zone and live-token markers present. Full repository regression, vet/build, commit and revision-bound release binding are still required before declaring this refinement ENGINEERING_STABLE.
+Current refinement evidence: targeted `cmd/mar + internal/store + internal/service` tests PASS, Owner JS syntax PASS and `git diff --check` PASS after the declutter/provider-zone change. The candidate is live on `127.0.0.1:8787` HTTP 200 with GPT/Claude zone and live-token markers present. The subsequent recovery baseline at `84c39c168f6bb6560721a899216d6acb4807aab3` passed the complete managed-Go sequential repository regression, vet, build and diff-check with v5 included, and the preceding self-hosted closeout sealed and fully VERIFIED the v5 handoff candidate. This handoff therefore records v5 as `ENGINEERING_STABLE`; explicit Owner real-use acceptance of the v5 experience remains separate and pending.
 
 ## Owner Operations Console v4 live-observability refinement — 2026-09-09
 

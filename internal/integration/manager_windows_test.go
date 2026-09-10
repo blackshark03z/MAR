@@ -246,6 +246,7 @@ func newIntegrationHarness(t *testing.T) integrationHarness {
 		UnresolvedRisks:      []string{},
 		IntegrationStatus:    "NOT_INTEGRATED",
 		WorkspaceDisposition: "RETAINED",
+		ResourceSummary:      domain.ResourceSummary{AgentTurns: 3, AgentToolCalls: 4, ModelInputTokens: 100, ModelOutputTokens: 50, ModelTotalTokens: 150},
 		Verdict:              domain.ResultVerified,
 		CreatedAt:            now,
 	}
@@ -515,6 +516,125 @@ func TestIntegrateRejectsAuthoritativeBaseDrift(t *testing.T) {
 	}
 	if _, ok, loadErr := h.store.LatestIntegrationAttempt(context.Background(), h.task.ID); loadErr != nil || ok {
 		t.Fatalf("base drift created an integration attempt: ok=%v err=%v", ok, loadErr)
+	}
+}
+
+func TestRetryBlockedVerifiedIntegrationReusesCandidateWithoutNewWorker(t *testing.T) {
+	h := newIntegrationHarness(t)
+	defer h.store.Close()
+	ctx := context.Background()
+	git := &fakeIntegrationGit{ref: "refs/heads/main", head: h.base, clean: false, descendant: true}
+	gate := &fakeFreshResultGate{result: h.result, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, blocked, err := manager.Integrate(ctx, h.task.ID)
+	if !errors.Is(err, ErrIntegrationBlocked) {
+		t.Fatalf("dirty authoritative worktree did not block initial integration: %v", err)
+	}
+	if blocked.IntegrationStatus != "BLOCKED" || blocked.FinalRevision != h.candidate || blocked.EvidenceID != h.result.EvidenceID {
+		t.Fatalf("blocked result lost verified identity: %+v", blocked)
+	}
+	if blocked.ResourceSummary != h.result.ResourceSummary {
+		t.Fatalf("blocked result changed resource summary: got=%+v want=%+v", blocked.ResourceSummary, h.result.ResourceSummary)
+	}
+	beforeTask, err := h.store.GetTask(ctx, h.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAttempt, ok, err := h.store.CurrentAttemptByTask(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("verified attempt unavailable before retry: ok=%v err=%v", ok, err)
+	}
+	if beforeTask.State != domain.TaskBlocked || beforeAttempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		t.Fatalf("unexpected pre-retry authority state: task=%s attempt=%s", beforeTask.State, beforeAttempt.AuthorityState)
+	}
+	gate.result = blocked
+	git.clean = true
+	handled, err := manager.RetryBlockedVerifiedIntegration(ctx, h.task.ID)
+	if err != nil || !handled {
+		t.Fatalf("verified integration retry failed: handled=%v err=%v", handled, err)
+	}
+	afterTask, err := h.store.GetTask(ctx, h.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterAttempt, ok, err := h.store.CurrentAttemptByTask(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("verified attempt unavailable after retry: ok=%v err=%v", ok, err)
+	}
+	if afterTask.State != domain.TaskComplete || afterTask.RunEpoch != beforeTask.RunEpoch {
+		t.Fatalf("retry changed coding epoch or failed to complete: before_epoch=%d after_epoch=%d state=%s", beforeTask.RunEpoch, afterTask.RunEpoch, afterTask.State)
+	}
+	if afterAttempt.ID != beforeAttempt.ID || afterAttempt.RunEpoch != beforeAttempt.RunEpoch || afterAttempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		t.Fatalf("retry created or changed coding attempt: before=%+v after=%+v", beforeAttempt, afterAttempt)
+	}
+	final, ok, err := h.store.LatestTaskResult(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("final integrated result unavailable: ok=%v err=%v", ok, err)
+	}
+	if final.IntegrationStatus != "INTEGRATED" || final.FinalRevision != blocked.FinalRevision || final.EvidenceID != blocked.EvidenceID || final.ResourceSummary != blocked.ResourceSummary {
+		t.Fatalf("integration retry did not preserve verified result identity/resource summary: %+v", final)
+	}
+	if git.updateCalls != 1 || git.head != h.candidate {
+		t.Fatalf("retry did not apply candidate exactly once: calls=%d head=%s", git.updateCalls, git.head)
+	}
+	latestIntegration, ok, err := h.store.LatestIntegrationAttempt(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("retry integration attempt unavailable: ok=%v err=%v", ok, err)
+	}
+	if latestIntegration.Status != domain.IntegrationComplete || latestIntegration.TaskResultID != blocked.ID || latestIntegration.CandidateRevision != blocked.FinalRevision || latestIntegration.EvidenceID != blocked.EvidenceID {
+		t.Fatalf("retry integration attempt identity mismatch: %+v", latestIntegration)
+	}
+}
+
+func TestRetryBlockedVerifiedIntegrationRejectsStaleEvidenceWithoutReplacement(t *testing.T) {
+	h := newIntegrationHarness(t)
+	defer h.store.Close()
+	ctx := context.Background()
+	git := &fakeIntegrationGit{ref: "refs/heads/main", head: h.base, clean: false, descendant: true}
+	gate := &fakeFreshResultGate{result: h.result, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, blocked, err := manager.Integrate(ctx, h.task.ID)
+	if !errors.Is(err, ErrIntegrationBlocked) {
+		t.Fatalf("initial dirty worktree did not block: %v", err)
+	}
+	beforeTask, err := h.store.GetTask(ctx, h.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeAttempt, ok, err := h.store.CurrentAttemptByTask(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("verified attempt unavailable: ok=%v err=%v", ok, err)
+	}
+	gate.result = blocked
+	gate.fresh = false
+	git.clean = true
+	handled, err := manager.RetryBlockedVerifiedIntegration(ctx, h.task.ID)
+	if !handled || !errors.Is(err, ErrNotReady) {
+		t.Fatalf("stale evidence was not fail-closed: handled=%v err=%v", handled, err)
+	}
+	afterTask, err := h.store.GetTask(ctx, h.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterAttempt, ok, err := h.store.CurrentAttemptByTask(ctx, h.task.ID)
+	if err != nil || !ok {
+		t.Fatalf("attempt unavailable after stale retry: ok=%v err=%v", ok, err)
+	}
+	if afterTask.State != domain.TaskBlocked || afterTask.RunEpoch != beforeTask.RunEpoch || afterAttempt.ID != beforeAttempt.ID || afterAttempt.RunEpoch != beforeAttempt.RunEpoch {
+		t.Fatalf("stale retry escaped into replacement coding path")
+	}
+	if _, ok, err := h.store.LatestIntegrationAttempt(ctx, h.task.ID); err != nil || ok {
+		t.Fatalf("stale retry created integration attempt: ok=%v err=%v", ok, err)
+	}
+	latest, ok, err := h.store.LatestTaskResult(ctx, h.task.ID)
+	if err != nil || !ok || latest.ID != blocked.ID || latest.EvidenceID != blocked.EvidenceID || latest.ResourceSummary != blocked.ResourceSummary {
+		t.Fatalf("stale retry mutated verified result: latest=%+v ok=%v err=%v", latest, ok, err)
 	}
 }
 

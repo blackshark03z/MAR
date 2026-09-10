@@ -37,6 +37,7 @@ type readyTaskRunner interface {
 
 type integrationRecoverer interface {
 	RecoverPending(context.Context) error
+	RetryBlockedVerifiedIntegration(context.Context, string) (bool, error)
 }
 
 type daemonTaskService interface {
@@ -242,6 +243,18 @@ func (d *Daemon) driveBlockedChoices(ctx context.Context) error {
 		if ok && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
 			continue
 		}
+		// A task that already has a fresh VERIFIED integration-blocked result must
+		// retry that exact sealed candidate/evidence instead of re-admitting a
+		// coding worker on the sealed workspace. The integration manager consumes
+		// the control on both successful and still-unsafe handled retries.
+		handled, err := d.integration.RetryBlockedVerifiedIntegration(ctx, task.ID)
+		if err != nil {
+			return err
+		}
+		if handled {
+			continue
+		}
+		// Generic blocked coding work still follows replacement-worker recovery.
 		// Recovering to WORKSPACE_READY updates task.UpdatedAt after this control,
 		// so the same blocked-choice command cannot trigger an unbounded replay if
 		// the replacement later blocks again.

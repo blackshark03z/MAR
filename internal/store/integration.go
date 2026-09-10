@@ -108,6 +108,144 @@ INSERT INTO integration_attempts(
 	return seed, nil
 }
 
+func (s *SQLite) PrepareBlockedVerifiedIntegrationAttempt(ctx context.Context, seed domain.IntegrationAttempt, now time.Time) (domain.IntegrationAttempt, error) {
+	latest, ok, err := s.LatestTaskResult(ctx, seed.TaskID)
+	if err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	if !ok || latest.ID != seed.TaskResultID || latest.Version != seed.TaskResultVersion || latest.FinalRevision != seed.TaskResultRevision || latest.FinalRevision != seed.CandidateRevision || latest.EvidenceID != seed.EvidenceID || latest.Verdict != domain.ResultVerified || latest.IntegrationStatus != "BLOCKED" {
+		return domain.IntegrationAttempt{}, ErrStateConflict
+	}
+	if _, err := s.GetVerificationEvidence(ctx, seed.EvidenceID); err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	if existing, ok, err := s.integrationAttemptByResult(ctx, seed.TaskID, seed.TaskResultID); err != nil || ok {
+		return existing, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	defer tx.Rollback()
+
+	var state, projectID string
+	if err := tx.QueryRowContext(ctx, `SELECT state, project_id FROM tasks WHERE id = ?`, seed.TaskID).Scan(&state, &projectID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.IntegrationAttempt{}, ErrNotFound
+		}
+		return domain.IntegrationAttempt{}, err
+	}
+	if domain.TaskState(state) != domain.TaskBlocked || projectID != seed.ProjectID {
+		return domain.IntegrationAttempt{}, ErrStateConflict
+	}
+	var unsafeAttempts int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM execution_attempts WHERE task_id = ? AND authority_state != ?`, seed.TaskID, string(domain.AttemptPhysicallyTerminated)).Scan(&unsafeAttempts); err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	if unsafeAttempts != 0 {
+		return domain.IntegrationAttempt{}, ErrPhysicalFenceRequired
+	}
+	var workspaceBase, workspaceHead string
+	if err := tx.QueryRowContext(ctx, `SELECT base_revision, head_revision FROM workspaces WHERE task_id = ? AND state = ?`, seed.TaskID, string(domain.WorkspaceReady)).Scan(&workspaceBase, &workspaceHead); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.IntegrationAttempt{}, ErrNotFound
+		}
+		return domain.IntegrationAttempt{}, err
+	}
+	if workspaceBase != seed.ExpectedHead || workspaceHead != seed.CandidateRevision {
+		return domain.IntegrationAttempt{}, ErrStateConflict
+	}
+	var latestID, verdict, integrationStatus string
+	var latestVersion int64
+	if err := tx.QueryRowContext(ctx, `SELECT result_id, version, verdict, integration_status FROM task_results WHERE task_id = ? ORDER BY version DESC LIMIT 1`, seed.TaskID).Scan(&latestID, &latestVersion, &verdict, &integrationStatus); err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	if latestID != seed.TaskResultID || latestVersion != seed.TaskResultVersion || domain.ResultVerdict(verdict) != domain.ResultVerified || integrationStatus != "BLOCKED" {
+		return domain.IntegrationAttempt{}, ErrStateConflict
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version), 0) + 1 FROM integration_attempts WHERE task_id = ?`, seed.TaskID).Scan(&seed.Version); err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	seed.Status = domain.IntegrationPrepared
+	seed.ObservedHead = ""
+	seed.Failure = ""
+	seed.CreatedAt = now.UTC()
+	seed.UpdatedAt = now.UTC()
+	seed.IntegrityHash, err = seed.IntegrityDigest()
+	if err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO integration_attempts(
+    integration_attempt_id, task_id, version, project_id, expected_ref, expected_head,
+    task_result_id, task_result_version, task_result_revision, candidate_revision, evidence_id,
+    status, observed_head, failure, integrity_hash, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		seed.ID, seed.TaskID, seed.Version, seed.ProjectID, seed.ExpectedRef, seed.ExpectedHead,
+		seed.TaskResultID, seed.TaskResultVersion, seed.TaskResultRevision, seed.CandidateRevision, seed.EvidenceID,
+		string(seed.Status), seed.ObservedHead, seed.Failure, seed.IntegrityHash,
+		seed.CreatedAt.Format(time.RFC3339Nano), seed.UpdatedAt.Format(time.RFC3339Nano)); err != nil {
+		return domain.IntegrationAttempt{}, fmt.Errorf("insert blocked-retry integration attempt: %w", err)
+	}
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	res, err := tx.ExecContext(ctx, `UPDATE tasks SET state = ?, updated_at = ? WHERE id = ? AND state = ?`, string(domain.TaskReadyToIntegrate), stamp, seed.TaskID, string(domain.TaskBlocked))
+	if err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	rows, _ := res.RowsAffected()
+	if rows != 1 {
+		return domain.IntegrationAttempt{}, ErrStateConflict
+	}
+	if err := tx.Commit(); err != nil {
+		return domain.IntegrationAttempt{}, err
+	}
+	return seed, nil
+}
+
+// AcknowledgeBlockedVerifiedIntegrationRetry consumes one blocked-choice retry
+// without changing verification evidence or admitting a coding worker. It is
+// used when the candidate is still unsafe to integrate, so the same durable
+// control cannot spin on every daemon poll.
+func (s *SQLite) AcknowledgeBlockedVerifiedIntegrationRetry(ctx context.Context, taskID, resultID string, resultVersion int64, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var state string
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM tasks WHERE id = ?`, taskID).Scan(&state); err != nil {
+		return err
+	}
+	if domain.TaskState(state) != domain.TaskBlocked {
+		return ErrStateConflict
+	}
+	var unsafeAttempts int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM execution_attempts WHERE task_id = ? AND authority_state != ?`, taskID, string(domain.AttemptPhysicallyTerminated)).Scan(&unsafeAttempts); err != nil {
+		return err
+	}
+	if unsafeAttempts != 0 {
+		return ErrPhysicalFenceRequired
+	}
+	var latestID, verdict, integrationStatus string
+	var latestVersion int64
+	if err := tx.QueryRowContext(ctx, `SELECT result_id, version, verdict, integration_status FROM task_results WHERE task_id = ? ORDER BY version DESC LIMIT 1`, taskID).Scan(&latestID, &latestVersion, &verdict, &integrationStatus); err != nil {
+		return err
+	}
+	if latestID != resultID || latestVersion != resultVersion || domain.ResultVerdict(verdict) != domain.ResultVerified || integrationStatus != "BLOCKED" {
+		return ErrStateConflict
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE tasks SET updated_at = ? WHERE id = ? AND state = ?`, now.UTC().Format(time.RFC3339Nano), taskID, string(domain.TaskBlocked))
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows != 1 {
+		return ErrStateConflict
+	}
+	return tx.Commit()
+}
+
 func (s *SQLite) MarkIntegrationDispatched(ctx context.Context, attemptID string, now time.Time) (domain.IntegrationAttempt, error) {
 	attempt, err := s.GetIntegrationAttempt(ctx, attemptID)
 	if err != nil {

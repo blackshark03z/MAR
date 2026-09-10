@@ -46,6 +46,39 @@ func TestDaemonBlockedChoiceResumesReplacementExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestDaemonBlockedChoiceRetriesVerifiedIntegrationWithoutReplacement(t *testing.T) {
+	now := time.Now().UTC()
+	task := domain.Task{ID: "task-verified-integration-retry", State: domain.TaskBlocked, RunEpoch: 1, UpdatedAt: now.Add(-2 * time.Second)}
+	attempt := domain.ExecutionAttempt{ID: "attempt-verified-integration-retry", TaskID: task.ID, RunEpoch: 1, AuthorityState: domain.AttemptPhysicallyTerminated}
+	raw, err := json.Marshal(domain.SteerPayload{Kind: domain.SteerBlockedChoice, Message: "external integration prerequisite resolved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	control := domain.TaskControl{ID: "control-verified-integration-retry", TaskID: task.ID, Version: 1, IdempotencyKey: "choice-verified-integration-1", Kind: domain.ControlSteer, Payload: raw, CreatedAt: now.Add(-time.Second)}
+	store := &fakeDaemonStore{tasks: map[string]domain.Task{task.ID: task}, workspace: map[string]domain.Workspace{}, attempts: map[string]domain.ExecutionAttempt{task.ID: attempt}}
+	svc := &fakeDaemonService{store: store, latestControl: &control}
+	integration := &fakeIntegrationRecoverer{retryHandled: true}
+	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}, integration, healthyDaemonGovernor(t), DaemonConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.driveBlockedChoices(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if integration.retryCalls != 1 {
+		t.Fatalf("verified integration retry was not offered exactly once: calls=%d", integration.retryCalls)
+	}
+	if svc.retryCalls != 0 {
+		t.Fatalf("verified integration retry incorrectly admitted replacement worker: calls=%d", svc.retryCalls)
+	}
+	store.mu.Lock()
+	got := store.tasks[task.ID]
+	store.mu.Unlock()
+	if got.RunEpoch != 1 || got.State != domain.TaskBlocked {
+		t.Fatalf("daemon dispatch mutated coding epoch/state itself: state=%s run_epoch=%d", got.State, got.RunEpoch)
+	}
+}
+
 func TestDaemonRetryWaitRecoversOnlyAfterPhysicalTermination(t *testing.T) {
 	now := time.Now().UTC()
 	task := domain.Task{ID: "task-retry", State: domain.TaskRetryWait, RunEpoch: 1, UpdatedAt: now.Add(-2 * time.Second)}

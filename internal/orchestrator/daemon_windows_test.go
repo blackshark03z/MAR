@@ -138,11 +138,21 @@ func (r *fakeReadyRunner) RunWorkspaceReady(ctx context.Context, taskID string, 
 	return RunOutcome{TaskID: taskID}, ctx.Err()
 }
 
-type fakeIntegrationRecoverer struct{ calls int }
+type fakeIntegrationRecoverer struct {
+	calls        int
+	retryCalls   int
+	retryHandled bool
+	retryErr     error
+}
 
 func (r *fakeIntegrationRecoverer) RecoverPending(context.Context) error {
 	r.calls++
 	return nil
+}
+
+func (r *fakeIntegrationRecoverer) RetryBlockedVerifiedIntegration(context.Context, string) (bool, error) {
+	r.retryCalls++
+	return r.retryHandled, r.retryErr
 }
 
 type mutableDaemonSensor struct {
