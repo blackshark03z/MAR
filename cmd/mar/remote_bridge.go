@@ -796,7 +796,8 @@ func startCloudflaredQuickTunnel(ctx context.Context, executable, localURL strin
 	if err != nil {
 		return "", nil, nil, err
 	}
-	if err := cmd.Start(); err != nil {
+	owned, err := startOwnedCommand(cmd)
+	if err != nil {
 		return "", nil, nil, fmt.Errorf("start cloudflared quick tunnel: %w", err)
 	}
 	urlCh := make(chan string, 1)
@@ -814,16 +815,18 @@ func startCloudflaredQuickTunnel(ctx context.Context, executable, localURL strin
 	go readURLs(stdout)
 	go readURLs(stderr)
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() {
+		<-owned.Done()
+		done <- owned.Err()
+	}()
 	timer := time.NewTimer(30 * time.Second)
 	defer timer.Stop()
 	select {
 	case value := <-urlCh:
 		stop := func() error {
-			if cmd.Process == nil {
-				return nil
-			}
-			return cmd.Process.Kill()
+			stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return owned.Stop(stopCtx)
 		}
 		return value, stop, done, nil
 	case err := <-done:
@@ -832,14 +835,14 @@ func startCloudflaredQuickTunnel(ctx context.Context, executable, localURL strin
 		}
 		return "", nil, nil, err
 	case <-timer.C:
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = owned.Stop(stopCtx)
+		cancel()
 		return "", nil, nil, errors.New("timed out waiting for cloudflared quick tunnel URL")
 	case <-ctx.Done():
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = owned.Stop(stopCtx)
+		cancel()
 		return "", nil, nil, ctx.Err()
 	}
 }

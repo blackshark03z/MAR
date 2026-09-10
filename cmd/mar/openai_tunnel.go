@@ -665,11 +665,10 @@ func runTunnelClientCommand(ctx context.Context, executable string, args ...stri
 	return text, err
 }
 
-type execTunnelProcess struct {
-	cmd  *exec.Cmd
-	done chan struct{}
-	mu   sync.Mutex
-	err  error
+type managedTunnelClientProcess struct {
+	owned  *ownedCommand
+	writer *tunnelOutputWriter
+	done   chan struct{}
 }
 
 func startManagedTunnelClient(executable string, args []string, onOutput func(string)) (tunnelClientProcess, error) {
@@ -677,51 +676,31 @@ func startManagedTunnelClient(executable string, args []string, onOutput func(st
 	writer := &tunnelOutputWriter{onLine: onOutput}
 	cmd.Stdout = writer
 	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
+	owned, err := startOwnedCommand(cmd)
+	if err != nil {
 		return nil, err
 	}
-	p := &execTunnelProcess{cmd: cmd, done: make(chan struct{})}
+	p := &managedTunnelClientProcess{owned: owned, writer: writer, done: make(chan struct{})}
 	go func() {
-		err := cmd.Wait()
+		<-owned.Done()
 		writer.Flush()
-		p.mu.Lock()
-		p.err = err
-		p.mu.Unlock()
 		close(p.done)
 	}()
 	return p, nil
 }
 
-func (p *execTunnelProcess) PID() int {
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
-		return 0
-	}
-	return p.cmd.Process.Pid
-}
-func (p *execTunnelProcess) Done() <-chan struct{} { return p.done }
-func (p *execTunnelProcess) Err() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.err
-}
-func (p *execTunnelProcess) Stop(ctx context.Context) error {
-	if p == nil || p.cmd == nil || p.cmd.Process == nil {
-		return nil
-	}
-	if err := p.cmd.Process.Signal(os.Interrupt); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		_ = p.cmd.Process.Kill()
+func (p *managedTunnelClientProcess) PID() int              { return p.owned.PID() }
+func (p *managedTunnelClientProcess) Done() <-chan struct{} { return p.done }
+func (p *managedTunnelClientProcess) Err() error            { return p.owned.Err() }
+func (p *managedTunnelClientProcess) Stop(ctx context.Context) error {
+	if err := p.owned.Stop(ctx); err != nil {
+		return err
 	}
 	select {
 	case <-p.done:
 		return nil
 	case <-ctx.Done():
-		_ = p.cmd.Process.Kill()
-		select {
-		case <-p.done:
-			return nil
-		case <-time.After(time.Second):
-			return ctx.Err()
-		}
+		return ctx.Err()
 	}
 }
 

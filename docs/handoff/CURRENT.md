@@ -18,6 +18,16 @@ ChatGPT/GPT uses OpenAI Secure MCP Tunnel as the normal primary path. Saving a v
 
 Git, the frozen architecture documents, `TASK.md`, and this handoff are continuity truth. Chat history is disposable working memory.
 
+## Remote connector 502 lifecycle recovery — 2026-09-10
+
+Owner real-use exposed a remote MAR availability defect: a direct `project_context` call from ChatGPT returned `502 Upstream/external service error` even though the local repository and Owner Console were healthy. Local Git truth remained HEAD `0f01136c94f1747948c61e1d91111f2287e618f4`; the older `71a884...` value was only a stale fallback from the failed remote read.
+
+Root cause was physical child-process ownership, not project context. Repeated hard restarts of the Owner UI had left multiple `D:\MAR\.mar\runtime\cloudflared.exe` Quick Tunnel processes alive, plus an orphan `tunnel-client.exe run --profile mar-openai` whose parent MAR process no longer existed. Both connector profiles were still temporary-link capable and the OpenAI tunnel configuration remained present with `desired_running=true`. A replacement MAR process therefore had no authoritative handle over the stale tunnel children and could encounter stale public routes / tunnel-client profile state.
+
+The bounded fix adds one shared infrastructure-process primitive. On Windows, both `cloudflared` and `tunnel-client` now start inside a Job Object with `KILL_ON_JOB_CLOSE`; abrupt MAR termination therefore causes Windows to terminate the owned child tree even when normal Stop cleanup cannot run. Other platforms retain explicit process termination behavior. No connector protocol, capability token, sandbox policy, or verification authority changed.
+
+Regression evidence: `cmd/mar + internal/processctl` targeted tests PASS; `TestOwnedCommandJobCloseKillsChild` proves a child exits when its Job Object handle closes; `git diff --check` PASS. Runtime acceptance then removed only stale MAR-owned tunnel processes, launched the candidate, and observed exactly one `cloudflared` plus one `tunnel-client`, both parented by the current MAR process. A deliberate hard kill of candidate MAR PID 16736 caused child PIDs 10860 and 528 to disappear automatically; relaunch produced a new healthy tree `MAR 3092 -> cloudflared 13760 + tunnel-client 2312` with Owner Console HTTP 200. Full repository release verification and final commit/promotion are still required before claiming this recovery engineering-stable.
+
 ## Owner Operations Console v5 light + multi-flow redesign — 2026-09-09
 
 Owner real-use of the v4 candidate requested two concrete changes: move to a modern light visual system and make concurrency understandable when multiple GPT/Claude connection paths and MAR execution flows exist at the same time. v5 therefore stops using a single ambiguous `connected` number and separates **routes**, **authoritative sessions**, and **live execution flows**.
