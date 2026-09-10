@@ -36,8 +36,11 @@ type ExecSpec struct {
 }
 
 type ExecResult struct {
-	Output   string `json:"output"`
-	ExitCode int    `json:"exit_code"`
+	Output          string `json:"output"`
+	ExitCode        int    `json:"exit_code"`
+	OutputTruncated bool   `json:"output_truncated,omitempty"`
+	CapturedBytes   int64  `json:"captured_bytes,omitempty"`
+	TotalBytes      int64  `json:"total_bytes,omitempty"`
 }
 
 type Executor interface {

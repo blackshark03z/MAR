@@ -123,14 +123,11 @@ func decodeArgs(raw string, dst any) error {
 }
 
 func encodeResult(result any, err error) (string, error) {
+	payloadValue := map[string]any{"ok": err == nil, "result": result}
 	if err != nil {
-		payload, marshalErr := json.Marshal(map[string]any{"ok": false, "error": err.Error()})
-		if marshalErr != nil {
-			return "", marshalErr
-		}
-		return string(payload), nil
+		payloadValue["error"] = err.Error()
 	}
-	payload, marshalErr := json.Marshal(map[string]any{"ok": true, "result": result})
+	payload, marshalErr := json.Marshal(payloadValue)
 	if marshalErr != nil {
 		return "", marshalErr
 	}

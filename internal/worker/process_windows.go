@@ -26,6 +26,7 @@ type ControlBackend interface {
 	PublishCheckpoint(context.Context, string, string, int64, string, domain.SemanticCheckpointPayload) (domain.SemanticCheckpoint, error)
 	ControlsSince(context.Context, string, int64, int) ([]domain.TaskControl, error)
 	RequestInputForAttempt(context.Context, string, string, int64) error
+	PersistObservation(context.Context, string, string, int64, string, string, string, int64, bool) (domain.ObservationArtifact, error)
 	RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error)
 	WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error)
 }
@@ -260,6 +261,16 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 			return respond(nil, errors.New("worker input request escaped assigned attempt"))
 		}
 		return respond(nil, r.backend.RequestInputForAttempt(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch))
+	case methodPersistObservation:
+		var payload persistObservationRequest
+		if err := json.Unmarshal(request.Payload, &payload); err != nil {
+			return respond(nil, err)
+		}
+		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
+			return respond(nil, errors.New("worker observation persistence escaped assigned attempt"))
+		}
+		artifact, err := r.backend.PersistObservation(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.ToolCallID, payload.Kind, payload.Raw, payload.SourceBytes, payload.SourceComplete)
+		return respond(persistObservationResponse{Artifact: artifact}, err)
 	case methodWebTurn:
 		var payload webTurnRequest
 		if err := json.Unmarshal(request.Payload, &payload); err != nil {

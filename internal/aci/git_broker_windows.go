@@ -74,7 +74,7 @@ func (b *ContainedGitBroker) run(ctx context.Context, taskID, root string, maxOu
 		"-C", root,
 	}
 	args = append(args, operationArgs...)
-	output, runErr := processctl.RunContainedCommand(ctx, processctl.CommandSpec{
+	capture, runErr := processctl.RunContainedCommandDetailed(ctx, processctl.CommandSpec{
 		TaskID:         taskID,
 		OperationID:    "aci-git-broker",
 		Path:           b.gitPath,
@@ -83,7 +83,7 @@ func (b *ContainedGitBroker) run(ctx context.Context, taskID, root string, maxOu
 		Env:            env,
 		MaxOutputBytes: maxOutputBytes,
 	})
-	result := ExecResult{Output: output, ExitCode: 0}
+	result := ExecResult{Output: capture.Output, ExitCode: 0, OutputTruncated: capture.OutputTruncated, CapturedBytes: capture.CapturedBytes, TotalBytes: capture.TotalBytes}
 	if runErr == nil {
 		return result, nil
 	}

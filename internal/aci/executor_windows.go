@@ -19,7 +19,7 @@ func NewContainedHostExecutor() *ContainedHostExecutor { return &ContainedHostEx
 func (e *ContainedHostExecutor) IsolationLevel() IsolationLevel { return IsolationTrustedHost }
 
 func (e *ContainedHostExecutor) Run(ctx context.Context, taskID string, spec ExecSpec) (ExecResult, error) {
-	output, err := processctl.RunContainedCommand(ctx, processctl.CommandSpec{
+	capture, err := processctl.RunContainedCommandDetailed(ctx, processctl.CommandSpec{
 		TaskID:         taskID,
 		OperationID:    spec.OperationID,
 		Path:           spec.Path,
@@ -28,7 +28,7 @@ func (e *ContainedHostExecutor) Run(ctx context.Context, taskID string, spec Exe
 		Env:            spec.Env,
 		MaxOutputBytes: spec.MaxOutputBytes,
 	})
-	result := ExecResult{Output: output, ExitCode: 0}
+	result := ExecResult{Output: capture.Output, ExitCode: 0, OutputTruncated: capture.OutputTruncated, CapturedBytes: capture.CapturedBytes, TotalBytes: capture.TotalBytes}
 	if err == nil {
 		return result, nil
 	}

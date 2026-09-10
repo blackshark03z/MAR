@@ -107,6 +107,21 @@ type inputRequiredRequest struct {
 	RunEpoch  int64  `json:"run_epoch"`
 }
 
+type persistObservationRequest struct {
+	TaskID         string `json:"task_id"`
+	AttemptID      string `json:"attempt_id"`
+	RunEpoch       int64  `json:"run_epoch"`
+	ToolCallID     string `json:"tool_call_id"`
+	Kind           string `json:"kind"`
+	Raw            string `json:"raw"`
+	SourceBytes    int64  `json:"source_bytes"`
+	SourceComplete bool   `json:"source_complete"`
+}
+
+type persistObservationResponse struct {
+	Artifact domain.ObservationArtifact `json:"artifact"`
+}
+
 type webTurnRequest struct {
 	TaskID    string            `json:"task_id"`
 	AttemptID string            `json:"attempt_id"`
@@ -237,7 +252,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	loop.WithControlStream(rpc)
+	loop.WithControlStream(rpc).WithObservationStore(rpc)
 	result, err := loop.Run(ctx, agent.RunRequest{
 		TaskID:           start.Task.ID,
 		AttemptID:        start.Attempt.ID,
@@ -296,6 +311,15 @@ func (c *rpcClient) ControlsSince(ctx context.Context, taskID string, afterVersi
 
 func (c *rpcClient) EnterInputRequired(ctx context.Context, taskID, attemptID string, epoch int64) error {
 	return c.call(ctx, methodEnterInputRequired, inputRequiredRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch}, nil)
+}
+
+func (c *rpcClient) PersistObservation(ctx context.Context, taskID, attemptID string, epoch int64, toolCallID, kind, raw string, sourceBytes int64, sourceComplete bool) (domain.ObservationArtifact, error) {
+	var response persistObservationResponse
+	request := persistObservationRequest{TaskID: taskID, AttemptID: attemptID, RunEpoch: epoch, ToolCallID: toolCallID, Kind: kind, Raw: raw, SourceBytes: sourceBytes, SourceComplete: sourceComplete}
+	if err := c.call(ctx, methodPersistObservation, request, &response); err != nil {
+		return domain.ObservationArtifact{}, err
+	}
+	return response.Artifact, nil
 }
 
 func (c *rpcClient) WebTurn(ctx context.Context, taskID, attemptID string, epoch int64, req model.TurnRequest) (model.TurnResponse, error) {

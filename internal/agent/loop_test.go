@@ -70,6 +70,43 @@ func (f *fakeTools) ExecuteTool(_ context.Context, call model.ToolCall) (string,
 
 func (f *fakeTools) SelfHostingSafe() bool { return f.safe }
 
+type fakeObservationStore struct {
+	calls          int
+	raw            string
+	taskID         string
+	attemptID      string
+	epoch          int64
+	toolCallID     string
+	kind           string
+	sourceBytes    int64
+	sourceComplete bool
+}
+
+func (f *fakeObservationStore) PersistObservation(_ context.Context, taskID, attemptID string, epoch int64, toolCallID, kind, raw string, sourceBytes int64, sourceComplete bool) (domain.ObservationArtifact, error) {
+	f.calls++
+	f.raw = raw
+	f.taskID = taskID
+	f.attemptID = attemptID
+	f.epoch = epoch
+	f.toolCallID = toolCallID
+	f.kind = kind
+	f.sourceBytes = sourceBytes
+	f.sourceComplete = sourceComplete
+	return domain.ObservationArtifact{
+		Handle:        "obs-" + strings.Repeat("a", 64),
+		TaskID:        taskID,
+		AttemptID:     attemptID,
+		RunEpoch:      epoch,
+		ToolCallID:    toolCallID,
+		Kind:          kind,
+		SHA256:        strings.Repeat("b", 64),
+		CapturedBytes: int64(len(raw)),
+		SourceBytes:   sourceBytes,
+		Complete:      sourceComplete,
+		Truncated:     !sourceComplete,
+	}, nil
+}
+
 type fakeContextBuilder struct {
 	pack contextengine.Pack
 	err  error
@@ -168,6 +205,57 @@ func TestAgentTurnRequestIDFencesReplacementEpochs(t *testing.T) {
 	}
 	if !strings.Contains(first, "epoch-001") || !strings.Contains(retry, "epoch-002") {
 		t.Fatalf("request ids do not encode run_epoch: first=%q retry=%q", first, retry)
+	}
+}
+
+func TestLoopPersistsOversizedToolObservationBeforeModelBounding(t *testing.T) {
+	cfg := testConfig()
+	cfg.MaxObservationBytes = 1024
+	oversized := `{"ok":true,"payload":"` + strings.Repeat("x", 8<<10) + `"}`
+	tools := newFakeTools(true, "read_file")
+	tools.outputs["read_file"] = oversized
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-large", Name: "read_file", Arguments: `{}`}}}),
+		assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish-large", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"large observation persisted"}`}}}),
+	}}
+	observations := &fakeObservationStore{}
+	loop := newTestLoop(t, gateway, tools, cfg).WithObservationStore(observations)
+	req := testRunRequest(false)
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate {
+		t.Fatalf("unexpected loop result: %+v", result)
+	}
+	if observations.calls != 1 || observations.raw != oversized {
+		t.Fatalf("oversized observation was not durably persisted before bounding: calls=%d raw_bytes=%d", observations.calls, len(observations.raw))
+	}
+	if observations.taskID != req.TaskID || observations.attemptID != req.AttemptID || observations.epoch != req.RunEpoch || observations.toolCallID != "call-large" || observations.kind != "read_file" {
+		t.Fatalf("persisted observation identity mismatch: %+v", observations)
+	}
+	if observations.sourceBytes != int64(len(oversized)) || !observations.sourceComplete {
+		t.Fatalf("source truth mismatch: bytes=%d complete=%v", observations.sourceBytes, observations.sourceComplete)
+	}
+	if len(gateway.requests) != 2 {
+		t.Fatalf("expected second model turn, got %d", len(gateway.requests))
+	}
+	messages := gateway.requests[1].Messages
+	if len(messages) == 0 {
+		t.Fatal("bounded tool observation was not sent to the model")
+	}
+	modelObservation := messages[len(messages)-1]
+	if modelObservation.Role != model.RoleTool || modelObservation.ToolCallID != "call-large" {
+		t.Fatalf("unexpected final model message: %+v", modelObservation)
+	}
+	if len(modelObservation.Content) > cfg.MaxObservationBytes {
+		t.Fatalf("model-visible observation exceeded bound: %d > %d", len(modelObservation.Content), cfg.MaxObservationBytes)
+	}
+	if !strings.Contains(modelObservation.Content, "obs-"+strings.Repeat("a", 64)) || !strings.Contains(modelObservation.Content, strings.Repeat("b", 64)) || !strings.Contains(modelObservation.Content, `"model_truncated":true`) || !strings.Contains(modelObservation.Content, "preview") {
+		t.Fatalf("bounded artifact envelope missing recoverability metadata: %s", modelObservation.Content)
+	}
+	if modelObservation.Content == oversized || strings.Contains(modelObservation.Content, strings.Repeat("x", 2<<10)) {
+		t.Fatal("model-visible observation leaked the full oversized payload")
 	}
 }
 

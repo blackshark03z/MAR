@@ -59,6 +59,10 @@ type ControlStream interface {
 	EnterInputRequired(context.Context, string, string, int64) error
 }
 
+type ObservationStore interface {
+	PersistObservation(context.Context, string, string, int64, string, string, string, int64, bool) (domain.ObservationArtifact, error)
+}
+
 type Profile struct {
 	Model            string
 	ReasoningEffort  string
@@ -103,14 +107,15 @@ type Result struct {
 }
 
 type Loop struct {
-	gateway     ModelGateway
-	tools       ToolRuntime
-	context     ContextBuilder
-	authority   AttemptAuthorityChecker
-	checkpoints CheckpointStore
-	controls    ControlStream
-	profile     Profile
-	cfg         Config
+	gateway      ModelGateway
+	tools        ToolRuntime
+	context      ContextBuilder
+	authority    AttemptAuthorityChecker
+	checkpoints  CheckpointStore
+	controls     ControlStream
+	observations ObservationStore
+	profile      Profile
+	cfg          Config
 }
 
 type finishArgs struct {
@@ -156,6 +161,11 @@ func New(gateway ModelGateway, tools ToolRuntime, contextBuilder ContextBuilder,
 
 func (l *Loop) WithControlStream(controls ControlStream) *Loop {
 	l.controls = controls
+	return l
+}
+
+func (l *Loop) WithObservationStore(observations ObservationStore) *Loop {
+	l.observations = observations
 	return l
 }
 
@@ -555,7 +565,25 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 			if toolErr != nil {
 				observation = errorObservation(toolErr, l.cfg.MaxObservationBytes)
 			} else {
-				observation = boundObservation(observation, l.cfg.MaxObservationBytes)
+				sourceBytes, sourceComplete := observationSourceTruth(observation)
+				if len(observation) > l.cfg.MaxObservationBytes || !sourceComplete {
+					if l.observations == nil {
+						result.Status = StatusBlocked
+						result.Blocker = "durable observation store is unavailable for bounded evidence"
+						return result, nil
+					}
+					artifact, persistErr := l.observations.PersistObservation(loopCtx, req.TaskID, req.AttemptID, req.RunEpoch, call.ID, call.Name, observation, sourceBytes, sourceComplete)
+					if persistErr != nil {
+						result.Status = StatusBlocked
+						result.Blocker = "persist tool observation: " + persistErr.Error()
+						return result, nil
+					}
+					if len(observation) > l.cfg.MaxObservationBytes {
+						observation = boundedArtifactObservation(observation, artifact, l.cfg.MaxObservationBytes)
+					}
+				} else {
+					observation = boundObservation(observation, l.cfg.MaxObservationBytes)
+				}
 			}
 			messages = append(messages, model.Message{Role: model.RoleTool, ToolCallID: call.ID, Content: observation})
 		}
@@ -883,6 +911,61 @@ func contextBlocker(status Status) string {
 		return "agent wall-clock budget exhausted"
 	}
 	return "agent execution cancelled"
+}
+
+func observationSourceTruth(raw string) (int64, bool) {
+	sourceBytes := int64(len(raw))
+	complete := true
+	var envelope struct {
+		OutputTruncated bool  `json:"output_truncated"`
+		TotalBytes      int64 `json:"total_bytes"`
+		Result          struct {
+			OutputTruncated bool  `json:"output_truncated"`
+			TotalBytes      int64 `json:"total_bytes"`
+		} `json:"result"`
+	}
+	if json.Unmarshal([]byte(raw), &envelope) == nil {
+		truncated := envelope.OutputTruncated || envelope.Result.OutputTruncated
+		total := max(envelope.TotalBytes, envelope.Result.TotalBytes)
+		if total > sourceBytes {
+			sourceBytes = total
+		}
+		if truncated {
+			complete = false
+		}
+	}
+	return sourceBytes, complete
+}
+
+func boundedArtifactObservation(raw string, artifact domain.ObservationArtifact, maxBytes int) string {
+	previewBudget := max(0, maxBytes-360)
+	for previewBudget >= 0 {
+		payload, _ := json.Marshal(map[string]any{
+			"ok":              true,
+			"artifact_handle": artifact.Handle,
+			"sha256":          artifact.SHA256,
+			"captured_bytes":  artifact.CapturedBytes,
+			"source_bytes":    artifact.SourceBytes,
+			"complete":        artifact.Complete,
+			"truncated":       artifact.Truncated,
+			"model_truncated": true,
+			"summary":         "tool observation persisted before model byte bounding",
+			"preview":         truncateUTF8(raw, previewBudget),
+		})
+		if len(payload) <= maxBytes {
+			return string(payload)
+		}
+		if previewBudget == 0 {
+			break
+		}
+		previewBudget /= 2
+	}
+	compact, _ := json.Marshal(map[string]any{
+		"h": artifact.Handle, "sha": artifact.SHA256,
+		"n": artifact.CapturedBytes, "source": artifact.SourceBytes,
+		"complete": artifact.Complete, "truncated": artifact.Truncated, "model_truncated": true,
+	})
+	return truncateUTF8(string(compact), maxBytes)
 }
 
 func boundObservation(raw string, maxBytes int) string {

@@ -91,6 +91,34 @@ func TestRunContainedCommandOutputIsBounded(t *testing.T) {
 	}
 }
 
+func TestContainedCommandReportsOutputTruncationTruthfully(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	result, err := RunContainedCommandDetailed(context.Background(), CommandSpec{
+		TaskID: "task-control", OperationID: "flood-truth", Path: os.Args[0],
+		Args:           []string{"-test.run=TestRunContainedHelper"},
+		Env:            append(os.Environ(), "MAR_CONTAINED_COMMAND_HELPER=flood"),
+		MaxOutputBytes: 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.OutputTruncated || result.CapturedBytes != 1024 || result.TotalBytes <= result.CapturedBytes {
+		t.Fatalf("truncation metadata is not truthful: %+v", result)
+	}
+	complete, err := RunContainedCommandDetailed(context.Background(), CommandSpec{
+		TaskID: "task-control", OperationID: "complete-truth", Path: os.Args[0],
+		Args:           []string{"-test.run=TestRunContainedHelper"},
+		Env:            append(os.Environ(), "MAR_CONTAINED_COMMAND_HELPER=success"),
+		MaxOutputBytes: 1024,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if complete.OutputTruncated || complete.CapturedBytes != complete.TotalBytes {
+		t.Fatalf("complete command mislabeled: %+v", complete)
+	}
+}
+
 func TestRunContainedCommandParentExitThenTimeoutKillsRemainingChild(t *testing.T) {
 	testsupport.RequireOutsideAppContainer(t)
 	pidFile := filepath.Join(t.TempDir(), "orphan-child.pid")

@@ -66,5 +66,5 @@ func (e *WindowsSandboxExecutor) Run(ctx context.Context, taskID string, spec Ex
 		MaxOutputBytes: spec.MaxOutputBytes,
 		Limits:         e.limits,
 	})
-	return ExecResult{Output: result.Output, ExitCode: result.ExitCode}, err
+	return ExecResult{Output: result.Output, ExitCode: result.ExitCode, OutputTruncated: result.OutputTruncated, CapturedBytes: result.CapturedBytes, TotalBytes: result.TotalBytes}, err
 }

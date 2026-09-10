@@ -132,6 +132,7 @@ const (
 	methodPublishCheckpoint    = "publish_checkpoint"
 	methodControlsSince        = "controls_since"
 	methodEnterInputRequired   = "enter_input_required"
+	methodPersistObservation   = "persist_observation"
 	methodWebTurn              = "web_turn"
 )
 

@@ -29,6 +29,7 @@ type lockedBuffer struct {
 	mu        sync.Mutex
 	b         bytes.Buffer
 	max       int
+	total     int64
 	truncated bool
 }
 
@@ -36,6 +37,7 @@ func (b *lockedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	originalLen := len(p)
+	b.total += int64(originalLen)
 	if b.max <= 0 {
 		b.max = 1 << 20
 	}
@@ -62,15 +64,34 @@ func (b *lockedBuffer) String() string {
 	return b.b.String() + "\n...[MAR output truncated]..."
 }
 
-// RunContainedCommand executes a MAR control-plane command in a Windows Job
-// Object. Daemon handle closure therefore kills the command tree, and normal
-// return waits until the whole Job Object reports zero active processes.
+func (b *lockedBuffer) CaptureStats() (capturedBytes, totalBytes int64, truncated bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return int64(b.b.Len()), b.total, b.truncated
+}
+
+type CommandResult struct {
+	Output          string
+	CapturedBytes   int64
+	TotalBytes      int64
+	OutputTruncated bool
+}
+
+// RunContainedCommand preserves the legacy string result for callers that do
+// not produce evidence. Evidence-producing callers use the detailed variant.
 func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) {
+	result, err := RunContainedCommandDetailed(ctx, spec)
+	return result.Output, err
+}
+
+// RunContainedCommandDetailed executes a MAR control-plane command in a Windows
+// Job Object and reports whether its output capture ceiling discarded bytes.
+func RunContainedCommandDetailed(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 	if spec.TaskID == "" || spec.OperationID == "" {
-		return "", errors.New("task id and operation id are required")
+		return CommandResult{}, errors.New("task id and operation id are required")
 	}
 	if spec.Path == "" {
-		return "", errors.New("command path is required")
+		return CommandResult{}, errors.New("command path is required")
 	}
 	cmd := exec.Command(spec.Path, spec.Args...)
 	cmd.Dir = spec.Dir
@@ -82,6 +103,10 @@ func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) 
 	output := &lockedBuffer{max: spec.MaxOutputBytes}
 	cmd.Stdout = output
 	cmd.Stderr = output
+	snapshot := func(text string) CommandResult {
+		captured, total, truncated := output.CaptureStats()
+		return CommandResult{Output: text, CapturedBytes: captured, TotalBytes: total, OutputTruncated: truncated}
+	}
 
 	job, err := winjob.Start(cmd, winjob.LimitKillOnJobClose)
 	if err != nil {
@@ -89,7 +114,7 @@ func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) 
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 		}
-		return output.String(), fmt.Errorf("start contained command %s: %w", spec.OperationID, err)
+		return snapshot(output.String()), fmt.Errorf("start contained command %s: %w", spec.OperationID, err)
 	}
 	contained, err := job.Contains(cmd.Process)
 	if err != nil || !contained {
@@ -97,9 +122,9 @@ func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) 
 		_ = cmd.Wait()
 		_ = job.Close()
 		if err != nil {
-			return output.String(), fmt.Errorf("verify contained command %s: %w", spec.OperationID, err)
+			return snapshot(output.String()), fmt.Errorf("verify contained command %s: %w", spec.OperationID, err)
 		}
-		return output.String(), fmt.Errorf("command %s escaped expected Job Object", spec.OperationID)
+		return snapshot(output.String()), fmt.Errorf("command %s escaped expected Job Object", spec.OperationID)
 	}
 
 	waitDone := make(chan error, 1)
@@ -108,17 +133,19 @@ func RunContainedCommand(ctx context.Context, spec CommandSpec) (string, error) 
 	select {
 	case waitErr := <-waitDone:
 		if err := waitForNoActive(ctx, job); err != nil {
-			return terminateContainedAfterError(job, waitDone, true, output.String(), spec.OperationID, err)
+			text, termErr := terminateContainedAfterError(job, waitDone, true, output.String(), spec.OperationID, err)
+			return snapshot(text), termErr
 		}
 		if err := job.Close(); err != nil {
-			return output.String(), fmt.Errorf("close contained command job: %w", err)
+			return snapshot(output.String()), fmt.Errorf("close contained command job: %w", err)
 		}
 		if waitErr != nil {
-			return output.String(), waitErr
+			return snapshot(output.String()), waitErr
 		}
-		return output.String(), nil
+		return snapshot(output.String()), nil
 	case <-ctx.Done():
-		return terminateContainedAfterError(job, waitDone, false, output.String(), spec.OperationID, ctx.Err())
+		text, termErr := terminateContainedAfterError(job, waitDone, false, output.String(), spec.OperationID, ctx.Err())
+		return snapshot(text), termErr
 	}
 }
 

@@ -24,10 +24,11 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 13
+const latestSchemaVersion = 14
 
 type SQLite struct {
-	db *sql.DB
+	db                      *sql.DB
+	observationArtifactRoot string
 }
 
 func Open(path string) (*SQLite, error) {
@@ -60,7 +61,7 @@ func Open(path string) (*SQLite, error) {
 		}
 	}
 
-	s := &SQLite{db: db}
+	s := &SQLite{db: db, observationArtifactRoot: filepath.Join(filepath.Dir(path), "artifacts", "observations")}
 	if err := s.migrate(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -379,6 +380,27 @@ CREATE TABLE openai_tunnel_config (
     desired_running INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
+`
+	case 14:
+		script = `
+CREATE TABLE observation_artifacts (
+    handle TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    attempt_id TEXT NOT NULL,
+    run_epoch INTEGER NOT NULL,
+    tool_call_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL,
+    captured_bytes INTEGER NOT NULL,
+    source_bytes INTEGER NOT NULL,
+    complete INTEGER NOT NULL,
+    truncated INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(attempt_id) REFERENCES execution_attempts(attempt_id),
+    UNIQUE(task_id, attempt_id, run_epoch, tool_call_id, kind)
+);
+CREATE INDEX idx_observation_artifacts_task_created ON observation_artifacts(task_id, created_at);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

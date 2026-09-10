@@ -44,8 +44,22 @@ type SandboxCommandSpec struct {
 }
 
 type SandboxCommandResult struct {
-	Output   string
-	ExitCode int
+	Output          string
+	ExitCode        int
+	OutputTruncated bool
+	CapturedBytes   int64
+	TotalBytes      int64
+}
+
+func sandboxCommandResult(output *lockedBuffer, exitCode int) SandboxCommandResult {
+	captured, total, truncated := output.CaptureStats()
+	return SandboxCommandResult{
+		Output:          output.String(),
+		ExitCode:        exitCode,
+		OutputTruncated: truncated,
+		CapturedBytes:   captured,
+		TotalBytes:      total,
+	}
 }
 
 type securityCapabilities struct {
@@ -399,13 +413,13 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 	if waitErr != nil {
 		_ = job.Terminate()
 		if err := waitForNoActive(cleanupCtx, job); err != nil {
-			return SandboxCommandResult{Output: output.String(), ExitCode: -1}, fmt.Errorf("%w: wait=%v cleanup=%v", ErrSandboxTerminationUnconfirmed, waitErr, err)
+			return sandboxCommandResult(output, -1), fmt.Errorf("%w: wait=%v cleanup=%v", ErrSandboxTerminationUnconfirmed, waitErr, err)
 		}
 		select {
 		case <-outputDone:
 		case <-cleanupCtx.Done():
 		}
-		return SandboxCommandResult{Output: output.String(), ExitCode: -1}, waitErr
+		return sandboxCommandResult(output, -1), waitErr
 	}
 	if exitCode != 0 {
 		// Once the root command has failed, descendants have no authority to
@@ -413,17 +427,17 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 		// before returning the command failure so a failing test/build cannot
 		// strand a child process and stall the agent repair loop.
 		if err := job.Terminate(); err != nil {
-			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: sandbox command exited with code %d; terminate failed: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
+			return sandboxCommandResult(output, exitCode), fmt.Errorf("%w: sandbox command exited with code %d; terminate failed: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
 		}
 		if err := waitForNoActive(cleanupCtx, job); err != nil {
-			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: sandbox command exited with code %d; descendant cleanup: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
+			return sandboxCommandResult(output, exitCode), fmt.Errorf("%w: sandbox command exited with code %d; descendant cleanup: %v", ErrSandboxTerminationUnconfirmed, exitCode, err)
 		}
 		select {
 		case <-outputDone:
 		case <-cleanupCtx.Done():
-			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("sandbox command exited with code %d; output drain unconfirmed: %w", exitCode, cleanupCtx.Err())
+			return sandboxCommandResult(output, exitCode), fmt.Errorf("sandbox command exited with code %d; output drain unconfirmed: %w", exitCode, cleanupCtx.Err())
 		}
-		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, SandboxExitError{Code: exitCode}
+		return sandboxCommandResult(output, exitCode), SandboxExitError{Code: exitCode}
 	}
 	if err := waitForNoActive(ctx, job); err != nil {
 		// The root exited successfully but a descendant may still be alive. If
@@ -434,21 +448,21 @@ func launchAppContainerCommand(ctx context.Context, profileName string, sid *win
 		terminateErr := job.Terminate()
 		confirmErr := waitForNoActive(cleanupCtx, job)
 		if terminateErr != nil || confirmErr != nil {
-			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("%w: successful-root cleanup wait=%v terminate=%v confirm=%v", ErrSandboxTerminationUnconfirmed, err, terminateErr, confirmErr)
+			return sandboxCommandResult(output, exitCode), fmt.Errorf("%w: successful-root cleanup wait=%v terminate=%v confirm=%v", ErrSandboxTerminationUnconfirmed, err, terminateErr, confirmErr)
 		}
 		select {
 		case <-outputDone:
 		case <-cleanupCtx.Done():
-			return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, fmt.Errorf("sandbox output drain unconfirmed after descendant cleanup: %w", cleanupCtx.Err())
+			return sandboxCommandResult(output, exitCode), fmt.Errorf("sandbox output drain unconfirmed after descendant cleanup: %w", cleanupCtx.Err())
 		}
-		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, err
+		return sandboxCommandResult(output, exitCode), err
 	}
 	select {
 	case <-outputDone:
 	case <-ctx.Done():
-		return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, ctx.Err()
+		return sandboxCommandResult(output, exitCode), ctx.Err()
 	}
-	return SandboxCommandResult{Output: output.String(), ExitCode: exitCode}, nil
+	return sandboxCommandResult(output, exitCode), nil
 }
 
 type SandboxExitError struct{ Code int }
