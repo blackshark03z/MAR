@@ -6,7 +6,13 @@
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
 
-**Baseline closeout source:** `84c39c168f6bb6560721a899216d6acb4807aab3` (`Stabilize owned tunnel process lifecycle`). The Owner Console v5/process-lifecycle closeout was already sealed and fully VERIFIED in the preceding self-hosted task; this repair carries that reviewed handoff forward while fixing the transient integration-retry defect that prevented authoritative promotion. `ENGINEERING_STABLE` is an engineering claim only: Owner Console v5 product-experience acceptance remains dependent on explicit Owner real-use feedback and is not promoted to `PRODUCT_ACCEPTED` by tests.
+**Baseline closeout source:** `84c39c168f6bb6560721a899216d6acb4807aab3` (`Stabilize owned tunnel process lifecycle`). The Owner Console v5/process-lifecycle closeout was already sealed and fully VERIFIED in the preceding self-hosted task; this repair carries that reviewed handoff forward while fixing the transient integration-retry defect that prevented authoritative promotion. `ENGINEERING_STABLE` is an engineering claim only: Owner Console product-experience acceptance remains dependent on explicit Owner real-use feedback and is not promoted to `PRODUCT_ACCEPTED` by tests.
+
+## Owner Console v6 convergence candidate — 2026-09-10
+
+A bounded self-hosted UI convergence is in progress from base `7e3ad89d9aaa3447dcfb87fdc24573a64e0623b1`. The candidate implements the approved light operations direction in production source: compact aligned header, truthful OpenAI/Claude identity and progressive disclosure, realtime input/output chart from bounded MAR observations only, active-flow focus, compact Tasks master-detail with search/status filtering, and the truthful V1 execution selector `Tự động · MAR scheduler`. No named-worker routing, synthetic telemetry, provider guessing, architecture change, network action, push, deploy, or credential handling is introduced. The design contract is `docs/design/OWNER_CONSOLE_V6.md`.
+
+This v6 work remains a **candidate** until targeted Owner UI/JavaScript checks and the sealed revision-bound `go-standard` profile pass and MAR authoritatively integrates it. The existing engineering baseline remains stable while this candidate is evaluated. `PRODUCT_ACCEPTED` remains strictly dependent on Owner real-use acceptance after integration.
 
 ## Verified integration retry recovery — 2026-09-10
 

@@ -185,10 +185,15 @@ func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
 	}
 }
 
-func TestOwnerUIOperationsOverviewInformationArchitecture(t *testing.T) {
-	for _, marker := range []string{`data-view="overview" class="active" aria-current="page">Overview`, `data-view="live">Live Operations`, `data-view="work">Tasks`, `data-view="projects">Workspaces`, `data-view="connections">Connections`, `data-view="usage">Usage`, `data-view="advanced">Diagnostics`, `id="workspace-filter"`, `id="operational-answer"`, "Right now", `id="overview-session-count"`, `id="overview-action-center"`, `id="overview-connections"`, `id="overview-usage-bars"`, `id="live-page-flow-count"`, `id="live-page-session-count"`, `id="live-page-route-count"`, `id="live-page-token-total"`, `id="live-page-token-rate"`, `id="live-page-token-input"`, `id="live-page-token-output"`, `id="live-zone-gpt"`, `id="live-zone-claude"`, `class="panel token-monitor"`, `class="provider-zone-grid"`, `id="live-flow-rows"`, "modern light operations system", "color-scheme:light", "#f6f8fb", `id="usage-daily-rows"`, `id="usage-coverage"`, `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "session count unavailable", "Telemetry: stale / unavailable", `data-sessions`, "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "function operationalHealth()", "function sessionSummary()", "function routeSummary()", "function liveFlowRows()", "function renderProviderZones()", "waiting_for_ai_turn", "captureRealtimeObservation", "taskStageLabel"} {
+func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
+	for _, marker := range []string{`data-view="overview" class="active" aria-current="page">Overview`, `data-view="live">Live Operations`, `data-view="work">Tasks`, `data-view="projects">Workspaces`, `data-view="connections">Connections`, `data-view="usage">Usage`, `data-view="advanced">Diagnostics`, `id="workspace-filter"`, `id="operational-answer"`, "Right now", `id="overview-connections"`, "card.className='overview-provider-card'", "Chi tiết bên dưới", "provider-logo claude", "provider-logo openai", "function providerMark(", `id="live-page-flow-count"`, `id="live-page-token-total"`, `id="live-page-token-input"`, `id="live-page-token-output"`, `class="panel realtime-chart-panel"`, `id="live-active-flow-list"`, `class="live-provider-details"`, `id="live-zone-gpt"`, `id="live-zone-claude"`, "Chưa có đủ dữ liệu realtime.", "input:next.live.input", "output:next.live.output", "liveTokenSamples.length>40", "renderActiveFlowList();", `id="task-status-filter"`, `id="task-search"`, `id="task-worker-selector"`, "Tự động · MAR scheduler", `class="tasks-layout"`, `class="task-list compact"`, "function filteredTasks()", "html,body { overflow-x:hidden", `id="usage-daily-rows"`, `id="usage-coverage"`, `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "Session count unavailable", "Telemetry: stale / unavailable", "operationalPollInFlight", "usagePollInFlight", "function operationalHealth()", "function sessionSummary()", "function routeSummary()", "function liveFlowRows()", "function renderProviderZones()", "waiting_for_ai_turn", "captureRealtimeObservation", "taskStageLabel"} {
 		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("operations overview v5 contract missing %q", marker)
+			t.Fatalf("owner console v6 contract missing %q", marker)
+		}
+	}
+	for _, forbidden := range []string{"worker-win-01", "codex-worker"} {
+		if strings.Contains(ownerUIHTML, forbidden) {
+			t.Fatalf("owner console v6 invented unsupported worker identity %q", forbidden)
 		}
 	}
 }
