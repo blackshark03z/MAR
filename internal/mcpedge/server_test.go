@@ -124,7 +124,7 @@ func connectTestMCP(t *testing.T, backend Backend) *mcp.ClientSession {
 	return clientSession
 }
 
-func TestPublicMCPSurfaceKeepsWorkerPrimitivesPrivateAndAddsBoundedProjectRead(t *testing.T) {
+func TestPublicToolSurfaceListsExactlySixCanonicalTools(t *testing.T) {
 	session := connectTestMCP(t, &fakeBackend{})
 	listed, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestPublicMCPSurfaceKeepsWorkerPrimitivesPrivateAndAddsBoundedProjectRead(t
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "project_context", "project_read", "result", "status", "steer", "submit"}
+	want := []string{"brain_respond", "brain_turn", "control", "project", "submit", "task"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected public tool count: got=%v want=%v", names, want)
 	}

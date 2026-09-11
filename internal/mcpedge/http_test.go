@@ -58,7 +58,7 @@ func TestRemoteHTTPStreamableClientSeesOnlyPublicMARSurface(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "cancel", "input", "inspect", "project_context", "project_read", "result", "status", "steer", "submit"}
+	want := []string{"brain_respond", "brain_turn", "control", "project", "submit", "task"}
 	if len(names) != len(want) {
 		t.Fatalf("remote MCP public tool count mismatch: got=%v want=%v", names, want)
 	}
