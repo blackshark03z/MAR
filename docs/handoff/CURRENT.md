@@ -8,6 +8,17 @@
 
 **Baseline closeout source:** `84c39c168f6bb6560721a899216d6acb4807aab3` (`Stabilize owned tunnel process lifecycle`). The Owner Console v5/process-lifecycle closeout was already sealed and fully VERIFIED in the preceding self-hosted task; this repair carries that reviewed handoff forward while fixing the transient integration-retry defect that prevented authoritative promotion. `ENGINEERING_STABLE` is an engineering claim only: Owner Console product-experience acceptance remains dependent on explicit Owner real-use feedback and is not promoted to `PRODUCT_ACCEPTED` by tests.
 
+## Owner Console v7 release UI — 2026-09-11
+
+Owner Console v7 is engineering-integrated at `cf3b39d89b8d1c14eb645bea591630a6dbc45494` from authoritative base `3e60aaba219d4a634b0c8bba687be221026e9d58`. The release keeps the frozen MAR execution/authority architecture unchanged and converges the owner-facing surface toward the approved bright, low-density operations layout.
+
+Primary release scope: fixed light app shell and compact top bar; Live Operations with four answer-first summaries (system health, AI connections, active flows, tokens today), realtime token chart, active-flow panel, separate OpenAI/Claude zones and quick stats; Tasks as a desktop three-column workflow with list/filter/search, selected-task detail and a real create-task panel. Create-task uses registered project HEAD/policy and the existing `/api/tasks` path, exposes only truthful `Tự động · MAR scheduler`, keeps network disabled, and does not create a second task-authority path. Secondary pages retain the same shared visual system without fabricated telemetry. Design source-of-truth: `docs/design/OWNER_CONSOLE_V7.md`.
+
+Verification on the exact integrated content before commit: targeted `go test -count=1 ./cmd/mar` PASS; full sequential `go test -p 1 -count=1 ./...` PASS across all repository packages; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS. The working-tree scope was exactly `cmd/mar/owner_ui.html`, `cmd/mar/owner_ui_test.go`, and `docs/design/OWNER_CONSOLE_V7.md` before sealing. No network, remote Git write, deploy, credential handling, transport redesign, provider guessing, synthetic sessions/tokens, or `Tunnel_api.txt` modification was introduced.
+
+Recovery provenance: the original MAR UI task exhausted the already-integrated task-wide model budget and failed closed. Its isolated workspace was preserved. During operator recovery, an independent local Owner Console implementation already present on authoritative `master` was found to be deeper than the isolated candidate (four Live summaries, quick stats, richer create-task flow and corresponding regression markers). It was not overwritten. That authoritative local implementation was first targeted-tested, then passed the complete repository gate above, and was sealed directly as `cf3b39d...`. The older isolated candidate `92123c6...` is superseded evidence only and must not be promoted over the integrated v7 source.
+
+Engineering status is `ENGINEERING_STABLE_PENDING_OWNER_UAT`. Tests establish engineering confidence only; explicit Owner real-use acceptance of the v7 experience is still required before `PRODUCT_ACCEPTED`.
 ## MAR V1.1 context/cognition architecture amendment — 2026-09-10
 
 **Architecture verdict:** `ARCHITECTURE_EVOLVE`. **Architecture freeze:** `YES`. **Remaining architecture blockers:** `NONE` for the supported bounded-external-episode / optional-internal-provider contract.
