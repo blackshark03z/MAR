@@ -386,6 +386,7 @@ const ownerSessionHeader = "X-MAR-Owner-Token"
 
 func (b *ownerUIBackend) routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle("GET /assets/", http.FileServer(http.FS(ownerUIFS)))
 	mux.HandleFunc("GET /", b.serveIndex)
 	mux.HandleFunc("GET /api/runtime", b.serveRuntime)
 	mux.HandleFunc("POST /api/runtime/sandbox/prepare", b.prepareSandboxHost)
@@ -478,7 +479,7 @@ func withOwnerUIHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

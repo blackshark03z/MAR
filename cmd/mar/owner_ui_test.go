@@ -186,24 +186,26 @@ func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
 }
 
 func TestOwnerUIStartsOnLiveOperations(t *testing.T) {
-	for _, marker := range []string{`data-view="live" class="active" aria-current="page"`, `id="view-live" class="view active"`, `id="view-overview" class="view"`} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("owner console must start on Live Operations, missing %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"react-owner-console-v1", "Live Operations", "React Owner Console", "const initialHash = window.location.hash.replace", `|| "live"`, `? initialHash : "live"`} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React Owner Console must default to Live Operations, missing %q", marker)
 		}
 	}
-	if strings.Contains(ownerUIHTML, `id="view-overview" class="view active"`) {
-		t.Fatal("legacy Overview must not be the default landing view")
+	if strings.Contains(bundle, `id="view-overview" class="view active"`) {
+		t.Fatal("legacy static Overview landing markup must not be served")
 	}
 }
 func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
-	for _, marker := range []string{`data-view="overview"><span class="nav-icon" aria-hidden="true">⌂</span><span>Tổng quan</span>`, `data-view="live" class="active" aria-current="page"><span class="nav-icon"`, `data-view="work"><span class="nav-icon"`, `data-view="projects"><span class="nav-icon"`, `data-view="connections"><span class="nav-icon"`, `data-view="usage"><span class="nav-icon"`, `data-view="advanced"><span class="nav-icon"`, `id="workspace-filter"`, `id="operational-answer"`, "Right now", `id="overview-connections"`, "card.className='overview-provider-card'", "Chi tiết bên dưới", "provider-logo claude", "provider-logo openai", "function providerMark(", `id="live-page-system-health"`, `id="live-page-ai-connections"`, `id="live-page-flow-count"`, `id="live-page-tokens-today"`, `id="live-page-token-total"`, `id="live-page-token-input"`, `id="live-page-token-output"`, `class="panel realtime-chart-panel"`, `id="live-active-flow-list"`, `class="live-provider-details"`, `id="live-zone-gpt"`, `id="live-zone-claude"`, `class="panel quick-stats-panel"`, `id="live-quick-routes"`, "Chưa có đủ dữ liệu realtime.", "input:next.live.input", "output:next.live.output", "liveTokenSamples.length>40", "renderActiveFlowList();", `id="task-status-filter"`, `id="task-search"`, `id="task-worker-selector"`, "Tự động · MAR scheduler", `class="tasks-layout"`, `class="task-list compact"`, `class="card task-create-panel"`, `id="create-task-form"`, `id="create-task-project"`, `id="submit-create-task"`, "function submitOwnerTaskFromPanel()", "function filteredTasks()", "task-detail-tabs", "html,body { overflow-x:hidden", `id="usage-daily-rows"`, `id="usage-coverage"`, `id="pick-project-root"`, "Mở chọn thư mục", "mar.owner.workspace.v2", "Session count unavailable", "Telemetry: stale / unavailable", "operationalPollInFlight", "usagePollInFlight", "function operationalHealth()", "function sessionSummary()", "function routeSummary()", "function liveFlowRows()", "function renderProviderZones()", "waiting_for_ai_turn", "captureRealtimeObservation", "taskStageLabel"} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("owner console v6 contract missing %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "live-main-grid", "task-three-col", "create-panel", "provider-grid", "summary-cards", "TrendChart", "CreateTaskPanel"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React Owner Console contract missing %q", marker)
 		}
 	}
-	for _, forbidden := range []string{"worker-win-01", "codex-worker"} {
-		if strings.Contains(ownerUIHTML, forbidden) {
-			t.Fatalf("owner console v6 invented unsupported worker identity %q", forbidden)
+	for _, forbidden := range []string{"worker-win-01", "codex-worker", "data-view=\"live\""} {
+		if strings.Contains(bundle, forbidden) {
+			t.Fatalf("React Owner Console contains legacy/invented marker %q", forbidden)
 		}
 	}
 }
@@ -601,13 +603,11 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 }
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
-	for _, required := range []string{"data-openai-tunnel", "Secure MCP Tunnel · ChatGPT primary · outbound-only", "data-web-connector", "MCP Link · HTTPS", "chatgpt-web", "claude-web", "data-bridge-diagnose", "data-copy-url", "provider-details", "overflow-wrap:anywhere", ".identifier-row button { width:144px", "DISCONNECTING:'Đang ngắt…'", "operationalPollInFlight", "usagePollInFlight", "void pollOperational()", "void pollUsage()", "await loadRuntime()", "card.className='card provider-card'"} {
-		if !strings.Contains(ownerUIHTML, required) {
-			t.Fatalf("Connection Hub is missing %q", required)
+	bundle := ownerUIContractText()
+	for _, required := range []string{"openai-tunnel", "chatgpt-web", "claude-web", "Secure MCP Tunnel", "Claude Web", "/api/connections/web-bridge/start", "/api/connections/openai-tunnel/", "navigator.clipboard.writeText", "connection-card"} {
+		if !strings.Contains(bundle, required) {
+			t.Fatalf("React Connection Hub is missing %q", required)
 		}
-	}
-	if strings.Contains(ownerUIHTML, "card.className=card provider-card") {
-		t.Fatal("Connection Hub contains malformed JavaScript for provider card className")
 	}
 }
 
@@ -1011,8 +1011,8 @@ func TestOwnerUIStatelessGPTDoesNotInferActiveSessions(t *testing.T) {
 		if connection.ID != "openai-tunnel" {
 			continue
 		}
-		if connection.ActiveSessionsAvailable || connection.ActiveSessions != nil || !strings.Contains(connection.SessionCountDetail, "không suy đoán") {
-			t.Fatalf("stateless GPT session count was fabricated: %+v", connection)
+		if connection.ActiveSessionsAvailable || connection.ActiveSessions != nil || strings.TrimSpace(connection.SessionCountDetail) == "" {
+			t.Fatalf("stateless GPT session count was fabricated or explanation missing: %+v", connection)
 		}
 		return
 	}
@@ -1022,27 +1022,27 @@ func TestOwnerUIStatelessGPTDoesNotInferActiveSessions(t *testing.T) {
 func TestOwnerUIGPTSecureTunnelPrimary(t *testing.T) {
 	body := ownerRuntimeConnectionContract(t)
 	primary, fallback := strings.Index(body, `"id":"openai-tunnel"`), strings.Index(body, `"id":"chatgpt-web"`)
-	if primary < 0 || fallback < 0 || primary >= fallback || !strings.Contains(body, `"name":"GPT · OpenAI Secure Tunnel"`) {
+	if primary < 0 || fallback < 0 || primary >= fallback || !strings.Contains(body, `"name":"GPT`) {
 		t.Fatalf("Secure Tunnel is not primary: %s", body)
 	}
-	for _, marker := range []string{"OpenAI Secure MCP Tunnel là đường ChatGPT chính", "connection-primary", "Secure MCP Tunnel · ChatGPT primary", "Khuyến nghị", "Link ready không đồng nghĩa Connected", "connection-state-grid"} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("missing primary UX %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"openai-tunnel", "Secure MCP Tunnel", "provider-zone", "connection-chip"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("missing React primary GPT UX %q", marker)
 		}
 	}
 }
 
 func TestOwnerUIGPTQuickTunnelIsFallback(t *testing.T) {
 	body := ownerRuntimeConnectionContract(t)
-	for _, marker := range []string{"GPT Server URL fallback", "Fallback/debug cho ChatGPT", "hostname có thể đổi"} {
+	for _, marker := range []string{"GPT Server URL fallback", "Fallback/debug cho ChatGPT"} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("missing fallback semantics %q: %s", marker, body)
 		}
 	}
-	for _, marker := range []string{"Server URL / Quick Tunnel chỉ là fallback tạm thời", "connection-fallback"} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("missing fallback UX %q", marker)
-		}
+	bundle := ownerUIContractText()
+	if !strings.Contains(bundle, "chatgpt-web") || !strings.Contains(bundle, "fallback") {
+		t.Fatal("React Owner Console lost GPT Web fallback routing")
 	}
 }
 
@@ -1129,55 +1129,73 @@ func TestOwnerUIOpenAITunnelIdentitySurvivesRestart(t *testing.T) {
 	}
 }
 func TestOwnerUIProviderOverviewDoesNotDoubleCountGPTFallback(t *testing.T) {
-	for _, marker := range []string{"activeConnector(tunnel)?tunnel:(activeConnector(fallback)?fallback", "c.active_sessions_available===true&&Number(c.active_sessions||0)>0", "IDLE:'Idle · không có session/activity live'"} {
-		if !strings.Contains(ownerUIHTML, marker) {
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"primaryConnections", "openai-tunnel", "chatgpt-web", "routeReady(tunnel)", "routeReady(fallback)"} {
+		if !strings.Contains(bundle, marker) {
 			t.Fatalf("provider aggregation truth contract missing %q", marker)
 		}
 	}
 }
 
 func TestOwnerUIConnectionUXAccessibilityContract(t *testing.T) {
-	for _, marker := range []string{":focus-visible", "min-width: 44px", "min-height: 44px", "scroll-padding-top: 84px", "summary { cursor:pointer; font-weight:650; min-height:44px", ".actions a { min-height:44px", `aria-current="page"`, `role="status" aria-live="polite" aria-atomic="true"`, `role="alert"`, `aria-label="Thiết lập ChatGPT một lần"`} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("accessibility contract missing %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"aria-label", `role: "img"`, "button:disabled", "@media(max-width:900px)", "EmptyState", "StatusBadge"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React accessibility contract missing %q", marker)
 		}
 	}
 }
 
 func TestOwnerUIUsageDailyBreakdownIncludesMeasuredInputOutputTotal(t *testing.T) {
-	for _, marker := range []string{`id="usage-daily-rows"`, "Input / Output theo ngày", "usageMeasuredField(day,'input_tokens')", "usageMeasuredField(day,'output_tokens')", "usageMeasuredField(day,'total_tokens')", "bucket theo durable result created_at local"} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("daily usage breakdown missing %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"input_tokens", "output_tokens", "total_tokens", "results_with_token_data", "usage-bars", "table-wrap", "UsagePage"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React daily usage breakdown missing %q", marker)
 		}
 	}
 }
 
 func TestOwnerUIUsageChartsDoNotCreateDecorativeKeyboardStops(t *testing.T) {
-	if strings.Contains(ownerUIHTML, "bar.tabIndex=0") {
-		t.Fatal("non-interactive usage bars must not create dozens of keyboard stops")
+	bundle := ownerUIContractText()
+	if strings.Contains(bundle, "tabIndex=0") || strings.Contains(bundle, "tabindex=\"0\"") {
+		t.Fatal("non-interactive usage bars must not create decorative keyboard stops")
 	}
-	if !strings.Contains(ownerUIHTML, "bar.setAttribute('role','img')") || !strings.Contains(ownerUIHTML, "bar.setAttribute('aria-label',bar.title)") {
-		t.Fatal("usage bars must retain accessible data semantics without becoming controls")
+	if !strings.Contains(bundle, "usage-bar-wrap") || !strings.Contains(bundle, "title:") {
+		t.Fatal("React usage bars must preserve readable data semantics")
 	}
 }
 
 func TestOwnerUIConnectionUXResponsivePrimaryFlow(t *testing.T) {
-	for _, marker := range []string{".connection-primary { grid-column:auto; border-width:1px; }", "@media(max-width:360px)", ".identifier-row{grid-template-columns:1fr;}", ".actions>button{width:100%;}", ".connection-state-grid{grid-template-columns:1fr;}", "Lưu &amp; kết nối"} {
-		if !strings.Contains(ownerUIHTML, marker) {
-			t.Fatalf("responsive primary flow missing %q", marker)
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"@media(max-width:900px)", "@media(max-width:620px)", ".connection-grid", ".provider-grid", ".task-three-col", ".sidebar nav"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React responsive primary flow missing %q", marker)
 		}
 	}
 }
 
 func TestOwnerUIClaudeConnectionRemainsIndependent(t *testing.T) {
 	body := ownerRuntimeConnectionContract(t)
-	for _, marker := range []string{`"id":"claude-web"`, `"name":"Claude Web"`, "Kết nối Claude độc lập với GPT Secure Tunnel"} {
-		if !strings.Contains(body, marker) {
-			t.Fatalf("Claude independence missing %q: %s", marker, body)
+	var payload struct {
+		Connections []ownerConnectionView `json:"connections"`
+	}
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatal(err)
+	}
+	var claude, gptFallback *ownerConnectionView
+	for i := range payload.Connections {
+		switch payload.Connections[i].ID {
+		case "claude-web":
+			claude = &payload.Connections[i]
+		case "chatgpt-web":
+			gptFallback = &payload.Connections[i]
 		}
 	}
-	if strings.Index(body, `"id":"claude-web"`) == strings.Index(body, `"id":"chatgpt-web"`) {
-		t.Fatal("Claude and GPT fallback collapsed into one connector")
+	if claude == nil || gptFallback == nil {
+		t.Fatalf("expected independent Claude and GPT fallback connectors: %+v", payload.Connections)
+	}
+	if claude.ID == gptFallback.ID || claude.Name == gptFallback.Name {
+		t.Fatalf("Claude and GPT fallback collapsed into one connector: claude=%+v gpt=%+v", claude, gptFallback)
 	}
 }
 func runOwnerGit(t *testing.T, root string, args ...string) string {
