@@ -6,6 +6,17 @@
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
 
+**Current product release:** `MAR_V1_1_PRODUCT_ACCEPTED`
+
+**Self-hosting status:** `SELF_HOSTING_READY`
+
+## MAR V1.1 Owner acceptance — 2026-09-12
+
+Owner explicitly approved **MAR V1.1** after real-use of the integrated release candidate. This closes the only remaining product gate recorded by the V1.1 release candidate and promotes the integrated V1.1 experience to `PRODUCT_ACCEPTED`. The accepted implementation HEAD is `a6fa0279631c7a8f05f484a5bba7b20b73e0188f`; the final acceptance record is `docs/release/MAR_V1_1_RELEASE.md`.
+
+The already-proven bounded self-hosting path is therefore also promoted to `SELF_HOSTING_READY` for routine MAR development. Optional stable named-tunnel/custom-host setup, further visual polish, and future feature work are post-V1.1 backlog and are not release blockers. Historical sections below that say Owner UAT or product acceptance is pending describe earlier checkpoints and are superseded by this section.
+
+
 ## React Owner Console interaction closeout — 2026-09-11
 
 Owner UAT found three real interaction defects after the React migration: the Tasks list could retain horizontal scroll and clip the beginning of titles; the Windows-native folder picker could remain behind Chrome and leave `Chọn thư mục` apparently hung; and the Claude Web card reported route readiness without exposing the capability URL or useful ready-state actions. Source commit `f882de9ed6e9cb7aa36c1969d4bf787316e26b50` closes these defects without changing MAR execution authority.
