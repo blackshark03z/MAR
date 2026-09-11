@@ -590,13 +590,62 @@
     @media(max-width:1180px){ .topbar{grid-template-columns:1fr;} .topbar-controls{justify-content:space-between;} .runtime{flex-wrap:wrap;} .live-primary-grid,.tasks-layout{grid-template-columns:1fr;} #task-detail{position:static;max-height:none;} }
     @media(max-width:900px){ header{position:static;} .topbar{padding:10px 14px;} .topbar-controls{display:grid;grid-template-columns:1fr;} .workspace-filter{min-width:0;} .workspace-filter label{grid-template-columns:1fr;} .runtime{justify-content:flex-start;} .tasks-toolbar{grid-template-columns:1fr 1fr;} .realtime-chart-panel,.active-flow-panel{min-height:280px;} }
     @media(max-width:620px){ .tasks-toolbar{grid-template-columns:1fr;} .live-summary-strip{grid-template-columns:repeat(2,1fr);} .overview-provider-detail{grid-template-columns:1fr;} .picker-row{grid-template-columns:1fr;} #pick-project-root,#project-root{grid-column:1;grid-row:auto;} }
+
+    /* Release UI convergence — final owner-facing layout inspired by accepted UAT references. */
+    :root { --release-blue:#1769e8; --release-blue-soft:#eef5ff; --release-line:#e3e9f2; --release-bg:#f7f9fc; --release-panel:#fff; --release-text:#11213a; --release-muted:#72819a; --release-green:#0cab72; --release-orange:#f39a1f; }
+    body { background:var(--release-bg); color:var(--release-text); }
+    header { box-shadow:0 1px 0 rgba(15,23,42,.04); }
+    .brand { align-items:center; }
+    .brand strong { font-size:24px; color:var(--release-blue); }
+    .brand .muted { padding-left:14px; border-left:1px solid var(--release-line); font-size:12px; }
+    nav { width:214px; background:#fbfcfe; }
+    nav button { gap:11px; font-size:13px; color:#53657f; }
+    nav button.active { color:var(--release-blue); background:#edf4ff; border-color:#d9e8ff; box-shadow:inset 3px 0 0 var(--release-blue); }
+    .nav-icon { width:20px; display:inline-grid; place-items:center; color:inherit; font-size:16px; }
+    main { width:calc(100% - 214px); margin-left:214px; padding:24px 24px 56px; max-width:none; }
+    .runtime .badge,#telemetry-freshness { border-radius:999px; background:#f8fbff; }
+    .owner-avatar { width:38px; height:38px; border-radius:50%; display:inline-grid; place-items:center; background:var(--release-blue); color:#fff; font-weight:800; box-shadow:0 3px 10px rgba(23,105,232,.2); }
+    .live-summary-strip { grid-template-columns:repeat(4,minmax(0,1fr)); border-radius:14px; }
+    .live-summary-strip > div { min-height:98px; padding:17px 18px; }
+    .live-summary-strip > div:nth-child(3) { display:block; }
+    .live-primary-grid { grid-template-columns:minmax(0,1.7fr) minmax(300px,.65fr); }
+    .live-lower-grid { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(280px,.55fr); gap:16px; align-items:start; }
+    .live-lower-grid .provider-zone-grid { grid-template-columns:repeat(2,minmax(0,1fr)); margin:0; }
+    .quick-stats-panel { padding:16px; }
+    .quick-stat-list { display:grid; gap:8px; }
+    .quick-stat { min-height:48px; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:10px 12px; border-radius:10px; background:#f8fbff; border:1px solid #edf1f6; }
+    .quick-stat span { color:var(--release-muted); font-size:11px; }
+    .quick-stat b { font-size:18px; }
+    .tasks-toolbar { grid-template-columns:minmax(180px,.55fr) minmax(180px,.55fr) minmax(260px,1.3fr); }
+    .tasks-toolbar .worker-selector-note { display:none; }
+    .tasks-layout { grid-template-columns:minmax(330px,.8fr) minmax(430px,1.15fr) minmax(300px,.75fr); gap:14px; }
+    .tasks-list-card,#task-detail,.task-create-panel { min-height:680px; }
+    #task-detail { position:sticky; top:92px; max-height:calc(100vh - 116px); }
+    .task-create-panel { position:sticky; top:92px; max-height:calc(100vh - 116px); overflow:auto; padding:18px; }
+    .task-create-panel h3 { font-size:17px; margin-bottom:3px; }
+    .task-create-panel .form-grid { display:grid; gap:13px; }
+    .task-create-panel .form-actions { display:grid; grid-template-columns:1fr 1.35fr; gap:8px; margin-top:6px; }
+    .task-create-panel textarea { min-height:110px; }
+    .task-create-panel details { border-top:1px solid var(--release-line); margin-top:4px; }
+    .task-create-panel details summary { color:#334155; font-size:12px; }
+    .task-create-panel .advanced-grid { display:grid; gap:11px; padding-top:10px; }
+    .task-create-panel .permission-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .task-create-panel .permission-row label { display:flex; align-items:center; gap:7px; font-weight:550; }
+    .task-create-panel .permission-row input { width:auto; min-height:0; }
+    .task-detail-tabs { display:flex; gap:4px; border-bottom:1px solid var(--release-line); margin:-2px 0 4px; }
+    .task-detail-tabs button { min-height:38px; padding:6px 12px; border:0; border-radius:0; background:transparent; color:#64748b; font-size:11px; }
+    .task-detail-tabs button.active { color:var(--release-blue); box-shadow:inset 0 -2px 0 var(--release-blue); }
+    @media(max-width:1380px){ .tasks-layout{grid-template-columns:minmax(320px,.8fr) minmax(0,1.2fr);} .task-create-panel{position:static;grid-column:1/-1;min-height:0;max-height:none;} .task-create-panel .form-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.task-create-panel .form-grid>.full{grid-column:1/-1;} }
+    @media(max-width:1180px){ .live-lower-grid{grid-template-columns:1fr;} .live-lower-grid .provider-zone-grid{grid-template-columns:1fr;} }
+    @media(max-width:900px){ nav{width:auto;} main{width:100%;margin-left:0;} .tasks-layout{grid-template-columns:1fr;} .tasks-list-card,#task-detail,.task-create-panel{min-height:0;} #task-detail,.task-create-panel{position:static;max-height:none;} .tasks-toolbar{grid-template-columns:1fr;} .live-primary-grid{grid-template-columns:1fr;} }
+    @media(max-width:620px){ .live-summary-strip{grid-template-columns:1fr 1fr;} .task-create-panel .form-grid{grid-template-columns:1fr;} .task-create-panel .permission-row{grid-template-columns:1fr;} }
   </style>
 </head>
 <body>
 <div class="shell">
 <header>
   <div class="topbar">
-    <div class="brand"><strong>MAR</strong><span class="muted">operations console</span></div>
+    <div class="brand"><strong>MAR</strong><span class="muted">Quản lý tác vụ AI an toàn và hiệu quả</span></div>
     <div class="topbar-controls">
       <div class="workspace-filter"><label for="workspace-filter">Workspace<select id="workspace-filter"><option value="">Tất cả workspaces</option></select></label></div>
       <div class="runtime"><span class="badge" id="telemetry-freshness" role="status" aria-live="polite" aria-atomic="true">Telemetry: đang kết nối…</span><span id="runtime-badges"><span class="badge">Đang tải runtime…</span></span></div>
@@ -604,13 +653,13 @@
   </div>
 </header>
 <nav aria-label="MAR sections">
-  <button data-view="overview" class="active" aria-current="page">Overview</button>
-  <button data-view="live">Live Operations</button>
-  <button data-view="work">Tasks</button>
-  <button data-view="projects">Workspaces</button>
-  <button data-view="connections">Connections</button>
-  <button data-view="usage">Usage</button>
-  <button data-view="advanced">Diagnostics</button>
+  <button data-view="overview" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Tổng quan</span></button>
+  <button data-view="live"><span class="nav-icon" aria-hidden="true">⌁</span><span>Live Operations</span></button>
+  <button data-view="work"><span class="nav-icon" aria-hidden="true">▣</span><span>Tasks</span></button>
+  <button data-view="projects"><span class="nav-icon" aria-hidden="true">□</span><span>Workspaces</span></button>
+  <button data-view="connections"><span class="nav-icon" aria-hidden="true">⛓</span><span>Connections</span></button>
+  <button data-view="usage"><span class="nav-icon" aria-hidden="true">▥</span><span>Usage</span></button>
+  <button data-view="advanced"><span class="nav-icon" aria-hidden="true">⚙</span><span>Diagnostics</span></button>
 </nav>
 <main>
   <section id="view-overview" class="view active">
@@ -639,13 +688,12 @@
   </section>
 
   <section id="view-live" class="view">
-    <div class="page-heading live-page-heading"><div><h1>Live Operations</h1></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> LIVE</span><span id="live-page-poll-state">2s</span></div></div>
+    <div class="page-heading live-page-heading"><div><h1>Live Operations</h1><p>Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR.</p></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> ĐANG HOẠT ĐỘNG</span><span id="live-page-poll-state">2s</span></div></div>
     <div class="live-summary-strip" aria-label="Live operation summary">
-      <div><span>Flows</span><strong id="live-page-flow-count">0</strong></div>
-      <div><span>Waiting AI</span><strong id="live-page-ai-wait">0</strong></div>
-      <div><span>Sessions</span><strong id="live-page-session-count">—</strong><small id="live-page-session-detail"></small></div>
-      <div><span>Routes</span><strong id="live-page-route-count">—</strong><small id="live-page-route-detail"></small></div>
-      <div><span>Observed</span><strong id="live-page-last-observed" style="font-size:14px">—</strong></div>
+      <div><span>Trạng thái hệ thống</span><strong id="live-page-system-health">—</strong><small id="live-page-system-detail">Đang kiểm tra…</small></div>
+      <div><span>Kết nối AI</span><strong id="live-page-ai-connections">—</strong><small id="live-page-ai-detail">—</small></div>
+      <div><span>Luồng đang hoạt động</span><strong id="live-page-flow-count">0</strong><small id="live-page-flow-detail">—</small></div>
+      <div><span>Token hôm nay</span><strong id="live-page-tokens-today">—</strong><small id="live-page-tokens-today-detail">—</small></div>
     </div>
     <div class="live-primary-grid">
       <section class="panel realtime-chart-panel" aria-label="Biểu đồ realtime">
@@ -661,9 +709,12 @@
         <div id="live-active-flow-list" class="active-flow-list"></div>
       </section>
     </div>
+    <div class="live-lower-grid">
     <div class="provider-zone-grid" aria-label="Provider live zones">
       <section class="panel provider-zone" id="live-zone-gpt"><div class="provider-zone-head"><div class="provider-zone-title"><span class="status-dot" data-zone-dot></span><h2>GPT</h2></div><span class="chip" data-zone-status>—</span></div><details class="live-provider-details"><summary>Chi tiết bên dưới</summary><div class="provider-zone-metrics"><div><span>Routes</span><b data-zone-routes>—</b></div><div><span>Sessions</span><b data-zone-sessions>—</b></div><div><span>Requests</span><b data-zone-requests>—</b></div><div><span>Live paths</span><b data-zone-flows>—</b></div></div><div class="provider-zone-body"><div class="provider-zone-routes" data-zone-route-list></div><div class="provider-zone-events"><div class="micro-label">RECENT</div><div data-zone-events></div></div></div></details></section>
       <section class="panel provider-zone" id="live-zone-claude"><div class="provider-zone-head"><div class="provider-zone-title"><span class="status-dot" data-zone-dot></span><h2>Claude</h2></div><span class="chip" data-zone-status>—</span></div><details class="live-provider-details"><summary>Chi tiết bên dưới</summary><div class="provider-zone-metrics"><div><span>Routes</span><b data-zone-routes>—</b></div><div><span>Sessions</span><b data-zone-sessions>—</b></div><div><span>Requests</span><b data-zone-requests>—</b></div><div><span>Live paths</span><b data-zone-flows>—</b></div></div><div class="provider-zone-body"><div class="provider-zone-routes" data-zone-route-list></div><div class="provider-zone-events"><div class="micro-label">RECENT</div><div data-zone-events></div></div></div></details></section>
+    </div>
+    <aside class="panel quick-stats-panel" aria-label="Thống kê nhanh"><div class="panel-head"><div><h3>Thống kê nhanh</h3><p>Realtime · không suy đoán dữ liệu thiếu</p></div></div><div class="quick-stat-list"><div class="quick-stat"><span>Luồng hoạt động</span><b id="live-quick-flows">0</b></div><div class="quick-stat"><span>Đang chờ AI</span><b id="live-quick-ai-wait">0</b></div><div class="quick-stat"><span>Tổng routes</span><b id="live-quick-routes">—</b></div><div class="quick-stat"><span>Token hôm nay</span><b id="live-quick-tokens">—</b></div></div></aside>
     </div>
     <section class="panel live-table-panel flow-table-compact">
       <div class="panel-head"><div><h3>Execution flows</h3></div><button type="button" class="section-action" data-kpi-view="work">Tasks →</button></div>
@@ -704,6 +755,18 @@
       <div class="card detail" id="task-detail">
         <div class="empty"><div><h3>Chọn một task</h3><p class="muted">Trạng thái, kết quả, evidence và feedback sẽ hiện ở đây.</p></div></div>
       </div>
+      <aside class="card task-create-panel" aria-label="Tạo task mới">
+        <div class="card-head"><div><h3>Tạo task mới</h3><div class="muted" style="font-size:11px">Tạo tác vụ AI mới với workspace và MAR scheduler.</div></div></div>
+        <form id="create-task-form" class="form-grid">
+          <label class="full">Workspace<select id="create-task-project" required><option value="">Chọn workspace</option></select></label>
+          <label class="full">Worker<select id="create-task-worker" disabled><option>Tự động · MAR scheduler</option></select></label>
+          <label class="full">Tiêu đề task<input id="create-task-title" maxlength="180" placeholder="Nhập tiêu đề ngắn gọn…" required></label>
+          <label class="full">Mô tả (tùy chọn)<textarea id="create-task-description" maxlength="1200" placeholder="Mô tả yêu cầu, kết quả mong muốn hoặc bối cảnh cần thiết…"></textarea></label>
+          <details class="full"><summary>Tùy chọn nâng cao</summary><div class="advanced-grid"><label>Verification<select id="create-task-verification"><option value="go-standard">go-standard</option><option value="go-docs">go-docs</option></select></label><label>Priority<select id="create-task-priority"><option value="P2">P2 · Normal</option><option value="P1">P1 · High</option><option value="P0">P0 · Critical</option><option value="P3">P3 · Low</option></select></label><label>Acceptance (mỗi dòng một tiêu chí)<textarea id="create-task-acceptance" placeholder="Để trống để MAR dùng acceptance mặc định an toàn."></textarea></label><div class="permission-row"><label><input id="create-task-file-write" type="checkbox"> Cho phép sửa file</label><label><input id="create-task-git-write" type="checkbox"> Cho phép local Git</label></div></div></details>
+          <div id="create-task-error" class="notice error hidden full"></div>
+          <div class="form-actions full"><button type="reset" id="reset-create-task">Hủy</button><button type="submit" class="primary" id="submit-create-task">Tạo task</button></div>
+        </form>
+      </aside>
     </div>
   </section>
 
@@ -814,7 +877,7 @@ function renderProviderZone(provider,hostId){const host=$(hostId);if(!host)retur
 function renderProviderZones(){renderProviderZone('GPT','live-zone-gpt');renderProviderZone('Claude','live-zone-claude');}
 function renderFlowTable(){const host=$('live-flow-rows');if(!host)return;const rows=liveFlowRows();if(!rows.length){host.innerHTML='<tr><td colspan="7">No active flow</td></tr>';return;}host.innerHTML=rows.map(r=>`<tr><td><span class="flow-id" title="${esc(r.flowId)}">${esc(r.task.goal||r.task.id)}</span><span class="flow-sub">${esc(r.task.id.slice(0,12))} · e${fmtTokens(r.task.run_epoch||0)}</span></td><td><span class="flow-state ${flowStateClass(r)}">${esc(r.state)}</span></td><td>${esc(r.task.project_id||'—')}</td><td>${r.tokens===null?'—':`~${fmtTokens(r.tokens)}`}</td><td>${r.turns===null?'—':fmtTokens(r.turns)}</td><td>${r.last?fmtTime(r.last):'—'}</td><td title="${esc(r.source)}">${r.source.includes('Web Brain')?'Web Brain':'Runtime'}</td></tr>`).join('');}
 function renderRouteTable(){const host=$('live-route-rows');if(!host)return;const rows=operationalConnectors();if(!rows.length){host.innerHTML='<tr><td colspan="6">Chưa có route telemetry.</td></tr>';return;}host.innerHTML=rows.map(c=>{const sessions=c.active_sessions_available?fmtTokens(c.active_sessions||0):'—';const last=c.last_activity_at||c.last_seen_at||'';return `<tr><td>${esc(connectorProvider(c))}</td><td><span class="flow-id">${esc(c.name||c.id)}</span><span class="flow-sub">${esc(c.transport||'')}</span></td><td><span class="flow-state ${connectionHasActionableError(c)?'error':(routeReachable(c)?'live':'waiting')}">${esc(runtimeFresh?humanConnectorStatus(c.status):'Telemetry stale')}</span></td><td title="${esc(c.session_count_detail||'')}">${sessions}</td><td>${Number.isFinite(Number(c.requests))?fmtTokens(c.requests||0):'—'}</td><td>${last?fmtTime(last):'—'}</td></tr>`;}).join('');}
-function renderLivePage(){const flows=liveFlowRows();const sessions=sessionSummary();const routes=routeSummary();const aggregate=liveUsageAggregate();const waiting=flows.filter(f=>f.waitingAI).length;$('live-page-flow-count').textContent=fmtTokens(flows.length);$('live-page-ai-wait').textContent=fmtTokens(waiting);$('live-page-session-count').textContent=sessions.available?(sessions.unknownRoutes?`${fmtTokens(sessions.sessions)} + ?`:fmtTokens(sessions.sessions)):'—';$('live-page-session-detail').textContent='';$('live-page-route-count').textContent=runtimeFresh?`${routes.reachable}/${routes.total}`:'—';$('live-page-route-detail').textContent='';$('live-page-token-total').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.total)}`:'—';$('live-page-token-input').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.input)}`:'—';$('live-page-token-output').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.output)}`:'—';const rate=observedTokenRate();$('live-page-token-rate').textContent=rate===null?'—':`~${fmtTokens(Math.round(rate))}/min`;$('live-page-last-observed').textContent=runtimeFresh?new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}):'stale';$('live-page-poll-state').textContent=runtimeFresh?'2s':'stale';renderProviderZones();renderFlowTable();renderActiveFlowList();renderLiveSparkline('live-page-token-sparkline');}
+function renderLivePage(){const flows=liveFlowRows();const routes=routeSummary();const aggregate=liveUsageAggregate();const waiting=flows.filter(f=>f.waitingAI).length;const health=operationalHealth();const primary=primaryConnections();const connected=runtimeFresh?primary.filter(c=>activeConnector(c)||routeReachable(c)).length:0;$('live-page-system-health').textContent=health.state==='operational'?'Hoạt động tốt':(health.state==='degraded'?'Suy giảm':(health.state==='action'?'Cần xử lý':'Không khả dụng'));$('live-page-system-detail').textContent=health.state==='operational'?'Tất cả dịch vụ đều ổn định':health.detail;$('live-page-ai-connections').textContent=runtimeFresh?`${connected} / ${primary.length}`:'—';$('live-page-ai-detail').textContent=runtimeFresh?'Provider/route sẵn sàng hiện tại':'Telemetry stale';$('live-page-flow-count').textContent=fmtTokens(flows.length);$('live-page-flow-detail').textContent=flows.length?'Execution flow đang chạy':'Không có flow đang chạy';$('live-page-tokens-today').textContent=usage?usageMeasuredValue(usage.today):'—';$('live-page-tokens-today-detail').textContent=usage?usageDetail(usage.today):'Đang tải usage';$('live-page-token-total').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.total)}`:'—';$('live-page-token-input').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.input)}`:'—';$('live-page-token-output').textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.output)}`:'—';const rate=observedTokenRate();$('live-page-token-rate').textContent=rate===null?'—':`~${fmtTokens(Math.round(rate))}/min`;$('live-page-poll-state').textContent=runtimeFresh?'2s':'stale';$('live-quick-flows').textContent=fmtTokens(flows.length);$('live-quick-ai-wait').textContent=fmtTokens(waiting);$('live-quick-routes').textContent=runtimeFresh?`${routes.reachable}/${routes.total}`:'—';$('live-quick-tokens').textContent=usage?usageMeasuredValue(usage.today):'—';renderProviderZones();renderFlowTable();renderActiveFlowList();renderLiveSparkline('live-page-token-sparkline');}
 function renderLiveOperations(){const aggregate=liveUsageAggregate();const routes=routeSummary();const activity=$('live-connection-activity');if(activity)activity.textContent=runtimeFresh?`${routes.reachable} / ${routes.total}`:'—';const detail=$('live-connection-detail');if(detail)detail.textContent=runtimeFresh?(operationalConnectors().map(c=>`${connectorProvider(c)} ${c.id==='openai-tunnel'?'tunnel':'route'}: ${humanConnectorStatus(c.status)}`).join(' · ')||'No route metadata'):'Telemetry stale';const total=$('live-token-total');if(total)total.textContent=aggregate.tokensAvailable?`~${fmtTokens(aggregate.total)}`:'—';const tokenDetail=$('live-token-detail');if(tokenDetail)tokenDetail.textContent=aggregate.available?(aggregate.tokensAvailable?`${fmtTokens(aggregate.input)} in · ${fmtTokens(aggregate.output)} out · ${aggregate.pending} pending`:'Waiting for first completed Web Brain turn'):'No active Web Brain telemetry';const rate=observedTokenRate();const rateEl=$('live-token-rate');if(rateEl)rateEl.textContent=rate===null?'—':`~${fmtTokens(Math.round(rate))}/min`;const turns=$('live-turns');if(turns)turns.textContent=aggregate.available?fmtTokens(aggregate.turns):'—';const turnDetail=$('live-turn-detail');if(turnDetail)turnDetail.textContent=aggregate.available?`${aggregate.telemetryTasks}/${aggregate.activeTasks} active flow${aggregate.activeTasks===1?'':'s'} observable`:'Current execution epoch';const last=$('live-last-observed');if(last)last.textContent=runtimeFresh?`observed ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`:'stale';const poll=$('live-poll-state');if(poll)poll.textContent=runtimeFresh?'observing every 2s':'observation stale';renderLiveSparkline();renderEventStream('live-event-stream');renderLivePage();}
 
 function renderFreshness(){const el=$('telemetry-freshness');if(runtimeFresh){el.textContent=`Telemetry: live · ${new Date(runtimeLastSuccessAt).toLocaleTimeString('vi-VN')}`;}else{el.textContent='Telemetry: stale / unavailable';}}
@@ -822,7 +885,7 @@ function markRuntimeStale(err){runtimeFresh=false;renderFreshness();$('connectio
 
 async function loadRuntime(){
   runtime=await api('/api/runtime');runtimeFresh=true;runtimeLastSuccessAt=Date.now();renderFreshness();
-  $('runtime-badges').innerHTML=`<span class="badge">uptime: ${esc(fmtDuration(runtime.uptime_seconds))}</span><span class="badge">model: ${esc(runtime.model||'default')}</span><span class="badge">workers: ${esc(runtime.max_workers||'—')}</span>`;
+  $('runtime-badges').innerHTML=`<span class="badge">Uptime: ${esc(fmtDuration(runtime.uptime_seconds))}</span><span class="badge">Model: ${esc(runtime.model||'default')}</span><span class="badge">Workers: ${esc(runtime.max_workers||'—')}</span><span class="owner-avatar" aria-label="Owner">T</span>`;
   $('runtime-raw').textContent=JSON.stringify(runtime,null,2);
   $('work-readiness').textContent=runtime.brain_next_action||'Kiểm tra tab Kết nối AI trước khi chạy task mới.';
   $('connection-summary').textContent=runtime.brain_next_action||'';
@@ -976,7 +1039,14 @@ async function downloadClaudePackage(button){
 }
 
 async function loadProjects(){const data=await api('/api/projects');projects=data.projects||[];renderProjects();renderWorkspaceFilter();renderOverview();}
-function renderWorkspaceFilter(){const select=$('workspace-filter');const available=new Set(projects.map(p=>p.id));if(selectedWorkspace&&!available.has(selectedWorkspace)){selectedWorkspace='';persistWorkspace('');}select.innerHTML='<option value="">Tất cả workspaces</option>'+projects.map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('');select.value=selectedWorkspace;}
+function renderWorkspaceFilter(){const select=$('workspace-filter');const available=new Set(projects.map(p=>p.id));if(selectedWorkspace&&!available.has(selectedWorkspace)){selectedWorkspace='';persistWorkspace('');}select.innerHTML='<option value="">Tất cả workspaces</option>'+projects.map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('');select.value=selectedWorkspace;renderCreateTaskWorkspaceOptions();}
+function renderCreateTaskWorkspaceOptions(){const select=$('create-task-project');if(!select)return;const current=select.value;select.innerHTML='<option value="">Chọn workspace</option>'+projects.filter(p=>p.supported).map(p=>`<option value="${esc(p.id)}">${esc(p.id)}</option>`).join('');if(current&&projects.some(p=>p.id===current&&p.supported))select.value=current;else if(selectedWorkspace&&projects.some(p=>p.id===selectedWorkspace&&p.supported))select.value=selectedWorkspace;syncCreateTaskPolicy();}
+function syncCreateTaskPolicy(){const select=$('create-task-project');if(!select)return;const project=projects.find(p=>p.id===select.value);$('create-task-file-write').checked=!!project?.policy?.local_file_write;$('create-task-git-write').checked=!!project?.policy?.local_git_write;}
+function ownerCreateTaskLines(value){return String(value||'').split(/\r?\n/).map(v=>v.trim()).filter(Boolean);}
+async function submitOwnerTaskFromPanel(){const projectID=$('create-task-project').value.trim();const project=projects.find(p=>p.id===projectID);const title=$('create-task-title').value.trim();const description=$('create-task-description').value.trim();if(!project||!project.head)throw new Error('Workspace chưa có Git HEAD hợp lệ.');if(!title)throw new Error('Tiêu đề task là bắt buộc.');const acceptance=ownerCreateTaskLines($('create-task-acceptance').value);const goal=description?`${title}\n\n${description}`:title;const payload={project_id:projectID,base_revision:project.head,goal,acceptance:acceptance.length?acceptance:['Hoàn thành đúng kết quả Owner yêu cầu và giữ hành vi không liên quan ổn định.','Các verification phù hợp với phạm vi thay đổi phải PASS trước khi coi candidate hoàn tất.'],boundaries:[`Chỉ thay đổi project ${projectID}; không push/deploy từ Owner Console.`],non_goals:['Không mở rộng kiến trúc hoặc tính năng ngoài yêu cầu task nếu không cần để hoàn thành goal.'],verification_profile:$('create-task-verification').value||'go-standard',priority:$('create-task-priority').value||'P2',local_file_write:$('create-task-file-write').checked,local_git_write:$('create-task-git-write').checked,network_allowed:false};await api('/api/tasks',{method:'POST',body:JSON.stringify(payload)});}
+$('create-task-project').addEventListener('change',syncCreateTaskPolicy);
+$('create-task-form').addEventListener('submit',async e=>{e.preventDefault();setError('create-task-error');const btn=$('submit-create-task');const label=btn.textContent;btn.disabled=true;btn.textContent='Đang tạo…';try{await submitOwnerTaskFromPanel();e.currentTarget.reset();renderCreateTaskWorkspaceOptions();await loadTasks();activateView('work');}catch(err){setError('create-task-error',err.message);}finally{btn.disabled=false;btn.textContent=label;}});
+$('create-task-form').addEventListener('reset',()=>{setTimeout(()=>{setError('create-task-error');renderCreateTaskWorkspaceOptions();},0);});
 function renderProjects(){
   const host=$('project-list'); host.innerHTML='';
   if(!projects.length){host.innerHTML='<div class="empty">Chưa có dự án. Thêm Git repository local ở bên trái.</div>';return;}
@@ -1029,7 +1099,7 @@ async function refreshSelectedTask(){if(!selectedTaskId)return;const detail=$('t
   if(statusRes.status!=='fulfilled')throw statusRes.reason;const s=statusRes.value.status||{};const task=s.task||{};const state=(task.state||'').toUpperCase();const result=resultRes.status==='fulfilled'?(resultRes.value.result||null):null;const inspect=inspectRes.status==='fulfilled'?inspectRes.value:null;const feedback=feedbackRes.status==='fulfilled'?(feedbackRes.value.feedback||[]):[];if(inspect)$('advanced-inspect').textContent=JSON.stringify(inspect,null,2);
   const resultBlock=result?`<div class="grid"><div class="metric card span-4"><span class="muted">Verification</span><b>${esc(result.verdict||'—')}</b></div><div class="metric card span-4"><span class="muted">Integration</span><b>${esc(result.integration_status||'—')}</b></div><div class="metric card span-4"><span class="muted">Revision</span><b style="font-size:13px">${esc((result.final_revision||'—').slice(0,16))}</b></div></div><details><summary>Evidence / changed areas</summary><pre>${esc(JSON.stringify({changed_areas:result.changed_areas,pass_fail_evidence:result.pass_fail_evidence,unresolved_risks:result.unresolved_risks,resource_summary:result.resource_summary},null,2))}</pre></details>`:'<div class="muted">Chưa có durable result.</div>';
   const brain=!!s.brain_turn_available;const needsInput=state==='INPUT_REQUIRED'&&!brain;const ownerNarrative=taskOwnerNarrative(state,s,brain);const stage=taskStageLabel(state);
-  detail.innerHTML=`<div class="card-head"><div><div class="muted" style="font-size:12px">${esc(task.contract?.project_id||'')} · ${esc(stage)}</div><h2>${esc(task.contract?.goal||selectedTaskId)}</h2><div class="project-path muted">${esc(selectedTaskId)}</div></div><span class="chip product-stage" title="Technical state: ${esc(state||'UNKNOWN')}">${esc(stage)}</span></div><div class="notice ${needsInput?'warn':''}"><b>${needsInput?'Bạn cần làm: ':'Hiện tại: '}</b>${esc(ownerNarrative)}<div class="muted" style="font-size:11px;margin-top:5px">Technical state: ${esc(state||'UNKNOWN')}</div></div>${resultBlock}${needsInput?`<div class="stack"><label>MAR cần thông tin từ bạn<textarea id="task-input" placeholder="Chỉ trả lời phần thông tin/quyết định còn thiếu."></textarea></label><button id="send-task-input" class="primary" type="button">Gửi và tiếp tục</button></div>`:''}<div class="actions"><button id="detail-refresh" type="button">Làm mới</button><button id="detail-cancel" type="button" ${terminalStates.has(state)?'disabled':''}>Hủy task</button></div>${result?`<div class="stack"><h3>Phản hồi của bạn</h3><textarea id="feedback-message" placeholder="Bạn thấy gì khi dùng thật? Có gì khó hiểu hoặc chưa đúng?"></textarea><div class="feedback-actions"><button type="button" data-feedback="ACCEPTED">Chấp nhận</button><button type="button" data-feedback="REJECTED">Chưa đạt</button><button type="button" data-feedback="COMMENT">Chỉ ghi chú</button></div><div id="feedback-error" class="notice error hidden"></div><div class="feedback-history">${feedback.map(f=>`<div class="feedback-item"><b>${esc(f.verdict)}</b> · ${fmtTime(f.created_at)}<div>${esc(f.message||'')}</div><div class="muted project-path">${esc((f.candidate_revision||'').slice(0,16))}</div></div>`).join('')||'<div class="muted">Chưa có feedback.</div>'}</div></div>`:''}`;
+  detail.innerHTML=`<div class="card-head"><div><div class="muted" style="font-size:12px">${esc(task.contract?.project_id||'')} · ${esc(stage)}</div><h2>${esc(task.contract?.goal||selectedTaskId)}</h2><div class="project-path muted">${esc(selectedTaskId)}</div></div><span class="chip product-stage" title="Technical state: ${esc(state||'UNKNOWN')}">${esc(stage)}</span></div><div class="task-detail-tabs" role="tablist" aria-label="Task detail"><button type="button" class="active" role="tab" aria-selected="true">Tổng quan</button><button type="button" role="tab" disabled>Nhật ký</button><button type="button" role="tab" disabled>Tệp đính kèm (0)</button></div><div class="notice ${needsInput?'warn':''}"><b>${needsInput?'Bạn cần làm: ':'Hiện tại: '}</b>${esc(ownerNarrative)}<div class="muted" style="font-size:11px;margin-top:5px">Technical state: ${esc(state||'UNKNOWN')}</div></div>${resultBlock}${needsInput?`<div class="stack"><label>MAR cần thông tin từ bạn<textarea id="task-input" placeholder="Chỉ trả lời phần thông tin/quyết định còn thiếu."></textarea></label><button id="send-task-input" class="primary" type="button">Gửi và tiếp tục</button></div>`:''}<div class="actions"><button id="detail-refresh" type="button">Làm mới</button><button id="detail-cancel" type="button" ${terminalStates.has(state)?'disabled':''}>Hủy task</button></div>${result?`<div class="stack"><h3>Phản hồi của bạn</h3><textarea id="feedback-message" placeholder="Bạn thấy gì khi dùng thật? Có gì khó hiểu hoặc chưa đúng?"></textarea><div class="feedback-actions"><button type="button" data-feedback="ACCEPTED">Chấp nhận</button><button type="button" data-feedback="REJECTED">Chưa đạt</button><button type="button" data-feedback="COMMENT">Chỉ ghi chú</button></div><div id="feedback-error" class="notice error hidden"></div><div class="feedback-history">${feedback.map(f=>`<div class="feedback-item"><b>${esc(f.verdict)}</b> · ${fmtTime(f.created_at)}<div>${esc(f.message||'')}</div><div class="muted project-path">${esc((f.candidate_revision||'').slice(0,16))}</div></div>`).join('')||'<div class="muted">Chưa có feedback.</div>'}</div></div>`:''}`;
   $('detail-refresh').addEventListener('click',refreshSelectedTask);$('detail-cancel').addEventListener('click',async()=>{if(!confirm('Yêu cầu MAR hủy task này?'))return;try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/cancel`,{method:'POST',body:'{}'});await loadTasks();}catch(err){alert(err.message);}});
   if(needsInput)$('send-task-input').addEventListener('click',async()=>{const message=$('task-input').value.trim();if(!message)return;try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/input`,{method:'POST',body:JSON.stringify({message})});await loadTasks();}catch(err){alert(err.message);}});
   detail.querySelectorAll('[data-feedback]').forEach(btn=>btn.addEventListener('click',async()=>{const verdict=btn.dataset.feedback;const message=$('feedback-message').value.trim();setError('feedback-error');try{await api(`/api/tasks/${encodeURIComponent(selectedTaskId)}/feedback`,{method:'POST',body:JSON.stringify({verdict,message})});await loadTasks();}catch(err){setError('feedback-error',err.message);}}));
