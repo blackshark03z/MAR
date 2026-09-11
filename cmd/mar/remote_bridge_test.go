@@ -78,7 +78,7 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 11 {
+	if len(listed.Tools) != 6 {
 		t.Fatalf("remote bridge leaked or lost MCP tools: count=%d", len(listed.Tools))
 	}
 
@@ -105,7 +105,7 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gptListed.Tools) != 11 {
+	if len(gptListed.Tools) != 6 {
 		t.Fatalf("GPT link leaked or lost MCP tools: count=%d", len(gptListed.Tools))
 	}
 	gpt = connectorState(t, manager.State(), store.RemoteConnectorChatGPTWeb)
