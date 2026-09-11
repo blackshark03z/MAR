@@ -210,6 +210,15 @@ func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 	}
 }
 
+func TestOwnerUIWorkspaceSelectionAndSidebarAlignmentContract(t *testing.T) {
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"workspace-scope-select", "workspace-select-button", ".workspace-card.selected", "grid-template-columns:24px", "hashchange", "mar.owner.workspace.react.v1", "pickProject", "form-error"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React workspace/sidebar contract missing %q", marker)
+		}
+	}
+}
+
 func TestOwnerUITaskFlowIdentityIncludesRunEpoch(t *testing.T) {
 	payload, err := json.Marshal(ownerTaskView{ID: "task-1", ProjectID: "mar", Goal: "observe flow", State: domain.TaskRunning, RunEpoch: 7})
 	if err != nil {

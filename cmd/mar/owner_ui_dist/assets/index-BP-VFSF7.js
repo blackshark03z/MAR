@@ -13080,6 +13080,7 @@ function TrendChart({ samples }) {
 	});
 }
 function Shell({ view, setView, runtime, workspace, setWorkspace, projects, children }) {
+	const health = systemHealth(runtime);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "app-shell",
 		children: [
@@ -13096,6 +13097,8 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "topbar-center",
 						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Workspace", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+							id: "workspace-scope-select",
+							"aria-label": "Chọn workspace đang theo dõi",
 							value: workspace,
 							onChange: (e) => setWorkspace(e.target.value),
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
@@ -13111,8 +13114,12 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
 						className: "runtime-pills",
 						children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: "runtime-pill live",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), "Telemetry: live"]
+								className: `runtime-pill ${runtime ? "live" : ""}`,
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }),
+									"Telemetry: ",
+									runtime ? "live" : "unavailable"
+								]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 								className: "runtime-pill",
@@ -13158,8 +13165,8 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
 						}, item.id);
 					}) }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "sidebar-health",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Hệ thống hoạt động" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "Mọi thứ đang ổn định" })] })]
+						className: `sidebar-health ${health.tone}`,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: health.detail })] })]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "sidebar-version",
@@ -13971,11 +13978,47 @@ function CreateTaskPanel({ projects, preferredWorkspace, onCreated }) {
 		]
 	});
 }
-function WorkspacesPage({ projects, reload }) {
-	const [root, setRoot] = (0, import_react.useState)(""), [id, setId] = (0, import_react.useState)(""), [busy, setBusy] = (0, import_react.useState)(false);
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
+	const [root, setRoot] = (0, import_react.useState)(""), [id, setId] = (0, import_react.useState)(""), [busy, setBusy] = (0, import_react.useState)(false), [pickerBusy, setPickerBusy] = (0, import_react.useState)(false), [error, setError] = (0, import_react.useState)("");
+	async function chooseFolder() {
+		setPickerBusy(true);
+		setError("");
+		try {
+			const r = await pickProject();
+			if (r.path) setRoot(r.path);
+		} catch (e) {
+			setError(e?.message || "Không mở được trình chọn thư mục.");
+		} finally {
+			setPickerBusy(false);
+		}
+	}
+	async function register() {
+		if (!root) return;
+		setBusy(true);
+		setError("");
+		try {
+			const created = await addProject(root, id);
+			setRoot("");
+			setId("");
+			await reload();
+			if (created?.project_id) setWorkspace(created.project_id);
+		} catch (e) {
+			setError(e?.message || "Không thể thêm workspace.");
+		} finally {
+			setBusy(false);
+		}
+	}
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "page-header",
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Workspaces" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Đăng ký Git repository local và quyền mặc định." })] })
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Workspaces" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Đăng ký Git repository local và quyền mặc định." })] }), workspace && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+			className: "scope-button",
+			onClick: () => setWorkspace(""),
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleX, { size: 15 }),
+				"Bỏ lọc: ",
+				workspace
+			]
+		})]
 	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: "workspace-grid",
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -13991,11 +14034,12 @@ function WorkspacesPage({ projects, reload }) {
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Thư mục Git repository", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "picker",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						onClick: async () => {
-							const r = await pickProject();
-							if (r.path) setRoot(r.path);
-						},
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 16 }), "Chọn thư mục"]
+						disabled: pickerBusy,
+						onClick: chooseFolder,
+						children: [pickerBusy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+							className: "spin",
+							size: 16
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 16 }), "Chọn thư mục"]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
 						value: root,
 						onChange: (e) => setRoot(e.target.value),
@@ -14014,21 +14058,18 @@ function WorkspacesPage({ projects, reload }) {
 						placeholder: "Tự tạo nếu để trống"
 					})
 				] }),
+				error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "form-error",
+					children: error
+				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 					className: "primary-button",
 					disabled: !root || busy,
-					onClick: async () => {
-						setBusy(true);
-						try {
-							await addProject(root, id);
-							setRoot("");
-							setId("");
-							await reload();
-						} finally {
-							setBusy(false);
-						}
-					},
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 16 }), "Thêm workspace"]
+					onClick: register,
+					children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+						className: "spin",
+						size: 16
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 16 }), "Thêm workspace"]
 				})
 			]
 		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -14047,27 +14088,36 @@ function WorkspacesPage({ projects, reload }) {
 				className: "workspace-cards",
 				children: projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorkspaceCard, {
 					p,
-					reload
+					reload,
+					selected: workspace === p.id,
+					onSelect: () => setWorkspace(p.id)
 				}, p.id))
 			})]
 		})]
 	})] });
 }
-function WorkspaceCard({ p, reload }) {
+function WorkspaceCard({ p, reload, selected, onSelect }) {
 	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write);
 	(0, import_react.useEffect)(() => {
 		setFile(!!p.policy?.local_file_write);
 		setGit(!!p.policy?.local_git_write);
 	}, [p]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "workspace-card",
+		className: `workspace-card ${selected ? "selected" : ""}`,
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "workspace-title",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: p.id }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-					className: `support-chip ${p.supported ? "ok" : "bad"}`,
-					children: p.supported ? "Sẵn sàng" : "Chưa hỗ trợ"
-				})]
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: p.id }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: `support-chip ${p.supported ? "ok" : "bad"}`,
+						children: p.supported ? "Sẵn sàng" : "Chưa hỗ trợ"
+					}),
+					selected && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "support-chip selected-chip",
+						children: "Đang chọn"
+					})
+				]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: p.root }),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: p.head ? `HEAD ${String(p.head).slice(0, 12)}` : p.support_reason || p.head_error || "HEAD unavailable" })
@@ -14085,6 +14135,12 @@ function WorkspaceCard({ p, reload }) {
 					onChange: (e) => setGit(e.target.checked)
 				}), "Local Git"] }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Network / push / deploy: off" }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					className: `workspace-select-button ${selected ? "selected" : ""}`,
+					onClick: onSelect,
+					disabled: selected,
+					children: selected ? "Đang chọn" : "Chọn"
+				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					onClick: async () => {
 						await updateProjectPolicy(p.id, file, git);
@@ -14424,11 +14480,20 @@ function App() {
 			await Promise.allSettled([reloadRuntime(), reloadTasks()]);
 		}, 2e3);
 		const usageTimer = setInterval(reloadUsage, 3e4);
+		const onHashChange = () => {
+			const next = window.location.hash.replace("#/", "") || "live";
+			if (views.some((v) => v.id === next)) setViewState(next);
+		};
+		window.addEventListener("hashchange", onHashChange);
 		return () => {
 			clearInterval(timer);
 			clearInterval(usageTimer);
+			window.removeEventListener("hashchange", onHashChange);
 		};
 	}, []);
+	(0, import_react.useEffect)(() => {
+		if (workspace && projects.length && !projects.some((p) => p.id === workspace)) setWorkspace("");
+	}, [projects, workspace]);
 	(0, import_react.useEffect)(() => {
 		reloadUsage();
 	}, [workspace]);
@@ -14470,7 +14535,9 @@ function App() {
 	});
 	else if (view === "workspaces") content = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorkspacesPage, {
 		projects,
-		reload: reloadProjects
+		reload: reloadProjects,
+		workspace,
+		setWorkspace
 	});
 	else if (view === "connections") content = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ConnectionsPage, {
 		runtime,
