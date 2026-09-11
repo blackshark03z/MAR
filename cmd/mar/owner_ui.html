@@ -653,8 +653,8 @@
   </div>
 </header>
 <nav aria-label="MAR sections">
-  <button data-view="overview" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">⌂</span><span>Tổng quan</span></button>
-  <button data-view="live"><span class="nav-icon" aria-hidden="true">⌁</span><span>Live Operations</span></button>
+  <button data-view="overview"><span class="nav-icon" aria-hidden="true">⌂</span><span>Tổng quan</span></button>
+  <button data-view="live" class="active" aria-current="page"><span class="nav-icon" aria-hidden="true">⌁</span><span>Live Operations</span></button>
   <button data-view="work"><span class="nav-icon" aria-hidden="true">▣</span><span>Tasks</span></button>
   <button data-view="projects"><span class="nav-icon" aria-hidden="true">□</span><span>Workspaces</span></button>
   <button data-view="connections"><span class="nav-icon" aria-hidden="true">⛓</span><span>Connections</span></button>
@@ -662,7 +662,7 @@
   <button data-view="advanced"><span class="nav-icon" aria-hidden="true">⚙</span><span>Diagnostics</span></button>
 </nav>
 <main>
-  <section id="view-overview" class="view active">
+  <section id="view-overview" class="view">
     <div class="page-heading v4-heading"><div><h1>Operations</h1></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> LIVE</span><span id="live-poll-state">2s</span></div></div>
     <section id="operational-answer" class="ops-answer" data-state="unavailable" aria-live="polite" aria-atomic="true">
       <div><span class="ops-eyebrow">Right now</span><div class="ops-answer-line"><span class="ops-state-mark" aria-hidden="true"></span><h2 id="overview-health">Đang kiểm tra…</h2></div><p id="overview-health-detail">Đang đọc sandbox, connections và telemetry hiện tại.</p></div>
@@ -687,7 +687,7 @@
     </div>
   </section>
 
-  <section id="view-live" class="view">
+  <section id="view-live" class="view active">
     <div class="page-heading live-page-heading"><div><h1>Live Operations</h1><p>Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR.</p></div><div class="live-clock" role="status" aria-live="polite"><span class="live-beacon"><i aria-hidden="true"></i> ĐANG HOẠT ĐỘNG</span><span id="live-page-poll-state">2s</span></div></div>
     <div class="live-summary-strip" aria-label="Live operation summary">
       <div><span>Trạng thái hệ thống</span><strong id="live-page-system-health">—</strong><small id="live-page-system-detail">Đang kiểm tra…</small></div>
