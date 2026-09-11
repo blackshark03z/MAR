@@ -6,6 +6,14 @@
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
 
+## React Owner Console interaction closeout — 2026-09-11
+
+Owner UAT found three real interaction defects after the React migration: the Tasks list could retain horizontal scroll and clip the beginning of titles; the Windows-native folder picker could remain behind Chrome and leave `Chọn thư mục` apparently hung; and the Claude Web card reported route readiness without exposing the capability URL or useful ready-state actions. Source commit `f882de9ed6e9cb7aa36c1969d4bf787316e26b50` closes these defects without changing MAR execution authority.
+
+Tasks now enforce vertical-only list scrolling. Workspace registration uses a same-origin/session-protected React folder browser backed by `/api/projects/browse`; direct path entry remains supported, successful add reads `project.id` from the backend response, resets the form, and selects the resulting workspace. Claude Web now renders the active stable/temporary capability URL, exposes `Sao chép link`, surfaces diagnose feedback, retains details, and only shows `Kết nối` while the route is not ready. GPT fallback and Claude remain independent capability paths.
+
+Verification: React TypeScript/Vite build PASS; Owner UI-only tests PASS; browser interaction smoke PASS for task-list overflow and workspace browse/add; exact full sequential repository tests PASS; `internal/verification` recheck PASS; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS; `git diff --check` PASS. Final source binary from the source commit is `D:\\MAR\\.mar\\runtime\\mar-head-f882de9.exe`, SHA-256 `63A10638A4CC6AD2F4C4FA3F1FF045D0A7FFF371A6E742C8CBD29DE55A2B5295`. After restart the temporary remote bridge completed its bounded startup and returned `LINK_READY`; final browser DOM evidence showed the Claude capability URL plus copy/diagnose/detail actions and no connect/play action while ready. Product acceptance still requires Owner real-use confirmation.
+
 ## React Owner Console workspace/layout UAT correction — 2026-09-11
 
 Owner UAT after the React migration exposed two real surface defects: sidebar icon/text columns were visually inconsistent and workspace selection was not obvious/usable from the Workspaces surface. Source commit `97ca22e` fixes these without changing MAR backend authority. Sidebar navigation now uses a fixed 24px icon column with zero measured icon/text alignment spread; the topbar and content grid share the same 230px shell boundary; workspace cards expose explicit `Chọn / Đang chọn` state synchronized with the persistent topbar selector; folder picker/add-project failures are surfaced instead of failing silently; selected workspace can be cleared; stale local workspace selection is reconciled; hash back/forward navigation updates React view state; sidebar system health now derives from runtime truth instead of a hard-coded healthy label. Connection/status chips and desktop widths are bounded to avoid overflow.
