@@ -5,6 +5,13 @@
 **Branch:** `master`
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
+## Owner Console visual landing correction — 2026-09-11
+
+Owner UAT of the integrated v7 runtime found a real acceptance defect: the new Live Operations and three-column Tasks surfaces existed, but the static HTML still marked the legacy `Overview / Operations` view and Overview navigation item as the default active landing state. A normal refresh therefore looked materially unchanged from v6 even though the new components were present.
+
+Source commit `5b352b1` corrects the product entry point without changing backend authority or telemetry: `Live Operations` is now the default active navigation/view, legacy Overview remains available as a secondary page, and a regression explicitly fails if `view-overview` becomes the default again. The correction passed targeted `cmd/mar`, full sequential repository tests, `go vet -p 1 ./...`, and `go build -p 1 ./...`. A live preview on `127.0.0.1:8787` returned HTTP 200 and confirmed `LIVE_NAV_ACTIVE=True`, `LIVE_VIEW_ACTIVE=True`, `OVERVIEW_ACTIVE=False`.
+
+This correction closes the specific "looks unchanged after refresh" defect. It does **not** by itself establish `PRODUCT_ACCEPTED`; Owner must still visually use Live Operations and Tasks and accept/reject the final experience.
 
 **Baseline closeout source:** `84c39c168f6bb6560721a899216d6acb4807aab3` (`Stabilize owned tunnel process lifecycle`). The Owner Console v5/process-lifecycle closeout was already sealed and fully VERIFIED in the preceding self-hosted task; this repair carries that reviewed handoff forward while fixing the transient integration-retry defect that prevented authoritative promotion. `ENGINEERING_STABLE` is an engineering claim only: Owner Console product-experience acceptance remains dependent on explicit Owner real-use feedback and is not promoted to `PRODUCT_ACCEPTED` by tests.
 
