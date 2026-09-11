@@ -5,6 +5,16 @@
 **Branch:** `master`
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
+
+## Owner Console React migration — 2026-09-11
+
+Owner Console presentation has been migrated from the accumulated single-file v3-v7 HTML/CSS/JavaScript stack to a React 19 + TypeScript + Vite frontend with Lucide SVG icons. The integrated source commit is `e2424215fbd5d303f5335d4ae10019a4ca4f606d`, fast-forwarded from authoritative base `680dfc039e696393292e1886337d474be4c1239e` with no merge commit. MAR backend authority, SQLite truth, task lifecycle, sandbox, MCP, Decision Projection, budgets and existing `/api/*` contracts are unchanged.
+
+Frontend source lives under `ui/owner-console/`. Vite builds production assets into `cmd/mar/owner_ui_dist/`; Go embeds and serves that static bundle from the same `mar.exe`, so Node/Vite is a build-time dependency only and is not required at runtime. The default React route is Live Operations. The UI keeps separate Live Operations, Tasks, Workspaces, Connections, Usage and Diagnostics surfaces; Tasks remains a three-column owner workflow; Lucide replaces production Unicode/emoji glyph icons.
+
+Verification on the isolated candidate: `npm run check` PASS; `npm run build` PASS; targeted Owner Console tests PASS; Windows/process-focused packages PASS; exact full sequential repository tests PASS; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS. `node_modules`, TypeScript build cache and the managed-Go test fixture are ignored and were not committed. The embedded production bundle is committed so release builds remain deterministic without requiring Node at runtime.
+
+Engineering status remains `ENGINEERING_STABLE_PENDING_OWNER_UAT`. React migration fixes the UI maintainability/icon-system root cause, but visual/product acceptance still requires Owner real-use after the integrated binary is restarted and smoke-tested.
 ## Owner Console visual landing correction — 2026-09-11
 
 Owner UAT of the integrated v7 runtime found a real acceptance defect: the new Live Operations and three-column Tasks surfaces existed, but the static HTML still marked the legacy `Overview / Operations` view and Overview navigation item as the default active landing state. A normal refresh therefore looked materially unchanged from v6 even though the new components were present.
