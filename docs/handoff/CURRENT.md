@@ -30,9 +30,25 @@ Bootstrap note: the long-running Slice 4 development task itself had already acc
 
 Known follow-up: an unclean MAR restart can still lose in-memory `TerminationProof` even when the Windows Job Object has already killed the worker tree, leaving a logically fenced task unable to prove physical termination after process restart. That recovery mechanism is intentionally not implemented in Slice 4 and remains a separate bounded follow-up.
 
-**Next P0 action:** public MCP contraction. Reduce the normal Web-facing surface to the smallest typed domain tool set while preserving internal authority boundaries and diagnostics; do not reopen execution architecture or Owner Console visual polish yet. Slice 4 engineering verification does **not** imply `PRODUCT_ACCEPTED`.
+**Slice 4 follow-up (completed below):** public MCP contraction. The contraction was required to reduce the normal Web-facing surface while preserving internal authority boundaries and diagnostics; its completed evidence and current next action are recorded in the following P0 public MCP contraction section. Slice 4 engineering verification does **not** imply `PRODUCT_ACCEPTED`.
 
 **Context/OOM hardening implementation order:** (1) P0 current/stale-turn truth + small receipts; (2) P0 durable observation/artifact capture; (3) P0 bounded Decision Projection; (4) P0 Web episode + task-wide budgets; then public MCP contraction, Console telemetry/index work and optional provider continuation. Do not add a second orchestrator/gateway/projection service/database/agent framework or mandatory API path. Owner Console visual polish is paused until these P0 hardening slices are complete and verified.
+
+## P0 public MCP contraction — 2026-09-11
+
+The public MCP contraction is engineering-complete on source HEAD `95d93829a7c0061c8942d90b5257db5d36a183c9`. The exact implementation candidate was sealed at `06f042b10365aae2e0139c30534d1df87a037e11` from base `f57de009aa5e78fbf2e8a8254c4b29b3b5933bfb`; a follow-up regression-only correction at `95d93829a7c0061c8942d90b5257db5d36a183c9` updated the legacy remote-bridge test contract from the former 11-tool count to the new canonical six-tool count. No production authority path changed in that correction.
+
+Normal `tools/list` now exposes exactly six canonical typed domain tools: `project`, `submit`, `task`, `control`, `brain_turn`, and `brain_respond`. Legacy names `project_context`, `project_read`, `status`, `result`, `inspect`, `steer`, `input`, and `cancel` remain callable for cached-client compatibility in this release but are unlisted. A receiving middleware rewrites those legacy calls to the corresponding canonical tool/operation before registry dispatch, so canonical and compatibility calls share the same existing Backend/service methods and do not create a second business-logic or authority path.
+
+The serialized listed tool surface is regression-bounded to `<= 24576` bytes. Canonical `project` preserves bounded project context/read behavior; canonical `task` preserves status/result/inspect read semantics; canonical `control` preserves steer/input/cancel idempotency, validation, state and fencing semantics. `brain_turn` / `brain_respond` retain attempt/run-epoch/turn integrity and stale-turn rejection. Slice 3 Decision Projection, Slice 4 episode/task-wide budgets, sandbox, physical termination fencing, verification freshness, integration CAS, controls and SQLite durable authority remain unchanged.
+
+Final source evidence at `95d93829a7c0061c8942d90b5257db5d36a183c9`: focused `internal/mcpedge`, `internal/service`, `internal/orchestrator`, `internal/store` regressions PASS; `TestRemoteBridgeExposesIndependentGPTAndClaudeLinks` PASS after the count-only contract correction; full sequential `go test -count=1 -p 1 -timeout 180s ./...` PASS across the repository; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS; `git diff --check` PASS.
+
+Recovery truth: the original MAR coding task reached a fully implemented and fully verified workspace but exhausted the new task-wide worker budget at the final `completed_candidate` transition. The budget was not raised or bypassed. A manual continuation was unable to open another worker because cumulative task budget remained exhausted. Operator recovery therefore sealed the exact already-verified isolated workspace and fast-forwarded `master` only after confirming the authoritative owner worktree was clean at the exact base revision; no merge commit or content rewrite was introduced. The integrated full-suite rerun then found only the stale 11-tool remote-bridge expectation described above, which was corrected and followed by a complete green source gate.
+
+**Compatibility policy:** keep the eight legacy aliases callable-but-unlisted for this release so cached ChatGPT/plugin clients do not break abruptly. Do not re-expand `tools/list`. Alias removal, if desired, belongs after real-use acceptance/release freeze with evidence that active clients use the canonical surface.
+
+**Next P0 action:** run one short Owner/ChatGPT real-use bounded-context acceptance against the six-tool surface, confirm normal context size/tool discovery and cached-client compatibility behavior, then freeze the release if accepted. Engineering tests do **not** establish `PRODUCT_ACCEPTED`.
 
 ## Owner Console v6 convergence candidate — 2026-09-10
 
