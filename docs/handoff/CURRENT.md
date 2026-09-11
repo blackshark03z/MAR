@@ -6,6 +6,14 @@
 
 **Current engineering baseline:** `ENGINEERING_STABLE`
 
+## React Owner Console workspace/layout UAT correction — 2026-09-11
+
+Owner UAT after the React migration exposed two real surface defects: sidebar icon/text columns were visually inconsistent and workspace selection was not obvious/usable from the Workspaces surface. Source commit `97ca22e` fixes these without changing MAR backend authority. Sidebar navigation now uses a fixed 24px icon column with zero measured icon/text alignment spread; the topbar and content grid share the same 230px shell boundary; workspace cards expose explicit `Chọn / Đang chọn` state synchronized with the persistent topbar selector; folder picker/add-project failures are surfaced instead of failing silently; selected workspace can be cleared; stale local workspace selection is reconciled; hash back/forward navigation updates React view state; sidebar system health now derives from runtime truth instead of a hard-coded healthy label. Connection/status chips and desktop widths are bounded to avoid overflow.
+
+Browser/CDP interaction evidence on the live preview: Workspaces route rendered the selector and one selectable card; clicking `Chọn` changed topbar scope from empty to `mar`, produced exactly one selected card, and navigation to `#/tasks` rendered the Tasks view. Computed sidebar columns were `24px + text`. A seven-page desktop layout audit at 1647x920 reported zero horizontal overflow, exactly one active nav item, main content beginning at x=230, Live four-column KPI layout, Tasks three columns, Workspaces 340px + flexible content and Connections two columns. Responsive audits at 1366, 1024 and 768 also reported zero horizontal overflow with the expected fixed-to-static sidebar and multi-column-to-single-column transitions.
+
+Verification after the correction: React `npm run check` PASS; React production build PASS; targeted `go test -count=1 ./cmd/mar` PASS; exact full sequential `go test -v -p 1 -count=1 -timeout 420s ./...` PASS; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS; `git diff --check` PASS. `.gitattributes` pins React source/dist HTML to LF so Windows checkout/build cannot reintroduce the prior CRLF/trailing-whitespace packaging failure. Product acceptance remains pending explicit Owner visual/use acceptance.
+
 ## Owner Console React migration — 2026-09-11
 
 Owner Console presentation has been migrated from the accumulated single-file v3-v7 HTML/CSS/JavaScript stack to a React 19 + TypeScript + Vite frontend with Lucide SVG icons. The integrated source commit is `e2424215fbd5d303f5335d4ae10019a4ca4f606d`, fast-forwarded from authoritative base `680dfc039e696393292e1886337d474be4c1239e` with no merge commit. MAR backend authority, SQLite truth, task lifecycle, sandbox, MCP, Decision Projection, budgets and existing `/api/*` contracts are unchanged.
