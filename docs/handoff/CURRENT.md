@@ -16,6 +16,22 @@ This is a **documentation-only architecture amendment**. It records the Owner-ap
 
 Audit truth to preserve during implementation: context amplification/full-history replay, large request/response echo and stale pending-turn selection are confirmed MAR defects; tool schema size alone is not the dominant measured contributor. Exact Chrome OOM attribution remains unproven and must be validated separately with actual Chrome renderer/heap plus Windows commit/pagefile measurements.
 
+## P0 Slice 4 — bounded Web episodes and task-wide convergence budgets — 2026-09-11
+
+Slice 4 is integrated at `e8daa0fcaca5e301e506e338b9744397f71f89a1`. The implementation keeps MAR/SQLite as the only durable coordination authority and adds bounded derived accounting rather than a second episode service or transcript store.
+
+Web cognition defaults are now 12 external reasoning decisions, 40 attributable control-plane calls, and 512 KiB cumulative bounded MAR request/response payload per episode. Exhaustion fails closed before the next unsafe model/tool action and produces a compact continuation receipt bound to task/attempt/run_epoch, Goal/Decision Projection identity, checkpoint/revision state, counters, reason, and next valid action. Fresh episodes resume from durable Decision Projection/checkpoint truth without browser transcript replay.
+
+Task-wide convergence defaults are 24 model decisions, 64 worker tool calls, 300000 reported/estimated model tokens, 30 minutes active execution, and 3 automatic attempts/replacements. Budget truth is reconstructed from durable attempts/WebTurns/checkpoints across reconnect/restart. Owner-approved `blocked_choice` can authorize one bounded manual continuation after the automatic attempt cap only when the prior attempt has physical termination proof; it does not erase other cumulative budget exhaustion. Repeated no-progress is guarded from durable progress state and remains fail-closed.
+
+Release evidence for the integrated source: exact built-in `go-standard` profile PASS (`go test -v -p 1 -count=1 -timeout 180s ./...`, `go vet -p 1 ./...`, `go build -p 1 ./...`) plus `git diff --check` PASS. Required regression coverage is present for decision/call/byte boundaries, continuation receipts, restart reconstruction and stale-turn exclusion, replacement accumulation, no-progress handling, Decision Projection resume without historical transcript replay, real-worker failure evidence propagation, and MCP submit/steer/input/verify/integrate E2E semantics.
+
+Bootstrap note: the long-running Slice 4 development task itself had already accumulated usage under the pre-Slice-4 unbounded runtime (45 model decisions, 132 worker tool calls, approximately 920k reported tokens) before the new cumulative limits existed. Once the new guard became active, that task correctly stopped instead of admitting another coding worker. The already verified isolated candidate was therefore promoted by an operator fast-forward only after confirming authoritative master still equaled the exact base `aca40c5c2360cef9a5b5b6741c83573b2a43dc7a`; the integrated commit is the exact verified candidate above, with no merge commit or content rewrite.
+
+Known follow-up: an unclean MAR restart can still lose in-memory `TerminationProof` even when the Windows Job Object has already killed the worker tree, leaving a logically fenced task unable to prove physical termination after process restart. That recovery mechanism is intentionally not implemented in Slice 4 and remains a separate bounded follow-up.
+
+**Next P0 action:** public MCP contraction. Reduce the normal Web-facing surface to the smallest typed domain tool set while preserving internal authority boundaries and diagnostics; do not reopen execution architecture or Owner Console visual polish yet. Slice 4 engineering verification does **not** imply `PRODUCT_ACCEPTED`.
+
 **Context/OOM hardening implementation order:** (1) P0 current/stale-turn truth + small receipts; (2) P0 durable observation/artifact capture; (3) P0 bounded Decision Projection; (4) P0 Web episode + task-wide budgets; then public MCP contraction, Console telemetry/index work and optional provider continuation. Do not add a second orchestrator/gateway/projection service/database/agent framework or mandatory API path. Owner Console visual polish is paused until these P0 hardening slices are complete and verified.
 
 ## Owner Console v6 convergence candidate — 2026-09-10
