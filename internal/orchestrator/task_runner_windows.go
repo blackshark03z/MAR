@@ -22,6 +22,8 @@ var ErrRecoveryRequired = errors.New("task requires physical recovery before rep
 type taskService interface {
 	Status(context.Context, string) (domain.Task, error)
 	StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error)
+	TaskConvergenceBudget(context.Context, string) (service.TaskConvergenceBudget, error)
+	BlockForConvergenceBudget(context.Context, string) error
 	BeginAttempt(context.Context, string, string, string, time.Duration) (domain.ExecutionAttempt, error)
 	TransitionForAttempt(context.Context, string, string, int64, domain.TaskState) error
 	LogicalFenceAttempt(context.Context, string, string, int64) error
@@ -133,6 +135,16 @@ func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, works
 	if task.State != domain.TaskWorkspaceReady {
 		return RunOutcome{}, fmt.Errorf("task %s is not WORKSPACE_READY", taskID)
 	}
+	budget, err := r.service.TaskConvergenceBudget(ctx, taskID)
+	if err != nil {
+		return RunOutcome{}, err
+	}
+	if reason := convergenceStopReason(budget); reason != "" {
+		if err := r.service.BlockForConvergenceBudget(ctx, taskID); err != nil {
+			return RunOutcome{}, err
+		}
+		return RunOutcome{}, fmt.Errorf("task convergence budget exhausted: %s", reason)
+	}
 	attempt, err := r.service.BeginAttempt(ctx, taskID, r.cfg.WorkerID, r.cfg.SupervisorID, r.cfg.LeaseDuration)
 	if err != nil {
 		return RunOutcome{}, err
@@ -151,7 +163,7 @@ func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, works
 		WorkspacePath:         workspace.Path,
 		Provider:              r.cfg.Provider,
 		AgentProfile:          r.cfg.AgentProfile,
-		AgentConfig:           r.cfg.AgentConfig,
+		AgentConfig:           boundedAgentConfig(r.cfg.AgentConfig, budget),
 		SandboxReadPaths:      append([]string{}, r.cfg.SandboxReadPaths...),
 		GoModuleCache:         r.cfg.GoModuleCache,
 		CommandTimeout:        r.cfg.CommandTimeout,

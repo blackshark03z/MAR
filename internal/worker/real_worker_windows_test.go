@@ -70,10 +70,26 @@ func TestProcessRunnerRealWorkerReturnsAfterFailingGoTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource} {
 		if err := svc.AdvancePreExecution(context.Background(), task.ID, state); err != nil {
 			t.Fatal(err)
 		}
+	}
+	workspace := filepath.Join(dataRoot, "workspaces", "project", task.ID)
+	if err := os.MkdirAll(filepath.Dir(workspace), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	workspaceRecord := domain.Workspace{ID: "real-worker-workspace", TaskID: task.ID, ProjectID: contract.ProjectID, Path: workspace, BaseRevision: base, CreatedAt: now, UpdatedAt: now}
+	if _, created, err := db.BeginWorkspace(context.Background(), workspaceRecord); err != nil {
+		t.Fatal(err)
+	} else if !created {
+		t.Fatal("expected durable real-worker workspace creation")
+	}
+	runWorkerGit(t, source, "worktree", "add", "--detach", workspace, base)
+	defer exec.Command("git", "-C", source, "worktree", "remove", "--force", workspace).Run()
+	if err := db.MarkWorkspaceReady(context.Background(), workspaceRecord.ID, task.ID, base, time.Now().UTC()); err != nil {
+		t.Fatal(err)
 	}
 	attempt, err := svc.BeginAttempt(context.Background(), task.ID, "worker", "supervisor", 20*time.Second)
 	if err != nil {
@@ -83,12 +99,6 @@ func TestProcessRunnerRealWorkerReturnsAfterFailingGoTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := filepath.Join(dataRoot, "workspaces", "project", task.ID)
-	if err := os.MkdirAll(filepath.Dir(workspace), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	runWorkerGit(t, source, "worktree", "add", "--detach", workspace, base)
-	defer exec.Command("git", "-C", source, "worktree", "remove", "--force", workspace).Run()
 
 	goExe := workerPortableGo(t)
 	goRoot := filepath.Dir(filepath.Dir(goExe))

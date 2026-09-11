@@ -890,7 +890,15 @@ func decisionProjectionStateForRequest(t *testing.T, req RunRequest) contextengi
 	}
 }
 
+func TestEpisodeResumeUsesDecisionProjectionWithoutHistoricalTranscriptReplay(t *testing.T) {
+	testLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t)
+}
+
 func TestLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t *testing.T) {
+	testLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t)
+}
+
+func testLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t *testing.T) {
 	req := testRunRequest(false)
 	source := &fakeDecisionProjectionSource{state: decisionProjectionStateForRequest(t, req)}
 	gateway := &scriptedGateway{responses: []model.TurnResponse{

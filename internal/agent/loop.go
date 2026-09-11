@@ -86,6 +86,7 @@ type Config struct {
 	MaxRequestBytes        int
 	MaxAssistantBytes      int
 	MaxObservationBytes    int
+	MaxEpisodePayloadBytes int
 	MaxDuration            time.Duration
 }
 
@@ -154,7 +155,7 @@ func New(gateway ModelGateway, tools ToolRuntime, contextBuilder ContextBuilder,
 		return nil, errors.New("agent base instructions are required")
 	}
 	cfg = withDefaults(cfg)
-	if cfg.MaxTurns <= 0 || cfg.MaxToolCalls <= 0 || cfg.MaxToolCallsPerTurn <= 0 || cfg.MaxTotalTokens <= 0 || cfg.MaxOutputTokensPerTurn <= 0 || cfg.MaxContextBytes < 512 || cfg.MaxResumeBytes < 256 || cfg.MaxRequestBytes < 1024 || cfg.MaxAssistantBytes < 256 || cfg.MaxObservationBytes < 256 || cfg.MaxDuration <= 0 {
+	if cfg.MaxTurns <= 0 || cfg.MaxToolCalls <= 0 || cfg.MaxToolCallsPerTurn <= 0 || cfg.MaxTotalTokens <= 0 || cfg.MaxOutputTokensPerTurn <= 0 || cfg.MaxContextBytes < 512 || cfg.MaxResumeBytes < 256 || cfg.MaxRequestBytes < 1024 || cfg.MaxAssistantBytes < 256 || cfg.MaxObservationBytes < 256 || cfg.MaxEpisodePayloadBytes < 1024 || cfg.MaxDuration <= 0 {
 		return nil, errors.New("agent limits must be positive and byte limits must satisfy minimum bounds")
 	}
 	if cfg.MaxToolCallsPerTurn > cfg.MaxToolCalls {
@@ -211,6 +212,9 @@ func withDefaults(cfg Config) Config {
 	}
 	if cfg.MaxObservationBytes <= 0 {
 		cfg.MaxObservationBytes = 48 << 10
+	}
+	if cfg.MaxEpisodePayloadBytes <= 0 {
+		cfg.MaxEpisodePayloadBytes = 512 << 10
 	}
 	if cfg.MaxDuration <= 0 {
 		cfg.MaxDuration = 30 * time.Minute
@@ -309,6 +313,7 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 	protocolTail := []model.Message(nil)
 	recentEvidence := []contextengine.DecisionProjectionEvent(nil)
 	controlVersion := int64(0)
+	episodePayloadBytes := 0
 
 	seenCallIDs := make(map[string]struct{})
 	for turn := 1; turn <= l.cfg.MaxTurns; turn++ {
@@ -417,6 +422,13 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 			result.Blocker = fmt.Sprintf("model request exceeds agent bound: %d > %d bytes", len(wire), l.cfg.MaxRequestBytes)
 			return result, nil
 		}
+		if episodePayloadBytes+len(wire) > l.cfg.MaxEpisodePayloadBytes {
+			result.Status = StatusBudgetExhausted
+			result.Turns = turn - 1
+			result.Blocker = fmt.Sprintf("web episode payload budget exhausted before model request: %d + %d > %d bytes", episodePayloadBytes, len(wire), l.cfg.MaxEpisodePayloadBytes)
+			return result, nil
+		}
+		episodePayloadBytes += len(wire)
 
 		resp, turnErr := l.gateway.Turn(loopCtx, turnReq)
 		if turnErr != nil {
@@ -472,6 +484,12 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 			result.Blocker = fmt.Sprintf("assistant response exceeds agent bound: %d > %d bytes", len(assistantBytes), l.cfg.MaxAssistantBytes)
 			return result, nil
 		}
+		if episodePayloadBytes+len(assistantBytes) > l.cfg.MaxEpisodePayloadBytes {
+			result.Status = StatusBudgetExhausted
+			result.Blocker = fmt.Sprintf("web episode payload budget exhausted by model response before tool execution: %d + %d > %d bytes", episodePayloadBytes, len(assistantBytes), l.cfg.MaxEpisodePayloadBytes)
+			return result, nil
+		}
+		episodePayloadBytes += len(assistantBytes)
 		if resp.Message.Role != model.RoleAssistant {
 			result.Status = StatusBlocked
 			result.Blocker = fmt.Sprintf("model protocol error: expected assistant role, got %q", resp.Message.Role)

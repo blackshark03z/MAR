@@ -23,6 +23,9 @@ func (s *TaskService) RequestWebTurnForAttempt(ctx context.Context, taskID, atte
 	if err != nil {
 		return domain.WebTurn{}, false, err
 	}
+	if err := s.CheckWebEpisodeAdmission(ctx, taskID, attemptID, epoch, 1, int64(len(raw))); err != nil {
+		return domain.WebTurn{}, false, err
+	}
 	requestHash, err := domain.HashWebTurnJSON(raw)
 	if err != nil {
 		return domain.WebTurn{}, false, err

@@ -37,6 +37,22 @@ func (s *fakeTaskService) StatusSnapshot(ctx context.Context, _ string) (service
 	return service.TaskStatusSnapshot{Task: s.task, CancelRequested: s.cancel}, nil
 }
 
+func (s *fakeTaskService) TaskConvergenceBudget(context.Context, string) (service.TaskConvergenceBudget, error) {
+	return service.TaskConvergenceBudget{
+		RemainingModelDecisions:  service.DefaultTaskMaxModelDecisions,
+		RemainingWorkerToolCalls: service.DefaultTaskMaxWorkerToolCalls,
+		RemainingModelTokens:     service.DefaultTaskMaxModelTotalTokens,
+		RemainingActiveExecution: service.DefaultTaskMaxActiveExecution,
+		RemainingAttempts:        service.DefaultTaskMaxAttempts,
+	}, nil
+}
+
+func (s *fakeTaskService) BlockForConvergenceBudget(context.Context, string) error {
+	s.events = append(s.events, "budget_block")
+	s.task.State = domain.TaskBlocked
+	return nil
+}
+
 func (s *fakeTaskService) BeginAttempt(_ context.Context, taskID, workerID, supervisorID string, _ time.Duration) (domain.ExecutionAttempt, error) {
 	s.events = append(s.events, "begin")
 	s.task.State = domain.TaskRunning

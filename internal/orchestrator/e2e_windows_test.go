@@ -95,9 +95,23 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 			encoded, _ := json.Marshal(map[string]any{"prompt": "Confirm the exact requested marker content before mutation."})
 			arguments = string(encoded)
 		case 2:
-			wire := string(body)
-			observedSteer.Store(strings.Contains(wire, "STEER/context") && strings.Contains(wire, "Keep the marker content exactly MAR E2E OK"))
-			observedInput.Store(strings.Contains(wire, "CONTROL_KIND: INPUT") && strings.Contains(wire, "Proceed with the exact requested marker content"))
+			var turnRequest struct {
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			if err := json.Unmarshal(body, &turnRequest); err != nil {
+				http.Error(w, "invalid model request", http.StatusBadRequest)
+				return
+			}
+			var decisionState strings.Builder
+			for _, message := range turnRequest.Messages {
+				decisionState.WriteString(message.Content)
+				decisionState.WriteByte('\n')
+			}
+			wire := decisionState.String()
+			observedSteer.Store(strings.Contains(wire, `"kind":"STEER"`) && strings.Contains(wire, `"kind":"context"`) && strings.Contains(wire, "Keep the marker content exactly MAR E2E OK"))
+			observedInput.Store(strings.Contains(wire, `"kind":"INPUT"`) && strings.Contains(wire, "Proceed with the exact requested marker content"))
 			callID = "call-write"
 			toolName = "write_file"
 			encoded, _ := json.Marshal(map[string]any{"path": "marker.txt", "expected_sha256": "ABSENT", "content": "MAR E2E OK\n"})
