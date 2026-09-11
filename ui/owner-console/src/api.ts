@@ -34,8 +34,20 @@ export async function inputTask(id: string, message: string) {
 export async function feedbackTask(id: string, verdict: string, message: string) {
   return api(`/api/tasks/${encodeURIComponent(id)}/feedback`, { method: 'POST', body: JSON.stringify({ verdict, message }) })
 }
+export async function browseProjectFolders(path = '') {
+  return api('/api/projects/browse', { method: 'POST', body: JSON.stringify({ path }) })
+}
 export async function pickProject() {
-  return api('/api/projects/pick', { method: 'POST', body: '{}' })
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 120_000)
+  try {
+    return await api('/api/projects/pick', { method: 'POST', body: '{}', signal: controller.signal })
+  } catch (err: any) {
+    if (err?.name === 'AbortError') throw new Error('Hộp thoại chọn thư mục không phản hồi. Hãy thử lại hoặc nhập đường dẫn trực tiếp.')
+    throw err
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 export async function addProject(root: string, id = '') {
   return api('/api/projects', { method: 'POST', body: JSON.stringify({ root, id }) })

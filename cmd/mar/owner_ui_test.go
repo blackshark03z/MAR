@@ -196,6 +196,15 @@ func TestOwnerUIStartsOnLiveOperations(t *testing.T) {
 		t.Fatal("legacy static Overview landing markup must not be served")
 	}
 }
+func TestOwnerUIReactWorkspaceAndTaskListInteractionContract(t *testing.T) {
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"FolderPickerModal", "/api/projects/browse", "Chọn thư mục này", "overflow-x:hidden", "scrollbar-gutter:stable", "created?.project?.id", "taskTitle"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("React workspace/task interaction contract missing %q", marker)
+		}
+	}
+}
+
 func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 	bundle := ownerUIContractText()
 	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "live-main-grid", "task-three-col", "create-panel", "provider-grid", "summary-cards", "TrendChart", "CreateTaskPanel"} {
@@ -212,7 +221,7 @@ func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 
 func TestOwnerUIWorkspaceSelectionAndSidebarAlignmentContract(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"workspace-scope-select", "workspace-select-button", ".workspace-card.selected", "grid-template-columns:24px", "hashchange", "mar.owner.workspace.react.v1", "pickProject", "form-error"} {
+	for _, marker := range []string{"workspace-scope-select", "workspace-select-button", ".workspace-card.selected", "grid-template-columns:24px", "hashchange", "mar.owner.workspace.react.v1", "FolderPickerModal", "/api/projects/browse", "form-error"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React workspace/sidebar contract missing %q", marker)
 		}
@@ -336,6 +345,39 @@ func TestOwnerUIProjectPickerUsesBoundedHostPicker(t *testing.T) {
 	backend.routes().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `D:\\\\Selected\\\\Workspace`) {
 		t.Fatalf("unexpected picker response %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestOwnerUIProjectBrowserListsDirectoriesOnly(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	backend := &ownerUIBackend{sessionToken: "test-owner-token"}
+	body, _ := json.Marshal(ownerProjectBrowseRequest{Path: root})
+	req := httptest.NewRequest(http.MethodPost, "/api/projects/browse", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("browse status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var view ownerProjectBrowseView
+	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Clean(view.Path) != filepath.Clean(root) || len(view.Directories) != 1 || view.Directories[0].Name != "child" || filepath.Clean(view.Directories[0].Path) != filepath.Clean(child) {
+		t.Fatalf("unexpected folder browser view: %+v", view)
+	}
+	if strings.Contains(rec.Body.String(), "file.txt") {
+		t.Fatalf("folder browser leaked non-directory file entry: %s", rec.Body.String())
 	}
 }
 
@@ -501,6 +543,7 @@ func TestOwnerUIRejectsUnauthorizedMutationRequestsBeforeMCP(t *testing.T) {
 		{name: "plain text submit", method: http.MethodPost, path: "/api/tasks", body: validSubmit, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "text/plain", token: "test-owner-token", wantStatus: http.StatusUnsupportedMediaType},
 		{name: "missing token cancel", method: http.MethodPost, path: "/api/tasks/task-ui-test/cancel", body: `{}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "invalid token input", method: http.MethodPost, path: "/api/tasks/task-ui-test/input", body: `{"message":"continue"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", token: "wrong-token", wantStatus: http.StatusForbidden},
+		{name: "missing token project browse", method: http.MethodPost, path: "/api/projects/browse", body: `{"path":"D:\\\\MAR"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token project add", method: http.MethodPost, path: "/api/projects", body: `{"root":"D:\\\\MAR"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token policy", method: http.MethodPost, path: "/api/projects/mar/policy", body: `{"local_file_write":true,"local_git_write":true}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
 		{name: "missing token feedback", method: http.MethodPost, path: "/api/tasks/task-ui-test/feedback", body: `{"verdict":"COMMENT","message":"note"}`, host: "127.0.0.1:8787", origin: "http://127.0.0.1:8787", contentType: "application/json", wantStatus: http.StatusForbidden},
@@ -613,7 +656,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, required := range []string{"openai-tunnel", "chatgpt-web", "claude-web", "Secure MCP Tunnel", "Claude Web", "/api/connections/web-bridge/start", "/api/connections/openai-tunnel/", "navigator.clipboard.writeText", "connection-card"} {
+	for _, required := range []string{"openai-tunnel", "chatgpt-web", "claude-web", "Secure MCP Tunnel", "Claude Web", "/api/connections/web-bridge/start", "/api/connections/openai-tunnel/", "navigator.clipboard.writeText", "connection-card", "temporary_url", "connection_url", "Sao chép link", "action-feedback"} {
 		if !strings.Contains(bundle, required) {
 			t.Fatalf("React Connection Hub is missing %q", required)
 		}

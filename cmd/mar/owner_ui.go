@@ -90,6 +90,22 @@ type ownerProjectPolicyRequest struct {
 	LocalGitWrite  bool `json:"local_git_write"`
 }
 
+type ownerProjectBrowseRequest struct {
+	Path string `json:"path,omitempty"`
+}
+
+type ownerProjectDirectoryView struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+type ownerProjectBrowseView struct {
+	Path        string                      `json:"path"`
+	Parent      string                      `json:"parent,omitempty"`
+	Roots       []string                    `json:"roots,omitempty"`
+	Directories []ownerProjectDirectoryView `json:"directories,omitempty"`
+}
+
 type ownerFeedbackRequest struct {
 	IdempotencyKey string                      `json:"idempotency_key,omitempty"`
 	Verdict        domain.OwnerFeedbackVerdict `json:"verdict"`
@@ -404,6 +420,7 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/connections/openai-tunnel/diagnose", b.diagnoseOpenAITunnel)
 	mux.HandleFunc("GET /api/usage", b.serveUsage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
+	mux.HandleFunc("POST /api/projects/browse", b.browseProjectFolders)
 	mux.HandleFunc("POST /api/projects/pick", b.pickProjectFolder)
 	mux.HandleFunc("POST /api/projects", b.addProject)
 	mux.HandleFunc("POST /api/projects/{projectID}/policy", b.updateProjectPolicy)
@@ -1084,11 +1101,83 @@ func (b *ownerUIBackend) serveProjects(w http.ResponseWriter, r *http.Request) {
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"projects": views})
 }
 
+func ownerProjectBrowseRoots() []string {
+	if runtime.GOOS != "windows" {
+		return []string{string(filepath.Separator)}
+	}
+	roots := make([]string, 0, 8)
+	for drive := 'A'; drive <= 'Z'; drive++ {
+		root := fmt.Sprintf("%c:\\", drive)
+		if info, err := os.Stat(root); err == nil && info.IsDir() {
+			roots = append(roots, root)
+		}
+	}
+	return roots
+}
+
+func normalizeOwnerBrowsePath(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if runtime.GOOS == "windows" && strings.HasPrefix(raw, `\\`) {
+		return "", errors.New("network/UNC paths are not available in the local workspace browser")
+	}
+	absolute, err := filepath.Abs(raw)
+	if err != nil {
+		return "", fmt.Errorf("resolve workspace browser path: %w", err)
+	}
+	absolute = filepath.Clean(absolute)
+	info, err := os.Stat(absolute)
+	if err != nil || !info.IsDir() {
+		return "", errors.New("selected path does not exist or is not a local directory")
+	}
+	return absolute, nil
+}
+
+func (b *ownerUIBackend) browseProjectFolders(w http.ResponseWriter, r *http.Request) {
+	var req ownerProjectBrowseRequest
+	if err := decodeOwnerJSON(r, &req); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	path, err := normalizeOwnerBrowsePath(req.Path)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	view := ownerProjectBrowseView{Path: path}
+	if path == "" {
+		view.Roots = ownerProjectBrowseRoots()
+		writeOwnerJSON(w, http.StatusOK, view)
+		return
+	}
+	parent := filepath.Dir(path)
+	if parent != path {
+		view.Parent = parent
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, fmt.Errorf("list workspace folders: %w", err))
+		return
+	}
+	for _, entry := range entries {
+		if len(view.Directories) >= 512 {
+			break
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		view.Directories = append(view.Directories, ownerProjectDirectoryView{Name: entry.Name(), Path: filepath.Join(path, entry.Name())})
+	}
+	writeOwnerJSON(w, http.StatusOK, view)
+}
+
 func pickOwnerProjectFolder(ctx context.Context) (string, error) {
 	if runtime.GOOS != "windows" {
 		return "", errors.New("native workspace folder picker is available on Windows only")
 	}
-	const script = `Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Chọn workspace Git repository'; $d.ShowNewFolderButton = $false; if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $d.SelectedPath }`
+	const script = `Add-Type -AssemblyName System.Windows.Forms; $owner = New-Object System.Windows.Forms.Form; $owner.Text = 'MAR Workspace Picker'; $owner.ShowInTaskbar = $false; $owner.TopMost = $true; $owner.StartPosition = 'Manual'; $owner.Location = New-Object System.Drawing.Point(-32000,-32000); $owner.Size = New-Object System.Drawing.Size(1,1); $owner.Opacity = 0; $owner.Show(); try { $d = New-Object System.Windows.Forms.FolderBrowserDialog; $d.Description = 'Chọn workspace Git repository'; $d.ShowNewFolderButton = $false; $result = $d.ShowDialog($owner); if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Write-Output $d.SelectedPath } } finally { $owner.Close(); $owner.Dispose() }`
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-STA", "-Command", script)
 	out, err := cmd.Output()
 	if err != nil {

@@ -12735,10 +12735,10 @@ async function feedbackTask(id, verdict, message) {
 		})
 	});
 }
-async function pickProject() {
-	return api("/api/projects/pick", {
+async function browseProjectFolders(path = "") {
+	return api("/api/projects/browse", {
 		method: "POST",
-		body: "{}"
+		body: JSON.stringify({ path })
 	});
 }
 async function addProject(root, id = "") {
@@ -12915,6 +12915,9 @@ function stateTone(state) {
 }
 function isTaskActive(t) {
 	return ACTIVE_STATES.has(String(t?.state || "").toUpperCase()) || !!t?.waiting_for_ai_turn;
+}
+function taskTitle(t) {
+	return String(t?.goal || "").trim().split(/\r?\n/).map((line) => line.trim()).find(Boolean) || t?.id || "Untitled task";
 }
 function connectionProvider(c) {
 	return c?.id === "claude-web" ? "Claude" : "GPT";
@@ -13610,7 +13613,10 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 							onClick: () => setSelected(t.id),
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "task-item-top",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: t.goal || "Untitled task" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+									title: taskTitle(t),
+									children: taskTitle(t)
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
 							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 								className: "task-item-meta",
 								children: [
@@ -13978,20 +13984,126 @@ function CreateTaskPanel({ projects, preferredWorkspace, onCreated }) {
 		]
 	});
 }
-function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
-	const [root, setRoot] = (0, import_react.useState)(""), [id, setId] = (0, import_react.useState)(""), [busy, setBusy] = (0, import_react.useState)(false), [pickerBusy, setPickerBusy] = (0, import_react.useState)(false), [error, setError] = (0, import_react.useState)("");
-	async function chooseFolder() {
-		setPickerBusy(true);
+function FolderPickerModal({ open, onClose, onPick }) {
+	const [data, setData] = (0, import_react.useState)({
+		path: "",
+		roots: [],
+		directories: []
+	}), [path, setPath] = (0, import_react.useState)(""), [busy, setBusy] = (0, import_react.useState)(false), [error, setError] = (0, import_react.useState)("");
+	async function load(next = "") {
+		setBusy(true);
 		setError("");
 		try {
-			const r = await pickProject();
-			if (r.path) setRoot(r.path);
+			const r = await browseProjectFolders(next);
+			setData(r);
+			setPath(r.path || next || "");
 		} catch (e) {
-			setError(e?.message || "Không mở được trình chọn thư mục.");
+			setError(e?.message || "Không thể đọc thư mục.");
 		} finally {
-			setPickerBusy(false);
+			setBusy(false);
 		}
 	}
+	(0, import_react.useEffect)(() => {
+		if (open) load("");
+	}, [open]);
+	if (!open) return null;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "modal-backdrop",
+		role: "presentation",
+		onMouseDown: (e) => {
+			if (e.target === e.currentTarget) onClose();
+		},
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+			className: "folder-browser-modal",
+			role: "dialog",
+			"aria-modal": "true",
+			"aria-label": "Chọn workspace Git repository",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "panel-heading",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "panel-title",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Chọn thư mục workspace" })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
+						icon: CircleX,
+						label: "Đóng",
+						onClick: onClose
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "folder-path-row",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						value: path,
+						onChange: (e) => setPath(e.target.value),
+						placeholder: "D:\\\\Projects\\\\MyApp",
+						onKeyDown: (e) => {
+							if (e.key === "Enter") {
+								e.preventDefault();
+								load(path);
+							}
+						}
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						disabled: busy || !path.trim(),
+						onClick: () => load(path),
+						children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+							className: "spin",
+							size: 16
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 16 }), "Mở"]
+					})]
+				}),
+				error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "form-error",
+					children: error
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "folder-browser-list",
+					children: [
+						!data.path && (data.roots || []).map((root) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: "folder-row",
+							onClick: () => load(root),
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 17 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: root })]
+						}, root)),
+						data.path && data.parent && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: "folder-row parent",
+							onClick: () => load(data.parent),
+							children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "↰" }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "Lên một cấp" }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: data.parent })
+							]
+						}),
+						(data.directories || []).map((dir) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: "folder-row",
+							onClick: () => load(dir.path),
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 17 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: dir.name })]
+						}, dir.path)),
+						data.path && !(data.directories || []).length && !busy && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "folder-empty",
+							children: "Không có thư mục con."
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "folder-browser-footer",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Đang chọn" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: data.path || "Chọn một ổ đĩa hoặc nhập đường dẫn ở trên" })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						onClick: onClose,
+						children: "Hủy"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						className: "primary-button",
+						disabled: !data.path,
+						onClick: () => {
+							onPick(data.path);
+							onClose();
+						},
+						children: "Chọn thư mục này"
+					})] })]
+				})
+			]
+		})
+	});
+}
+function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
+	const [root, setRoot] = (0, import_react.useState)(""), [id, setId] = (0, import_react.useState)(""), [busy, setBusy] = (0, import_react.useState)(false), [pickerOpen, setPickerOpen] = (0, import_react.useState)(false), [error, setError] = (0, import_react.useState)("");
 	async function register() {
 		if (!root) return;
 		setBusy(true);
@@ -14001,100 +14113,111 @@ function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
 			setRoot("");
 			setId("");
 			await reload();
-			if (created?.project_id) setWorkspace(created.project_id);
+			if (created?.project?.id) setWorkspace(created.project.id);
 		} catch (e) {
 			setError(e?.message || "Không thể thêm workspace.");
 		} finally {
 			setBusy(false);
 		}
 	}
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "page-header",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Workspaces" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Đăng ký Git repository local và quyền mặc định." })] }), workspace && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-			className: "scope-button",
-			onClick: () => setWorkspace(""),
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleX, { size: 15 }),
-				"Bỏ lọc: ",
-				workspace
-			]
-		})]
-	}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "workspace-grid",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-			className: "panel add-workspace",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "panel-heading",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Thêm workspace" })]
-					})
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Thư mục Git repository", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "picker",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-						disabled: pickerBusy,
-						onClick: chooseFolder,
-						children: [pickerBusy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "page-header",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Workspaces" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Đăng ký Git repository local và quyền mặc định." })] }), workspace && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+				className: "scope-button",
+				onClick: () => setWorkspace(""),
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleX, { size: 15 }),
+					"Bỏ lọc: ",
+					workspace
+				]
+			})]
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "workspace-grid",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				className: "panel add-workspace",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "panel-heading",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "panel-title",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Thêm workspace" })]
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Thư mục Git repository", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "picker",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							onClick: () => setPickerOpen(true),
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 16 }), "Chọn thư mục"]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: root,
+							onChange: (e) => setRoot(e.target.value),
+							placeholder: "D:\\\\Projects\\\\MyApp"
+						})]
+					})] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", {
+						className: "field-help",
+						children: "Có thể chọn bằng trình duyệt thư mục của MAR hoặc nhập/dán đường dẫn trực tiếp."
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+						"Project ID ",
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "muted",
+							children: "(tùy chọn)"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							value: id,
+							onChange: (e) => setId(e.target.value),
+							placeholder: "Tự tạo nếu để trống"
+						})
+					] }),
+					error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "form-error",
+						children: error
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						className: "primary-button",
+						disabled: !root || busy,
+						onClick: register,
+						children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
 							className: "spin",
 							size: 16
-						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 16 }), "Chọn thư mục"]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-						value: root,
-						onChange: (e) => setRoot(e.target.value),
-						placeholder: "D:\\\\Projects\\\\MyApp"
-					})]
-				})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
-					"Project ID ",
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "muted",
-						children: "(tùy chọn)"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-						value: id,
-						onChange: (e) => setId(e.target.value),
-						placeholder: "Tự tạo nếu để trống"
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 16 }), "Thêm workspace"]
 					})
-				] }),
-				error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "form-error",
-					children: error
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-					className: "primary-button",
-					disabled: !root || busy,
-					onClick: register,
-					children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
-						className: "spin",
-						size: 16
-					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 16 }), "Thêm workspace"]
-				})
-			]
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-			className: "panel workspace-list-panel",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "panel-heading",
+				]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				className: "panel workspace-list-panel",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "panel-title",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Đã đăng ký" })]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
-					icon: RefreshCw,
-					label: "Làm mới",
-					onClick: reload
+					className: "panel-heading",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "panel-title",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderGit2, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Đã đăng ký" })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
+						icon: RefreshCw,
+						label: "Làm mới",
+						onClick: reload
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "workspace-cards",
+					children: projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorkspaceCard, {
+						p,
+						reload,
+						selected: workspace === p.id,
+						onSelect: () => setWorkspace(p.id)
+					}, p.id))
 				})]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "workspace-cards",
-				children: projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(WorkspaceCard, {
-					p,
-					reload,
-					selected: workspace === p.id,
-					onSelect: () => setWorkspace(p.id)
-				}, p.id))
 			})]
-		})]
-	})] });
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FolderPickerModal, {
+			open: pickerOpen,
+			onClose: () => setPickerOpen(false),
+			onPick: (path) => {
+				setRoot(path);
+				setError("");
+			}
+		})
+	] });
 }
 function WorkspaceCard({ p, reload, selected, onSelect }) {
 	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write);
@@ -14189,7 +14312,9 @@ function ConnectionsPage({ runtime, reload }) {
 }
 function ConnectionCard({ c, reload }) {
 	const provider = connectionProvider(c), ready = routeReady(c), isTunnel = c.id === "openai-tunnel";
-	const [open, setOpen] = (0, import_react.useState)(false);
+	const [open, setOpen] = (0, import_react.useState)(false), [busy, setBusy] = (0, import_react.useState)(""), [message, setMessage] = (0, import_react.useState)(""), [error, setError] = (0, import_react.useState)("");
+	const url = String(c.stable_url || c.connection_url || c.temporary_url || "").trim();
+	const urlKind = c.stable_url ? "Stable URL" : c.temporary_url ? "Temporary capability URL" : "Connection URL";
 	async function act(action) {
 		let path = "";
 		if (isTunnel) path = `/api/connections/openai-tunnel/${action}`;
@@ -14197,8 +14322,29 @@ function ConnectionCard({ c, reload }) {
 		else if (action === "restart") path = "/api/connections/web-bridge/restart";
 		else if (action === "stop") path = "/api/connections/web-bridge/stop";
 		else path = `/api/connections/${encodeURIComponent(c.id)}/diagnose`;
-		await connectionAction(path);
-		await reload();
+		setBusy(action);
+		setMessage("");
+		setError("");
+		try {
+			await connectionAction(path);
+			setMessage(action === "diagnose" ? "Chẩn đoán hoàn tất." : action === "restart" ? "Đã khởi động lại kết nối." : action === "stop" ? "Đã tạm dừng kết nối." : "Đã yêu cầu kết nối.");
+			await reload();
+		} catch (err) {
+			setError(err?.message || "Thao tác kết nối thất bại.");
+		} finally {
+			setBusy("");
+		}
+	}
+	async function copyLink() {
+		if (!url) return;
+		setMessage("");
+		setError("");
+		try {
+			await navigator.clipboard.writeText(url);
+			setMessage("Đã sao chép link kết nối.");
+		} catch (err) {
+			setError(err?.message || "Không sao chép được link.");
+		}
 	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: `panel connection-card ${provider.toLowerCase()}`,
@@ -14238,39 +14384,78 @@ function ConnectionCard({ c, reload }) {
 				className: "copy-row",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: c.identifier }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
 					icon: Copy,
-					label: "Sao chép",
+					label: "Sao chép tunnel ID",
 					onClick: () => navigator.clipboard.writeText(c.identifier)
+				})]
+			}),
+			url && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "connection-link",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: urlKind }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "copy-row",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", {
+						title: url,
+						children: url
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						className: "primary-button",
+						onClick: copyLink,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Copy, { size: 16 }), "Sao chép link"]
+					})]
 				})]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 				className: "connection-summary",
 				children: c.summary || c.next_action || "Không có ghi chú."
 			}),
+			!url && !isTunnel && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "connection-hint",
+				children: "Chưa có capability URL. Hãy khởi động bridge để MAR tạo link kết nối."
+			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "connection-actions",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					!ready && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "primary-button",
-						onClick: () => act(c.running ? "restart" : "start"),
-						children: [
-							c.running ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RotateCcw, { size: 16 }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { size: 16 }),
-							" ",
-							c.running ? "Khởi động lại" : "Kết nối"
-						]
+						disabled: !!busy,
+						onClick: () => act("start"),
+						children: [busy === "start" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+							className: "spin",
+							size: 16
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { size: 16 }), "Kết nối"]
 					}),
 					c.running && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						disabled: !!busy,
+						onClick: () => act("restart"),
+						children: [busy === "restart" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+							className: "spin",
+							size: 16
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(RotateCcw, { size: 16 }), "Khởi động lại"]
+					}),
+					c.running && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						disabled: !!busy,
 						onClick: () => act("stop"),
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleStop, { size: 16 }), "Tạm dừng"]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						disabled: !!busy,
 						onClick: () => act("diagnose"),
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SquareTerminal, { size: 16 }), "Chẩn đoán"]
+						children: [busy === "diagnose" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+							className: "spin",
+							size: 16
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SquareTerminal, { size: 16 }), "Chẩn đoán"]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						onClick: () => setOpen(!open),
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, { size: 16 }), "Chi tiết"]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, { size: 16 }), open ? "Ẩn chi tiết" : "Chi tiết"]
 					})
 				]
+			}),
+			message && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "action-feedback success",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { size: 15 }), message]
+			}),
+			error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "action-feedback error",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 15 }), error]
 			}),
 			open && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
 				className: "connection-raw",
