@@ -18,7 +18,7 @@ The bounded V1.2 implementation is engineering-stable and awaiting only Owner re
 
 Accepted implementation HEAD is `e5fe06e2de416fabff38087d8435516f1bacdb38`. Release evidence includes full repository tests, full vet/build, real Windows sandbox Web-wait E2E, representative T1 self-hosting PASS, 9/9 current-source transport semantics PASS, Quick Tunnel replacement PASS, and live 30-poll sandbox-cache evidence with zero observed sandbox-check children. The detailed engineering record is `docs/release/MAR_V1_2_RELEASE_CANDIDATE.md`.
 
-V1.1 remains `PRODUCT_ACCEPTED` until the Owner explicitly accepts the exact final V1.2 runtime. After this documentation closeout commit, rebuild/promote the canonical `8787` runtime from the exact final HEAD and verify `ALIGNED / trusted_for_release=true` before asking for Owner acceptance.
+V1.1 remains the last explicitly Owner-accepted product release, but V1.2 evaluation is now **metrics-based rather than visual-UAT-based**. The canonical scorecard is `docs/release/MAR_V1_2_METRICS_SCORECARD.md`: 10/10 mandatory gates PASS, zero detected safety/integrity regressions, sandbox-probe churn reduced from 5/5 launches to 0/30 live polls, active-task live-usage read amplification reduced by ~88% on the fixed fixture, execution-child admission fails closed, and the two-waiter capacity stress changes from third-task blocked to admitted without weakening fencing. Tech Lead verdict: `V1_2_METRICS_ACCEPTED_FOR_RELEASE`. The exact final runtime has already been rebuilt/promoted and verified `ALIGNED / trusted_for_release=true` at `8787`; UI appearance is a regression check only because broad UI redesign is outside V1.2 scope.
 
 ## MAR V1.1 Owner acceptance — 2026-09-12
 

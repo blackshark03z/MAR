@@ -41,6 +41,8 @@ The implementation line passed the following release gates:
 
 The implementation candidate was already promoted and verified live during engineering closeout. Because this release-candidate document and handoff are a final source commit, the canonical `8787` runtime must be rebuilt from the exact documentation-closeout HEAD and re-promoted before Owner UAT. Owner review is valid only after live runtime identity again reports the exact final source revision as `ALIGNED / trusted_for_release=true`.
 
-## Remaining product gate
+## Metrics-based product gate
 
-Only explicit Owner real-use acceptance remains. No known production-code blocker is open for the bounded V1.2 scope. Optional follow-up research or polish must not reopen this release unless a concrete regression invalidates one of the acceptance invariants above.
+V1.2 is not a visual redesign release. Product evaluation is therefore bound to `docs/release/MAR_V1_2_METRICS_SCORECARD.md`, not to whether the Owner Console looks materially different from V1.1. The mandatory scorecard is 10/10 PASS with zero detected safety/integrity regressions; the Tech Lead verdict is `V1_2_METRICS_ACCEPTED_FOR_RELEASE`.
+
+If an explicit Owner governance decision is retained, it is an accept/reject decision on this metric-bound release evidence, not a requirement to rediscover backend improvements through subjective UI inspection. No known production-code blocker is open for the bounded V1.2 scope. Optional follow-up research or polish must not reopen this release unless a concrete regression invalidates one of the acceptance invariants above.
