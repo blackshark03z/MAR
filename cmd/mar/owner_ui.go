@@ -1025,8 +1025,6 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		nextAction = "Execution runtime is unavailable. Restart MAR before submitting or resuming coding work."
 	} else if !sandboxReady {
 		nextAction = "Windows sandbox protection needs preparation for this boot before MAR can run coding workers. Use Prepare sandbox in Connections and approve the Windows UAC prompt."
-	} else if !b.runtimeIdentity.TrustedForRelease {
-		nextAction = "Runtime is operational but not release-trusted. Use the binary and release manifest produced from the same clean source revision before release acceptance."
 	}
 
 	stdioArgs := b.webStdioArgs()

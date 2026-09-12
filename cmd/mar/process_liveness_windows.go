@@ -22,7 +22,7 @@ func processIsRunning(process *os.Process) error {
 	if err != nil {
 		return err
 	}
-	if status == windows.WAIT_TIMEOUT {
+	if status == uint32(windows.WAIT_TIMEOUT) {
 		return nil
 	}
 	return errors.New("execution child process has exited")
