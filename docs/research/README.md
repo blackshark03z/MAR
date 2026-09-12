@@ -100,5 +100,6 @@ A research item should not become MAR V1.2 implementation scope merely because i
 ## Active topics
 
 - [R-001 — Transport-independent long-running execution](001_TRANSPORT_INDEPENDENT_LONG_RUNNING_EXECUTION.md)
+- [R-002 — Automated measurement and evaluation](002_AUTOMATED_MEASUREMENT_AND_EVALUATION.md)
 
 More topics should be added only when they represent a distinct research question rather than splitting one problem into paperwork.
