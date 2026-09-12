@@ -1,5 +1,6 @@
 /target/
 /.mar/
+/mar.exe
 *.log
 *.tmp
 *.bak
