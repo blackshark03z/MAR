@@ -4,11 +4,21 @@
 
 **Branch:** `master`
 
-**Current engineering baseline:** `ENGINEERING_STABLE`
+**Current engineering baseline:** `MAR_V1_2_ENGINEERING_STABLE_PENDING_OWNER_UAT`
+
+**Current V1.2 implementation HEAD:** `e5fe06e2de416fabff38087d8435516f1bacdb38`
 
 **Current product release:** `MAR_V1_1_PRODUCT_ACCEPTED`
 
 **Self-hosting status:** `SELF_HOSTING_READY`
+
+## MAR V1.2 engineering release candidate — 2026-09-13
+
+The bounded V1.2 implementation is engineering-stable and awaiting only Owner real-use acceptance. Core scope is closed: runtime/source provenance and stale-artifact rejection; explicit execution-child readiness and fail-closed mutation admission; bounded sandbox-readiness caching; compact live Web usage observation; bounded Secure Tunnel recovery with explicit Quick Tunnel route-loss semantics; and Web-wait capacity parking/reacquisition that preserves exact attempt/process authority.
+
+Accepted implementation HEAD is `e5fe06e2de416fabff38087d8435516f1bacdb38`. Release evidence includes full repository tests, full vet/build, real Windows sandbox Web-wait E2E, representative T1 self-hosting PASS, 9/9 current-source transport semantics PASS, Quick Tunnel replacement PASS, and live 30-poll sandbox-cache evidence with zero observed sandbox-check children. The detailed engineering record is `docs/release/MAR_V1_2_RELEASE_CANDIDATE.md`.
+
+V1.1 remains `PRODUCT_ACCEPTED` until the Owner explicitly accepts the exact final V1.2 runtime. After this documentation closeout commit, rebuild/promote the canonical `8787` runtime from the exact final HEAD and verify `ALIGNED / trusted_for_release=true` before asking for Owner acceptance.
 
 ## MAR V1.1 Owner acceptance — 2026-09-12
 
