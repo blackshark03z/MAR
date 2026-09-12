@@ -3,7 +3,7 @@
 **Evaluation model:** objective metric / invariant based  
 **UI role:** regression-only; V1.2 does not include a broad UI redesign  
 **Compared against:** V1.1 accepted/research baselines  
-**Current live release-candidate HEAD:** `a9b02b42c726f63bd7f275d95ff0760e9b37f41c`
+**Accepted pre-seal live HEAD:** `325dcbaff4e059eeec2d4f20637fb2bd5a87d2f7`
 
 ## Decision rule
 
@@ -23,7 +23,7 @@ V1.2 is release-worthy when all mandatory gates below PASS, no safety/fencing in
 | Remote transport/idempotency safety | V1.1 accepted semantics | Current V1.2 source: all 9 ambiguous-ACK, precommit-cancellation and session-expiry cases PASS | 9/9 PASS | PASS |
 | Repository regression | V1.1 accepted full gates | `go test -p 1 -count=1 -timeout 420s ./...` PASS across all packages; `go vet -p 1 ./...` PASS; `go build -p 1 ./...` PASS | 100% required gates PASS | PASS |
 | Representative self-hosting | V1.1 self-hosting ready | T1 tiny-fix PASS in ~33.7 s, 2 model turns, 2 tool calls | End-to-end mutation -> verification -> integration PASS | PASS |
-| Runtime promotion convergence | Historical source/runtime mismatch was observed during V1.2 development | Live `8787`: exact final HEAD `a9b02b42...`, SHA `A5556D92...`, `ALIGNED`, `trusted_for_release=true`, `HEALTHY`, execution ready, worker capacity available, React/Vite asset active | Source HEAD == promoted artifact identity == live runtime identity | PASS |
+| Runtime promotion convergence | Historical source/runtime mismatch was observed during V1.2 development | Pre-seal live `8787`: exact HEAD `325dcbaff4e059eeec2d4f20637fb2bd5a87d2f7`, SHA `AFF8066D3DA6FB24C153D155BA4AD3EB426738B298F41C80F6B37CE1EE0CFA27`, `ALIGNED`, `trusted_for_release=true`, `HEALTHY`, execution ready, worker capacity available, React/Vite asset active | Source HEAD == promoted artifact identity == live runtime identity | PASS |
 
 ## Quantitative summary
 

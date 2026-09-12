@@ -1,13 +1,13 @@
 # MAR V1.2 — Engineering Release Candidate
 
-**Status:** `ENGINEERING_STABLE_PENDING_OWNER_UAT`  
+**Status:** `SUPERSEDED_BY_MAR_V1_2_PRODUCT_ACCEPTED`
 **Engineering closeout date:** `2026-09-13`  
 **Accepted implementation HEAD:** `e5fe06e2de416fabff38087d8435516f1bacdb38`  
 **Previous product release:** `MAR_V1_1_PRODUCT_ACCEPTED`
 
 ## Release decision
 
-MAR V1.2 has completed its bounded engineering scope and is ready for Owner real-use acceptance. This record does **not** promote V1.2 to `PRODUCT_ACCEPTED`; V1.1 remains the accepted product release until the Owner explicitly accepts the live V1.2 experience.
+MAR V1.2 completed its bounded engineering scope in this candidate record. The Owner subsequently instructed the metric-bound release-ready checkpoint to be sealed; the canonical final decision is now `docs/release/MAR_V1_2_RELEASE.md`. This candidate is retained as engineering provenance and no longer represents the current product status.
 
 The release keeps the frozen MAR authority model and durable task architecture. V1.2 hardens runtime truth and long-running Web operation without introducing a transport rewrite, database redesign, generic telemetry platform, new multi-agent fabric, cloud/distributed workers, or broad UI redesign.
 

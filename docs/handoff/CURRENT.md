@@ -4,17 +4,19 @@
 
 **Branch:** `master`
 
-**Current engineering baseline:** `MAR_V1_2_ENGINEERING_STABLE_PENDING_OWNER_UAT`
+**Current engineering baseline:** `MAR_V1_2_PRODUCT_ACCEPTED`
 
 **Current V1.2 implementation HEAD:** `e5fe06e2de416fabff38087d8435516f1bacdb38`
 
-**Current product release:** `MAR_V1_1_PRODUCT_ACCEPTED`
+**Current product release:** `MAR_V1_2_PRODUCT_ACCEPTED`
 
 **Self-hosting status:** `SELF_HOSTING_READY`
 
 ## MAR V1.2 engineering release candidate — 2026-09-13
 
-The bounded V1.2 implementation is engineering-stable and awaiting only Owner real-use acceptance. Core scope is closed: runtime/source provenance and stale-artifact rejection; explicit execution-child readiness and fail-closed mutation admission; bounded sandbox-readiness caching; compact live Web usage observation; bounded Secure Tunnel recovery with explicit Quick Tunnel route-loss semantics; and Web-wait capacity parking/reacquisition that preserves exact attempt/process authority.
+**Final release decision — 2026-09-13:** Owner instructed V1.2 to be sealed from the metric-bound release-ready checkpoint. The canonical final release record is `docs/release/MAR_V1_2_RELEASE.md`; release identity is `v1.2.0`. After final promotion verification, V1.2 is frozen and new optimization/research belongs to a later bounded release unless a concrete regression invalidates a V1.2 invariant.
+
+The bounded V1.2 implementation is engineering-stable and its metric-bound release result has been Owner-accepted for sealing. Core scope is closed: runtime/source provenance and stale-artifact rejection; explicit execution-child readiness and fail-closed mutation admission; bounded sandbox-readiness caching; compact live Web usage observation; bounded Secure Tunnel recovery with explicit Quick Tunnel route-loss semantics; and Web-wait capacity parking/reacquisition that preserves exact attempt/process authority.
 
 Accepted implementation HEAD is `e5fe06e2de416fabff38087d8435516f1bacdb38`. Release evidence includes full repository tests, full vet/build, real Windows sandbox Web-wait E2E, representative T1 self-hosting PASS, 9/9 current-source transport semantics PASS, Quick Tunnel replacement PASS, and live 30-poll sandbox-cache evidence with zero observed sandbox-check children. The detailed engineering record is `docs/release/MAR_V1_2_RELEASE_CANDIDATE.md`.
 
