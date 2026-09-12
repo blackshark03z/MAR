@@ -71,13 +71,23 @@ func (t WebTurn) ValidateIdentity() error {
 	return nil
 }
 
-func (t WebTurn) IntegrityDigest() (string, error) {
-	if err := t.ValidateIdentity(); err != nil {
-		return "", err
+func WebTurnIntegrityDigestFromHashes(id, taskID, attemptID string, runEpoch int64, requestID, requestHash, responseHash string, createdAt time.Time, respondedAt *time.Time) (string, error) {
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(taskID) == "" || strings.TrimSpace(attemptID) == "" || strings.TrimSpace(requestID) == "" || strings.TrimSpace(requestHash) == "" {
+		return "", errors.New("web turn integrity metadata is incomplete")
+	}
+	if runEpoch <= 0 || createdAt.IsZero() {
+		return "", errors.New("web turn integrity metadata requires positive epoch and created_at")
+	}
+	if strings.TrimSpace(responseHash) == "" {
+		if respondedAt != nil {
+			return "", errors.New("pending web turn integrity metadata cannot contain responded_at")
+		}
+	} else if respondedAt == nil || respondedAt.IsZero() {
+		return "", errors.New("completed web turn integrity metadata requires responded_at")
 	}
 	responded := ""
-	if t.RespondedAt != nil {
-		responded = t.RespondedAt.UTC().Format(time.RFC3339Nano)
+	if respondedAt != nil {
+		responded = respondedAt.UTC().Format(time.RFC3339Nano)
 	}
 	canonical := struct {
 		ID           string `json:"turn_id"`
@@ -90,9 +100,9 @@ func (t WebTurn) IntegrityDigest() (string, error) {
 		CreatedAt    string `json:"created_at"`
 		RespondedAt  string `json:"responded_at"`
 	}{
-		ID: t.ID, TaskID: t.TaskID, AttemptID: t.AttemptID, RunEpoch: t.RunEpoch,
-		RequestID: t.RequestID, RequestHash: t.RequestHash, ResponseHash: t.ResponseHash,
-		CreatedAt: t.CreatedAt.UTC().Format(time.RFC3339Nano), RespondedAt: responded,
+		ID: id, TaskID: taskID, AttemptID: attemptID, RunEpoch: runEpoch,
+		RequestID: requestID, RequestHash: requestHash, ResponseHash: responseHash,
+		CreatedAt: createdAt.UTC().Format(time.RFC3339Nano), RespondedAt: responded,
 	}
 	payload, err := json.Marshal(canonical)
 	if err != nil {
@@ -100,6 +110,13 @@ func (t WebTurn) IntegrityDigest() (string, error) {
 	}
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func (t WebTurn) IntegrityDigest() (string, error) {
+	if err := t.ValidateIdentity(); err != nil {
+		return "", err
+	}
+	return WebTurnIntegrityDigestFromHashes(t.ID, t.TaskID, t.AttemptID, t.RunEpoch, t.RequestID, t.RequestHash, t.ResponseHash, t.CreatedAt, t.RespondedAt)
 }
 
 func (t WebTurn) IntegrityValid() bool {

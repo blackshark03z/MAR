@@ -168,6 +168,77 @@ func (s *SQLite) GetWebTurn(ctx context.Context, turnID string) (domain.WebTurn,
 	return turn, nil
 }
 
+type WebTurnUsageObservation struct {
+	ID          string          `json:"turn_id"`
+	Response    json.RawMessage `json:"response,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	RespondedAt *time.Time      `json:"responded_at,omitempty"`
+}
+
+// ListWebTurnUsageObservationsByTaskEpoch returns only the durable response and
+// timing fields required by Owner live-usage telemetry. It deliberately does
+// not hydrate request_json; authoritative execution/verification reads retain
+// the full WebTurn integrity path.
+func (s *SQLite) ListWebTurnUsageObservationsByTaskEpoch(ctx context.Context, taskID string, epoch int64, limit int) ([]WebTurnUsageObservation, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" || epoch <= 0 {
+		return nil, errors.New("web turn usage listing requires task id and positive epoch")
+	}
+	if limit <= 0 || limit > 128 {
+		return nil, errors.New("web turn usage listing limit must be in [1,128]")
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND run_epoch = ? ORDER BY created_at ASC LIMIT ?`, taskID, epoch, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]WebTurnUsageObservation, 0, min(limit, 24))
+	for rows.Next() {
+		var turnID, rowTaskID, attemptID, requestID, requestHash, responseHash, integrityHash, createdRaw string
+		var rowEpoch int64
+		var response []byte
+		var respondedRaw sql.NullString
+		if err := rows.Scan(&turnID, &rowTaskID, &attemptID, &rowEpoch, &requestID, &response, &requestHash, &responseHash, &integrityHash, &createdRaw, &respondedRaw); err != nil {
+			return nil, err
+		}
+		createdAt, err := time.Parse(time.RFC3339Nano, createdRaw)
+		if err != nil {
+			return nil, fmt.Errorf("parse web turn usage created_at: %w", err)
+		}
+		var respondedAt *time.Time
+		if respondedRaw.Valid {
+			value, err := time.Parse(time.RFC3339Nano, respondedRaw.String)
+			if err != nil {
+				return nil, fmt.Errorf("parse web turn usage responded_at: %w", err)
+			}
+			respondedAt = &value
+		}
+		if len(response) == 0 {
+			if strings.TrimSpace(responseHash) != "" || respondedAt != nil {
+				return nil, errors.New("pending web turn usage metadata is invalid")
+			}
+		} else {
+			gotHash, err := domain.HashWebTurnJSON(response)
+			if err != nil || !strings.EqualFold(gotHash, strings.TrimSpace(responseHash)) || respondedAt == nil {
+				return nil, errors.New("web turn usage response hash is invalid")
+			}
+		}
+		wantIntegrity, err := domain.WebTurnIntegrityDigestFromHashes(turnID, rowTaskID, attemptID, rowEpoch, requestID, requestHash, responseHash, createdAt, respondedAt)
+		if err != nil || !strings.EqualFold(wantIntegrity, strings.TrimSpace(integrityHash)) {
+			return nil, errors.New("web turn usage integrity is invalid")
+		}
+		observation := WebTurnUsageObservation{ID: turnID, CreatedAt: createdAt, RespondedAt: respondedAt}
+		if len(response) != 0 {
+			observation.Response = append(json.RawMessage(nil), response...)
+		}
+		out = append(out, observation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ListWebTurnsByTaskEpoch returns a bounded chronological view of one execution
 // epoch. It is a read-only observability surface: callers may derive live
 // progress from already-durable Web Brain turn responses, but this method never

@@ -1461,7 +1461,7 @@ func (b *ownerUIBackend) liveUsageForTask(ctx context.Context, task domain.Task)
 	default:
 		return nil, nil
 	}
-	turns, err := b.db.ListWebTurnsByTaskEpoch(ctx, task.ID, task.RunEpoch, 128)
+	turns, err := b.db.ListWebTurnUsageObservationsByTaskEpoch(ctx, task.ID, task.RunEpoch, 128)
 	if err != nil {
 		return nil, err
 	}
