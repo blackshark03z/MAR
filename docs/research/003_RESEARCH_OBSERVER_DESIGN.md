@@ -1,4 +1,4 @@
-# R-003 — Read-Only Research Observer for MAR
+# R-003 — Read-Only Research Observer Design
 
 **Status:** `RESEARCH_ONLY`  
 **Baseline:** MAR v1.1.0  
@@ -7,404 +7,255 @@
 
 ## Research question
 
-How much of MAR's performance, reliability, context use, recovery and resource behavior can be reconstructed automatically from MAR v1.1's existing durable truth and operating-system observations, without adding production instrumentation or changing execution behavior?
+How much of MAR performance, reliability, context use and recovery quality can be reconstructed automatically from the accepted V1.1 system without modifying production code, and what is the smallest safe observer needed to turn that evidence into continuous research data?
 
-The preferred experiment is a separate read-only observer. Its job is analytical only:
+## Initial empirical inventory
+
+A read-only inspection of the current MAR durable store found:
+
+- 42 durable tasks;
+- 7 `COMPLETE` tasks;
+- 23 `BLOCKED` tasks;
+- 12 `CANCELLED` tasks;
+- 76 execution attempts;
+- 385 durable Web turns, of which 368 have responses;
+- 13 semantic checkpoints;
+- 13 verification-evidence records;
+- 21 task-result records;
+- 37 task-control records.
+
+The recent task sample already contains realistic long-running behavior: completed tasks with multiple run epochs/attempts, tasks with dozens of Web turns, blocked tasks, cancelled tasks, controls, checkpoints and verified results. This is enough historical variation to test an observer before adding synthetic workload.
+
+The local Owner API at `127.0.0.1:8787` was not listening during one research probe even though the durable store remained readable. Therefore a research observer must not depend exclusively on the Owner Console process being alive.
+
+## Source hierarchy
+
+The Observer should prefer the least coupled, most supported source that can answer a metric.
+
+### Source A — MAR read-only public/local observability surfaces
+
+When MAR is live, prefer existing read-only endpoints and stable read APIs for runtime/connection readiness, recent tasks and task state, task status/result/inspect, usage summaries, and project/revision identity.
+
+### Source B — exported/snapshotted durable evidence
+
+For historical reconstruction or when the live UI/API process is unavailable, prefer an explicit read-only snapshot/export if MAR later exposes one. Such an export should be analytical evidence only and must never become execution authority.
+
+### Source C — SQLite read-only fallback during research
+
+Until an export exists, an external research process may open the current MAR SQLite file in read-only mode for historical analysis. It must use read-only mode, never write/migrate/checkpoint/vacuum the MAR database, never infer runtime authority from analytical reads, tolerate schema evolution by versioning the parser, and stop rather than guess when expected data is absent.
+
+This is a research fallback, not a proposed product API.
+
+### Source D — operating-system observation
+
+Use Windows counters/process inspection only for facts not available from MAR, such as host commit/pagefile pressure, process RSS/private bytes, process count/tree, CPU utilization, free disk, and optionally browser-process pressure where process identity can be established without guessing.
+
+OS samples are observational and must not restart, throttle, kill or reconfigure MAR.
+
+## What V1.1 can already reconstruct
+
+### High-confidence without new instrumentation
+
+1. Task wall-clock envelope — `tasks.created_at -> tasks.updated_at` for terminal historical tasks.
+2. Attempt/replacement count — execution-attempt lineage and run epochs.
+3. Attempt start/termination envelope — where start/termination timestamps exist.
+4. External Web Brain wait — each responded WebTurn has `created_at -> responded_at`.
+5. Web-turn volume — turns per task/epoch and pending versus responded turns.
+6. Context payload size proxy — serialized WebTurn request/response bytes can be measured from durable payloads without replaying them into a model.
+7. Checkpoint density — checkpoint count/timestamps per task/attempt.
+8. Verification timepoint and identity — verification evidence is revision/profile/environment bound and timestamped.
+9. Result timepoint, resource summary, verdict and integration state — durable TaskResult.
+10. Control/Owner intervention proxy — durable task controls by type and timestamp.
+11. Retry/replacement density — attempts and run epochs per terminal outcome.
+12. Success/blocked/cancelled distributions — durable task states and verified results.
+
+### Partially reconstructable
+
+1. Verification duration — end/timepoint is durable, but precise verification start is not universally represented as one canonical timestamp.
+2. Integration duration — integration result/state is durable, but a complete start/end span is not necessarily available for every historical path.
+3. MAR orchestration overhead — total envelope minus known waits is only a residual and can contain worker/context/queue time; it must not be labeled precise MAR overhead.
+4. Worker active execution time — attempt envelope is available, but it may include waiting and orchestration around active process work.
+5. Owner intervention count — controls are strong evidence for explicit controls but do not capture every human interaction outside MAR.
+6. Context repetition ratio — request bytes can be compared, but semantic duplication needs a bounded analysis method before it is trustworthy.
+
+### Not reliably reconstructable from V1.1 alone
+
+1. exact context-build latency;
+2. exact MCP/tunnel request latency per call;
+3. exact reconnect/disconnect timeline across browser/client/tunnel layers;
+4. precise worker CPU-active time;
+5. continuous Windows commit/RAM/CPU pressure over historical tasks;
+6. precise browser renderer memory attributable to MAR interaction;
+7. time-to-first-useful-action unless the qualifying action is defined and timestamped by existing evidence;
+8. end-to-end distributed trace across client -> transport -> MAR -> brain -> worker -> verification -> integration.
+
+These gaps are candidates for future measurement only if they materially limit a research question. They are not automatic V1.2 instrumentation requirements.
+
+## Observer architecture candidate
 
 ```text
-MAR v1.1 durable/runtime truth + OS counters
-                 ↓
-        Read-Only Research Observer
-                 ↓
-      normalized local measurements
-                 ↓
-     task timelines / benchmark records
-                 ↓
-       baseline + anomaly analysis
+MAR public read surfaces ─┐
+                          ├─> Collector -> Normalizer -> Task Measurement Record
+SQLite read-only fallback ┤                         |
+                          │                         v
+Windows observations ─────┘                   local research data
+                                                    |
+                                                    v
+                                      baseline / regression analysis
+                                                    |
+                                                    v
+                                         compact research report
 ```
 
-The Observer must never become execution authority, a retry engine, a second scheduler, a task-state store used by MAR, or a source of product truth.
+The Observer is deliberately not a daemon required by MAR. MAR must remain fully functional if the Observer is absent or broken.
 
-## Initial read-only probe against the real MAR database
+## Collector modes
 
-A read-only SQLite probe was executed against the accepted v1.1 runtime database using SQLite URI `mode=ro`. It did not mutate MAR state.
+### 1. Passive live sampling
 
-Observed durable population at the time of the probe:
+When MAR is running, sample lightweight public runtime/task information at a low cadence, initially no faster than every 5 seconds during an active measurement window and much slower when idle. Avoid overlapping polls. Capture only changed samples where practical.
 
-- 42 tasks total;
-- task states: 23 `BLOCKED`, 12 `CANCELLED`, 7 `COMPLETE`;
-- 76 execution-attempt rows across 38 tasks;
-- 39 tasks with workspaces;
-- 385 Web-turn rows across 35 tasks;
-- 27 tasks with at least one responded Web turn;
-- 13 tasks with verification evidence;
-- 21 TaskResult rows across 13 distinct tasks;
-- 7 tasks with integration attempts;
-- 13 semantic-checkpoint rows across 10 tasks;
-- 13 effect-intent rows;
-- no durable Owner-feedback rows yet.
+### 2. Terminal-task reconstruction
 
-Coverage over all 42 historical tasks from existing durable truth:
+When a task becomes terminal, reconstruct a normalized record from durable evidence. This should be the primary data product because terminal truth is less noisy than high-frequency UI snapshots.
 
-| Signal | Tasks covered | Coverage |
-| --- | ---: | ---: |
-| execution attempt exists | 38 | 90.5% |
-| workspace exists | 39 | 92.9% |
-| Web turn exists | 35 | 83.3% |
-| responded Web turn exists | 27 | 64.3% |
-| semantic checkpoint exists | 10 | 23.8% |
-| verification evidence exists | 13 | 31.0% |
-| TaskResult exists | 13 | 31.0% |
-| integration attempt exists | 7 | 16.7% |
+### 3. Host-pressure sampling
 
-For the 13 tasks with a durable latest TaskResult, the existing timestamps were sufficient to derive the following historical observations:
+During selected research windows, capture bounded OS samples, for example every 5–10 seconds, then aggregate to peak/median values. Do not continuously retain raw process telemetry indefinitely.
 
-- task-record lifetime (`tasks.created_at -> tasks.updated_at`): 13/13 covered, median ~495.5 s;
-- submit-to-first-attempt (`tasks.created_at -> first execution_attempt.started_at`): 13/13 covered, median ~0.94 s, observed p95-like sample ~2.12 s;
-- first-to-last attempt span: 13/13 covered, median ~493.8 s;
-- integration-attempt duration where integration rows exist: 7/13 covered, median ~1.25 s.
+### 4. Daily lightweight probe
 
-These durations are evidence about recorded timestamps, not yet semantic stage timings. In particular, attempt span can include waiting for external cognition and task `updated_at` is not guaranteed to mean an immutable completion timestamp.
+Measure read-only MAR health/read/context latency and connection readiness. Do not submit mutation-capable tasks merely to create metrics.
 
-### Initial Web-turn traffic signal
+### 5. Weekly controlled evaluation
 
-The same read-only probe measured only persisted JSON lengths and timestamps; it did not export prompt/response content.
+Use fixed benchmark fixtures only after historical reconstruction is working. Compare distributions, not single runs.
 
-Across 385 durable Web turns:
+## Task Measurement Record candidate
 
-- stored request JSON: 33,871,714 bytes;
-- stored response JSON: 854,988 bytes;
-- request/response stored-byte ratio: ~39.6:1;
-- cumulative responded-turn wait time: ~27,752.9 s (~7.7 h);
-- pending Web-turn rows at probe time: 17.
-
-A sampled response shape confirmed durable usage metadata with `input_tokens`, `output_tokens`, `total_tokens`, and `estimated` fields.
-
-The ~39.6:1 ratio is a research signal, not proof of a context defect. Stored JSON bytes are not identical to on-wire bytes, and task complexity differs. It does justify deeper context-amplification measurement before proposing redesign.
-
-## Existing V1.1 sources the Observer can reuse
-
-### 1. `tasks`
-
-Useful fields:
-
-- task identity and project identity;
-- state;
-- `run_epoch`;
-- `created_at` / `updated_at`;
-- contract hash.
-
-Do not export raw `contract_json` by default. Goal/product text is unnecessary for most performance analysis and can contain sensitive project context.
-
-### 2. `execution_attempts`
-
-Useful fields:
-
-- task/run-epoch lineage;
-- authority state;
-- `started_at`, `heartbeat_at`, `terminated_at`;
-- terminal status;
-- attempt/replacement counts.
-
-This is the primary durable source for worker-attempt lifetime and replacement/recovery lineage.
-
-### 3. `workspaces`
-
-Useful fields:
-
-- base/head revision identity;
-- workspace state;
-- created/updated/removed timestamps.
-
-Do not export full paths unless needed for environment-profile identity; prefer a normalized project/workspace identifier.
-
-### 4. `web_turns`
-
-Useful fields:
-
-- exact task/attempt/run-epoch lineage;
-- request ID and turn ID;
-- request/response hashes;
-- `created_at` / `responded_at`;
-- `length(request_json)` / `length(response_json)`;
-- response usage metadata when available.
-
-The Observer should query byte lengths and usage fields without copying message/code contents into research storage.
-
-### 5. `semantic_checkpoints`
-
-Useful fields:
-
-- checkpoint count and version;
-- candidate/current revision identity;
-- checkpoint creation time.
-
-Do not export checkpoint payload contents by default.
-
-### 6. `verification_evidence`
-
-Useful fields:
-
-- task/attempt/run epoch;
-- candidate revision;
-- verification profile identity/hash;
-- verdict;
-- evidence creation time.
-
-The current table provides evidence-completion time but not an explicit verification-start timestamp, so exact verification duration cannot be reconstructed from this table alone.
-
-### 7. `task_results`
-
-Useful fields:
-
-- latest result/version;
-- candidate/final revision;
-- verdict;
-- integration status;
-- ResourceSummary: agent turns, tool calls, model input/output/total tokens;
-- result creation time.
-
-Do not export detailed evidence text or unresolved-risk bodies unless a specific research question requires them.
-
-### 8. `integration_attempts`
-
-Useful fields:
-
-- created/updated timestamps;
-- expected/candidate/observed revision identity;
-- status/failure class.
-
-This currently gives one of the cleanest stage durations because both start-like and update timestamps exist.
-
-### 9. `effect_intents`
-
-Useful fields:
-
-- effect count;
-- state;
-- reconciliation count;
-- created/updated/dispatched/observed timestamps.
-
-This can support duplicate/ambiguous-effect and reconciliation research without exporting effect payloads.
-
-### 10. Runtime/local observation
-
-Useful existing surfaces include Owner Console runtime snapshots, connection readiness/status, bounded request counters where available, active task/run epoch, live Web usage, health endpoints, Git identity and MAR-owned process identity.
-
-These are runtime observations rather than durable historical truth. The Observer may sample them, but must label gaps and stale samples explicitly.
-
-## Exact, derived and currently unavailable metrics
-
-The Observer must attach a provenance/quality class to every metric.
-
-### `DURABLE_EXACT`
-
-Can be derived directly from existing durable timestamps/counters without interpreting stage semantics:
-
-- task creation/update timestamps;
-- attempt start/heartbeat/termination timestamps;
-- attempt/replacement count;
-- Web-turn creation/response timestamps;
-- persisted Web-turn JSON byte lengths;
-- persisted Web-turn usage fields;
-- checkpoint/evidence/result timestamps;
-- integration created/updated timestamps;
-- integration/verdict/state identities;
-- effect reconciliation counts/timestamps;
-- ResourceSummary totals.
-
-### `DERIVED_APPROXIMATE`
-
-Useful but must not be named as a stronger semantic fact:
-
-- task-record lifetime from `created_at -> updated_at`;
-- submit-to-first-attempt as an admission/start proxy;
-- execution-attempt span as a broad active-attempt window;
-- cumulative responded Web-turn wait as external-cognition wait evidence;
-- stored JSON length as a context-payload proxy;
-- time between checkpoint/evidence/result events as coarse stage boundaries.
-
-Do not report attempt span as pure worker CPU/execution time, or stored JSON bytes as exact network bytes.
-
-### `UNAVAILABLE_IN_V1_1_HISTORY`
-
-The initial probe found no authoritative historical source for:
-
-- per-MCP/HTTP request latency and error class across all calls;
-- disconnect/reconnect events and exact tunnel-downtime windows;
-- context-engine build start/end duration;
-- Decision Projection byte size as a separate field;
-- worker-process launch latency separated from attempt admission;
-- verification start time separated from evidence completion;
-- continuous CPU/RAM/Windows commit/pagefile/disk-pressure history;
-- Chrome renderer/browser memory history;
-- exact Owner manual-intervention count for past tasks;
-- exact time-to-first-useful-progress as a domain-semantic milestone.
-
-These are candidate live-sampling signals or future narrow V1.2 instrumentation gaps. Their absence does not authorize adding telemetry yet.
-
-## Observer safety and privacy contract
-
-The Observer should default to metadata-only collection.
-
-### Must not copy by default
-
-- `contract_json` content;
-- Web-turn request/response message content;
-- checkpoint payloads;
-- effect payloads/results;
-- verification command output/evidence bodies;
-- environment variable values;
-- connector path tokens, tunnel credentials or API keys;
-- process command lines that may contain secrets.
-
-### Safe default fields
-
-Prefer:
-
-- IDs/hashes;
-- state/status/verdict enums;
-- timestamps/durations;
-- row/turn/tool/attempt counts;
-- byte lengths;
-- token counts;
-- process IDs/names and resource counters;
-- normalized revision identities;
-- error classes after redaction.
-
-The Observer's own research store must live outside canonical Git source and must never be read by MAR for authority or recovery decisions.
-
-## Candidate Observer collection loop
-
-This is a research design, not an implementation authorization.
-
-### Incremental durable scan
-
-While MAR has active/recent tasks:
-
-1. open MAR SQLite read-only;
-2. query only metadata newer than the last local analytical cursor;
-3. use `length(...)`, hashes and timestamps instead of copying large JSON payloads;
-4. parse only bounded usage/status fields needed for measurement;
-5. close/renew read transactions quickly so the Observer does not hold long snapshots.
-
-No writes, migrations, PRAGMAs that change database behavior, locks held across sleeps, or repair actions are allowed.
-
-### Adaptive live sampling
-
-Candidate cadence to validate experimentally:
-
-- active MAR task: runtime/connection snapshot every 2–5 s;
-- relevant OS/process counters: every ~5 s;
-- idle system: back off to 30–60 s or stop sampling;
-- lightweight daily health probes: once per day;
-- fixed benchmark suite: weekly;
-- destructive/failure-injection probes: manual or low-frequency controlled runs only.
-
-The correct interval should be chosen after measuring observer overhead. Do not assume 2 s is free merely because the Owner UI already polls at that cadence.
-
-### Local analytical output
-
-Candidate local-only records:
+Every field carries a source and availability state.
 
 ```text
-observer_run
-environment_profile
-raw_metadata_event
-os_sample
-connection_sample
-task_measurement_record
-benchmark_run
-anomaly_signal
+identity:
+  task_id
+  project_id
+  run_epochs
+  base/final revision where available
+  terminal state
+  measurement schema version
+
+outcome:
+  verification verdict
+  integration status
+  result present
+  unresolved-risk count
+
+work volume:
+  attempts
+  web_turns
+  responded_web_turns
+  checkpoints
+  controls
+  agent_turns
+  agent_tool_calls
+  model_input/output/total_tokens
+
+known timing:
+  task_wall_time
+  web_brain_wait_total
+  web_brain_wait_median/p95
+  first_attempt_start_offset
+  attempt_envelope_total
+  verification/result timepoints
+
+context:
+  web_request_bytes_total
+  web_response_bytes_total
+  bytes_per_turn
+  tokens_per_result where available
+
+reliability:
+  replacement_count
+  pending/stale turn observations
+  controls by kind
+  terminal outcome
+
+host samples when enabled:
+  peak_commit_pressure
+  peak_process_memory
+  peak_cpu
+  min_free_disk
 ```
 
-A small observer-owned SQLite/JSONL store is acceptable for research if it is explicitly analytical and never becomes MAR task truth. Large traces stay out of Git. Repository documents preserve only benchmark definitions, durable conclusions and material findings.
+A value is never silently zero when unavailable. Use `UNAVAILABLE`, `NOT_APPLICABLE`, or a measured value with source.
 
-## Task Measurement Record v0 research shape
+## Derived metrics with safe semantics
 
-A future experimental record should distinguish values from provenance:
+Allowed initial derived metrics:
+
+- `attempts_per_terminal_task`;
+- `web_turns_per_terminal_task`;
+- `web_wait_share_of_task_envelope` (only when the task envelope is valid; explicitly a share of envelope, not a full stage decomposition);
+- `request_bytes_per_web_turn`;
+- `input_tokens_per_verified_result`;
+- `controls_per_task`;
+- `verified_success_rate`;
+- `replacement_rate`;
+- `terminal_state_distribution`.
+
+Do not yet publish `MAR overhead = total - model wait` as a precise metric. The residual includes unseparated worker, queue, context, verification and integration time.
+
+## Storage and retention candidate
+
+Raw research data should live outside canonical MAR source, for example:
 
 ```text
-task_id
-project_id
-run_epoch_count
-attempt_count
-terminal_state
-final_verdict
-integration_status
-
-observed_task_record_lifetime_ms
-submit_to_first_attempt_ms
-attempt_span_ms
-web_turn_count
-responded_web_turn_count
-web_wait_ms
-web_request_stored_bytes
-web_response_stored_bytes
-model_input_tokens
-model_output_tokens
-model_total_tokens
-checkpoint_count
-verification_evidence_count
-integration_attempt_count
-effect_count
-reconciliation_count
-
-live_transport_error_count        = UNAVAILABLE or sampled
-live_reconnect_count              = UNAVAILABLE or sampled
-peak_mar_rss                      = UNAVAILABLE or sampled
-peak_worker_rss                   = UNAVAILABLE or sampled
-peak_system_commit_ratio          = UNAVAILABLE or sampled
-browser_renderer_memory           = UNAVAILABLE or sampled
-
-metric_provenance[]
-observer_schema_version
-environment_profile_hash
+D:\MAR-Research\observer\
+  raw\YYYY-MM-DD\
+  normalized\task-records\
+  baselines\
+  reports\
 ```
 
-Do not synthesize unavailable values as zero.
+Repository `docs/research/` stores only benchmark definitions, schemas/contracts, summarized findings and decisions about whether evidence is sufficient.
 
-## Automatic baseline strategy
+Initial retention candidate:
 
-### Real work
+- high-frequency raw OS samples: 14 days;
+- normalized task records: retain indefinitely during research unless privacy/size requires otherwise;
+- weekly aggregates/reports: retain indefinitely;
+- payload bodies: do not copy by default; retain byte counts/hashes/derived metadata unless a bounded investigation specifically needs content.
 
-Use real tasks for broad trend discovery, anomaly examples and workload realism. Do not compare two arbitrary real tasks as if they have equal difficulty.
+## Observer overhead budget
 
-### Fixed benchmarks
+The Observer must be cheaper than the effects it measures.
 
-Use controlled task classes from R-002 for regression detection. A benchmark result should be grouped only with the same fixture, source/environment class and material runtime configuration.
+Initial research budget:
 
-### Baseline maturity
+- idle CPU: effectively negligible;
+- live sampling CPU: target <1% average on the host;
+- memory: target <150 MiB working set;
+- no additional model calls during passive observation;
+- no MAR database writes;
+- no overlapping API polls;
+- bounded disk growth with retention cleanup;
+- any probe that materially changes task scheduling/resource admission invalidates its own performance sample.
 
-Do not set strict automatic regression thresholds from the current small/noisy history. First collect repeated comparable runs. Until then, reports should use:
+These are research targets, not product requirements.
 
-- `OBSERVED_CHANGE`;
-- `POSSIBLE_REGRESSION`;
-- `POSSIBLE_IMPROVEMENT`;
-- `ENVIRONMENT_NOISE`;
-- `INSUFFICIENT_COMPARABLE_EVIDENCE`.
+## Phase-0 experiment
 
-Promotion to an implementation candidate requires persistent evidence, not one slow run.
+Before any observer implementation is proposed for V1.2:
 
-## Initial conclusions from the probe
+1. reconstruct all existing terminal task records from the 42-task historical store using a one-off read-only research script outside MAR production source;
+2. quantify field availability per metric;
+3. group comparable tasks only where task class/environment can be identified without guessing;
+4. identify which missing metrics actually prevent answering current P0 questions: connection reliability, context amplification and end-to-end latency;
+5. produce one `OBSERVABILITY_GAP_REPORT` with evidence-ranked gaps;
+6. decide whether a standalone research sidecar is sufficient or whether a narrow MAR instrumentation proposal is justified.
 
-1. **A read-only Observer is feasible without changing MAR v1.1.** Core task/attempt/Web-turn/result lineage is already durable.
-2. **Historical task timing coverage is stronger than expected for attempts, but weak for semantic stages.** We can measure broad windows now, not yet cleanly separate context build, worker compute, verification and transport.
-3. **Web-turn payload amplification deserves dedicated study.** The persisted request bytes were ~39.6x persisted response bytes across the observed history.
-4. **Connection/reconnect and host-pressure history are genuine blind spots.** They require live sampling if we want evidence without modifying MAR.
-5. **Verification duration is not directly reconstructable.** Evidence completion exists; explicit start timing does not.
-6. **Owner-intervention history is absent in the current data.** Future research needs either an external observer event or explicit Owner-feedback use; do not infer it from task states.
-7. **The first implementation experiment, if later authorized, should be an external metadata-only observer, not OpenTelemetry or new production tables.** Only proven blind spots should justify future MAR instrumentation.
+## Exit criteria for R-003
 
-## Next research experiments
+R-003 is ready to promote into an implementation proposal only if historical reconstruction demonstrates useful measurement with no production mutation, at least one material P0 research question cannot be answered from current evidence, the missing signal is precisely defined, the expected instrumentation cost/overhead is bounded, and a benchmark exists that proves the added signal improves a decision rather than merely dashboard detail.
 
-Without changing production code:
-
-1. reconstruct normalized Task Measurement Records for the existing 42-task history using metadata-only queries;
-2. identify stale/pending Web-turn patterns by terminal task state without exporting turn content;
-3. sample live MAR/worker/system resource counters during normal real work and quantify observer overhead;
-4. sample connection/readiness transitions during normal use and one controlled reconnect experiment;
-5. define 3–4 fixed, cheap benchmark fixtures before attempting weekly regression detection;
-6. after at least 10 comparable runs per cheap fixture, evaluate whether simple rolling median/p95 thresholds are stable enough to automate.
-
-No production-code change is authorized by this document.
+Until then, the correct action is research and external observation, not MAR code changes.
