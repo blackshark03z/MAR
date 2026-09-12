@@ -22,8 +22,9 @@ This means normal long coding work does **not** require one HTTP request to rema
 `internal/mcpedge/http.go` currently constructs Streamable HTTP with:
 
 - `JSONResponse: true`;
-- stateful mode by default (`Stateless` is supported but current bridge profiles do not set it);
-- MCP session timeout: 30 minutes;
+- the normal MCP Link remote bridge for `chatgpt-web` / `claude-web` currently uses the handler's stateful default;
+- the OpenAI Secure Tunnel manager already creates the same remote handler with `Stateless: true`;
+- stateful MCP session timeout: 30 minutes;
 - request body cap: 1 MiB;
 - `PropagateRequestCancellation: true`.
 
@@ -143,9 +144,9 @@ Collect:
 
 ## Stateless research hypothesis
 
-MAR already has a stateless handler path and a unit test advertising MCP `2026-07-28`. A future experiment should compare it with the current stateful bridge.
+MAR already has both transport semantics in production source: MCP Link is stateful while the OpenAI Secure Tunnel local MCP handler is stateless, and a unit test proves the stateless handler advertises MCP `2026-07-28`. This creates a natural A/B research boundary without first changing transport implementation.
 
-Do **not** assume stateless is automatically better. It is promising because durable MAR task/turn handles already carry application state, but switching transport semantics can affect client compatibility, telemetry/session counts, authentication assumptions, cancellation behavior and reconnect UX.
+Do **not** assume stateless is automatically better. It is promising because durable MAR task/turn handles already carry application state, but transport choice can affect client compatibility, telemetry/session counts, authentication assumptions, cancellation behavior and reconnect UX. The experiment should compare existing paths before proposing convergence on one mode.
 
 Promotion requires measured improvement on the benchmark matrix, not protocol novelty.
 
