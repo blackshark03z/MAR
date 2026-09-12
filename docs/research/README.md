@@ -106,6 +106,8 @@ A research item should not become MAR V1.2 implementation scope merely because i
 - [R-005 — Phase-0 observability gap report](005_OBSERVABILITY_GAP_REPORT_PHASE0.md)
 - [R-006 — Context amplification phase-0](006_CONTEXT_AMPLIFICATION_PHASE0.md)
 - [R-007 — Automated Research Observer runtime](007_AUTOMATED_RESEARCH_OBSERVER_RUNTIME.md)
+- [R-008 — Active transport watch](008_ACTIVE_TRANSPORT_WATCH.md)
+- [R-009 — Host resource pressure watch](009_HOST_RESOURCE_PRESSURE_WATCH.md)
 - [R-005 — Phase-0 observability gap report](005_OBSERVABILITY_GAP_REPORT_PHASE0.md)
 
 More topics should be added only when they represent a distinct research question rather than splitting one problem into paperwork.
