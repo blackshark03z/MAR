@@ -109,5 +109,6 @@ A research item should not become MAR V1.2 implementation scope merely because i
 - [R-008 — Active transport watch](008_ACTIVE_TRANSPORT_WATCH.md)
 - [R-009 — Host resource pressure watch](009_HOST_RESOURCE_PRESSURE_WATCH.md)
 - [R-010 — Stable-source benchmark phase 0](010_STABLE_SOURCE_BENCHMARK_PHASE0.md)
+- [R-011 — Remote HTTP disconnect and retry semantics](011_REMOTE_HTTP_DISCONNECT_AND_RETRY.md)
 
 More topics should be added only when they represent a distinct research question rather than splitting one problem into paperwork.
