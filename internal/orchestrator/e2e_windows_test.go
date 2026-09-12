@@ -647,6 +647,189 @@ complete:
 	}
 }
 
+func TestRuntimeE2EWebWaitCapacityAllowsThirdReadyTask(t *testing.T) {
+	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
+		t.Skip("worker helper process")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	t.Setenv("MAR_RUNTIME_E2E_WORKER", "1")
+
+	goExe := findPortableGo(t)
+	goRoot := filepath.Dir(filepath.Dir(goExe))
+	goBin := filepath.Dir(goExe)
+	dataRoot := filepath.Join(t.TempDir(), "mar-web-wait-data")
+	sharedModCache := filepath.Join(dataRoot, "runtime", "gomodcache")
+	if err := os.MkdirAll(sharedModCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(dataRoot, "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	runtime, err := NewRuntime(s, RuntimeConfig{
+		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		Provider:             worker.ProviderConfig{BrainMode: worker.BrainWeb},
+		AgentProfile:         agent.Profile{Model: "gpt-5.6-sol", ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		VerificationProfiles: []verification.Profile{{ID: "web-wait-noop", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
+		SandboxReadPaths:     []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
+		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,
+		ResourceGovernor: resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 2, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 2},
+		Scheduler:        scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
+		Daemon:           DaemonConfig{PollInterval: 25 * time.Millisecond, ControlPollInterval: 25 * time.Millisecond, MaxConcurrentWorkers: 2, MaxPreflightPerTick: 8},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type projectFixture struct {
+		id   string
+		root string
+		base string
+	}
+	createProject := func(id string) projectFixture {
+		root := filepath.Join(t.TempDir(), id)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/"+id+"\n\ngo 1.27\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGitTest(t, root, "init", "-b", "main")
+		runGitTest(t, root, "config", "user.name", "MAR Web Wait E2E")
+		runGitTest(t, root, "config", "user.email", "mar-web-wait@local.invalid")
+		runGitTest(t, root, "config", "core.autocrlf", "false")
+		runGitTest(t, root, "add", "-A")
+		runGitTest(t, root, "commit", "-m", "baseline")
+		base := strings.TrimSpace(runGitTest(t, root, "rev-parse", "HEAD"))
+		if _, _, err := runtime.Service.RegisterProject(ctx, id, root); err != nil {
+			t.Fatal(err)
+		}
+		return projectFixture{id: id, root: root, base: base}
+	}
+	projects := []projectFixture{createProject("web-wait-a"), createProject("web-wait-b"), createProject("web-wait-c")}
+
+	daemonCtx, stopDaemon := context.WithCancel(ctx)
+	daemonDone := make(chan error, 1)
+	go func() { daemonDone <- runtime.Daemon.Run(daemonCtx) }()
+	defer func() {
+		stopDaemon()
+		select {
+		case err := <-daemonDone:
+			if err != nil && !errors.Is(err, context.Canceled) {
+				t.Errorf("daemon shutdown: %v", err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Error("daemon did not drain Web-wait workers")
+		}
+	}()
+
+	submit := func(p projectFixture, key, marker string) domain.Task {
+		task, _, err := runtime.Service.Submit(ctx, key, domain.GoalContract{
+			Goal: "Create " + marker + " containing MAR WEB WAIT OK.", Acceptance: []string{marker + " exists with the requested content"},
+			Boundaries: []string{"Only create the requested marker file."}, NonGoals: []string{"No remote Git writes or deployment."},
+			ProjectID: p.id, BaseRevision: p.base,
+			Authority:           domain.Authority{LocalFileWrite: true, LocalGitWrite: true, NetworkAllowed: false, RemoteGitWrite: false, DeployAllowed: false},
+			VerificationProfile: "web-wait-noop", Priority: "P2",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+	waitState := func(taskID string, want domain.TaskState, timeout time.Duration) domain.Task {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			task, err := runtime.Service.Status(ctx, taskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if task.State == want {
+				return task
+			}
+			if task.State == domain.TaskBlocked || task.State == domain.TaskFailed || task.State == domain.TaskCancelled {
+				inspection, inspectErr := runtime.Service.Inspect(context.Background(), taskID)
+				t.Fatalf("task %s reached terminal state %s before %s: inspection=%+v inspect_err=%v", taskID, task.State, want, inspection, inspectErr)
+			}
+			time.Sleep(25 * time.Millisecond)
+		}
+		t.Fatalf("task %s did not reach %s", taskID, want)
+		return domain.Task{}
+	}
+	waitCapacity := func(want int, timeout time.Duration) {
+		deadline := time.Now().Add(timeout)
+		for time.Now().Before(deadline) {
+			if runtime.Daemon.capacityCount() == want {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		t.Fatalf("capacity count did not reach %d; active=%d capacity=%d claims=%d", want, runtime.Daemon.ActiveCount(), runtime.Daemon.capacityCount(), len(runtime.Daemon.governor.Active()))
+	}
+
+	taskA := submit(projects[0], "web-wait-capacity-a", "marker-a.txt")
+	taskB := submit(projects[1], "web-wait-capacity-b", "marker-b.txt")
+	waitState(taskA.ID, domain.TaskInputRequired, 20*time.Second)
+	waitState(taskB.ID, domain.TaskInputRequired, 20*time.Second)
+	waitCapacity(0, 5*time.Second)
+	if runtime.Daemon.ActiveCount() != 2 || len(runtime.Daemon.governor.Active()) != 0 {
+		t.Fatalf("two pending Web workers did not yield heavy capacity: active=%d capacity=%d claims=%d", runtime.Daemon.ActiveCount(), runtime.Daemon.capacityCount(), len(runtime.Daemon.governor.Active()))
+	}
+
+	taskC := submit(projects[2], "web-wait-capacity-c", "marker-c.txt")
+	waitState(taskC.ID, domain.TaskInputRequired, 20*time.Second)
+	if runtime.Daemon.ActiveCount() != 3 || runtime.Daemon.capacityCount() != 1 {
+		t.Fatalf("third READY task did not obtain yielded execution capacity: active=%d capacity=%d", runtime.Daemon.ActiveCount(), runtime.Daemon.capacityCount())
+	}
+
+	turnA, available, err := runtime.Service.PendingWebTurn(ctx, taskA.ID)
+	if err != nil || !available {
+		t.Fatalf("pending turn A unavailable: turn=%+v available=%v err=%v", turnA, available, err)
+	}
+	args, _ := json.Marshal(map[string]any{"path": "marker-a.txt", "expected_sha256": "ABSENT", "content": "MAR WEB WAIT OK\n"})
+	message := model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "web-wait-write-a", Name: "write_file", Arguments: string(args)}}}
+	if _, created, err := runtime.Service.RespondWebTurn(ctx, taskA.ID, turnA.ID, message, "tool_calls"); err != nil || !created {
+		t.Fatalf("respond Web turn A: created=%v err=%v", created, err)
+	}
+
+	var nextA domain.WebTurn
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		turn, ok, err := runtime.Service.PendingWebTurn(ctx, taskA.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ok && turn.ID != turnA.ID {
+			nextA = turn
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if nextA.ID == "" {
+		t.Fatal("parked Web worker A did not reacquire capacity and produce its next exact turn")
+	}
+	workspaceA, err := s.GetWorkspaceByTask(ctx, taskA.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, err := os.ReadFile(filepath.Join(workspaceA.Path, "marker-a.txt"))
+	if err != nil || string(marker) != "MAR WEB WAIT OK\n" {
+		t.Fatalf("reacquired worker did not execute bounded mutation: content=%q err=%v", marker, err)
+	}
+	attemptA, ok, err := s.CurrentAttemptByTask(ctx, taskA.ID)
+	if err != nil || !ok || attemptA.RunEpoch != 1 || attemptA.AuthorityState != domain.AttemptActive {
+		t.Fatalf("Web waiter resumed with wrong attempt authority: attempt=%+v ok=%v err=%v", attemptA, ok, err)
+	}
+	statusA, err := runtime.Service.Status(ctx, taskA.ID)
+	if err != nil || statusA.RunEpoch != 1 || statusA.State != domain.TaskInputRequired {
+		t.Fatalf("Web waiter resumed into wrong durable task state: task=%+v err=%v", statusA, err)
+	}
+}
+
 func TestRuntimeE2EWorkerHelper(t *testing.T) {
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") != "1" {
 		t.Skip("not running as MAR worker helper")

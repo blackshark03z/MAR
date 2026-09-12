@@ -97,6 +97,104 @@ func (b *fakeControlBackend) WebTurnResponse(context.Context, string) (model.Tur
 	return model.TurnResponse{}, false, nil
 }
 
+type webWaitBackend struct {
+	*fakeControlBackend
+	mu        sync.Mutex
+	turn      domain.WebTurn
+	response  model.TurnResponse
+	available bool
+}
+
+func (b *webWaitBackend) RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error) {
+	return b.turn, true, nil
+}
+
+func (b *webWaitBackend) WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.response, b.available, nil
+}
+
+func (b *webWaitBackend) makeAvailable() {
+	b.mu.Lock()
+	b.available = true
+	b.mu.Unlock()
+}
+
+type gatedWaitCapacity struct {
+	parked       chan struct{}
+	resumeCalled chan struct{}
+	allowResume  chan struct{}
+	parkOnce     sync.Once
+	resumeOnce   sync.Once
+}
+
+func newGatedWaitCapacity() *gatedWaitCapacity {
+	return &gatedWaitCapacity{parked: make(chan struct{}), resumeCalled: make(chan struct{}), allowResume: make(chan struct{})}
+}
+
+func (c *gatedWaitCapacity) Park(context.Context) (bool, error) {
+	c.parkOnce.Do(func() { close(c.parked) })
+	return true, nil
+}
+
+func (c *gatedWaitCapacity) Resume(ctx context.Context) error {
+	c.resumeOnce.Do(func() { close(c.resumeCalled) })
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.allowResume:
+		return nil
+	}
+}
+
+func TestWebTurnResponseWaitsForCapacityReacquireBeforeReturningToWorker(t *testing.T) {
+	start := workerProcessTestStart()
+	start.AgentConfig.MaxDuration = 5 * time.Second
+	capacity := newGatedWaitCapacity()
+	start.Capacity = capacity
+	backend := &webWaitBackend{
+		fakeControlBackend: &fakeControlBackend{authoritative: true},
+		turn:               domain.WebTurn{ID: "turn-capacity", TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch, RequestID: "request-capacity", CreatedAt: time.Now().UTC()},
+		response:           model.TurnResponse{ProviderResponseID: "web:turn-capacity", Model: "gpt-5.6-sol", Message: model.Message{Role: model.RoleAssistant, Content: "resume"}, FinishReason: "stop"},
+	}
+	runner := &ProcessRunner{backend: backend, cfg: ProcessConfig{LeaseDuration: time.Minute}}
+	type result struct {
+		response model.TurnResponse
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		response, err := runner.waitForWebTurn(context.Background(), start, webTurnRequest{TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch})
+		done <- result{response: response, err: err}
+	}()
+	select {
+	case <-capacity.parked:
+	case <-time.After(time.Second):
+		t.Fatal("Web wait did not park execution capacity")
+	}
+	backend.makeAvailable()
+	select {
+	case <-capacity.resumeCalled:
+	case <-time.After(time.Second):
+		t.Fatal("available Web response did not request capacity reacquire")
+	}
+	select {
+	case got := <-done:
+		t.Fatalf("Web response returned before capacity reacquire completed: %+v", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(capacity.allowResume)
+	select {
+	case got := <-done:
+		if got.err != nil || got.response.ProviderResponseID != backend.response.ProviderResponseID {
+			t.Fatalf("Web response did not resume after capacity reacquire: response=%+v err=%v", got.response, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Web wait did not return after capacity reacquire")
+	}
+}
+
 func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {
 	start := workerProcessTestStart()
 	start.Task.Contract.Goal = strings.Repeat("large-goal-", 2048)

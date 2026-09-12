@@ -4,12 +4,14 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
 
 	"mar/internal/domain"
 	"mar/internal/resourcegov"
+	"mar/internal/worker"
 )
 
 type trackingReadyRunner struct {
@@ -17,6 +19,92 @@ type trackingReadyRunner struct {
 	started []string
 	stopped []string
 	change  chan struct{}
+}
+
+type parkingReadyRunner struct {
+	mu        sync.Mutex
+	started   []string
+	parked    []string
+	resumed   []string
+	change    chan struct{}
+	allowPark chan struct{}
+	resume    map[string]chan struct{}
+}
+
+func newParkingReadyRunner(waiters ...string) *parkingReadyRunner {
+	r := &parkingReadyRunner{change: make(chan struct{}, 64), allowPark: make(chan struct{}), resume: make(map[string]chan struct{})}
+	for _, id := range waiters {
+		r.resume[id] = make(chan struct{})
+	}
+	return r
+}
+
+func (r *parkingReadyRunner) RunWorkspaceReady(ctx context.Context, taskID string, _ domain.Workspace) (RunOutcome, error) {
+	<-ctx.Done()
+	return RunOutcome{TaskID: taskID}, ctx.Err()
+}
+
+func (r *parkingReadyRunner) RunWorkspaceReadyWithCapacity(ctx context.Context, taskID string, _ domain.Workspace, capacity worker.WaitCapacity) (RunOutcome, error) {
+	r.mu.Lock()
+	r.started = append(r.started, taskID)
+	resumeGate := r.resume[taskID]
+	r.mu.Unlock()
+	r.change <- struct{}{}
+	if resumeGate != nil {
+		select {
+		case <-ctx.Done():
+			return RunOutcome{TaskID: taskID}, ctx.Err()
+		case <-r.allowPark:
+		}
+		released, err := capacity.Park(ctx)
+		if err != nil {
+			return RunOutcome{TaskID: taskID}, err
+		}
+		if !released {
+			return RunOutcome{TaskID: taskID}, errors.New("expected Web waiter to release execution capacity")
+		}
+		r.mu.Lock()
+		r.parked = append(r.parked, taskID)
+		r.mu.Unlock()
+		r.change <- struct{}{}
+		select {
+		case <-ctx.Done():
+			return RunOutcome{TaskID: taskID}, ctx.Err()
+		case <-resumeGate:
+		}
+		if err := capacity.Resume(ctx); err != nil {
+			return RunOutcome{TaskID: taskID}, err
+		}
+		r.mu.Lock()
+		r.resumed = append(r.resumed, taskID)
+		r.mu.Unlock()
+		r.change <- struct{}{}
+	}
+	<-ctx.Done()
+	return RunOutcome{TaskID: taskID}, ctx.Err()
+}
+
+func (r *parkingReadyRunner) counts() (started, parked, resumed int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.started), len(r.parked), len(r.resumed)
+}
+
+func waitParkingCounts(t *testing.T, runner *parkingReadyRunner, wantStarted, wantParked, wantResumed int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		started, parked, resumed := runner.counts()
+		if started >= wantStarted && parked >= wantParked && resumed >= wantResumed {
+			return
+		}
+		select {
+		case <-runner.change:
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	started, parked, resumed := runner.counts()
+	t.Fatalf("parking runner counts did not converge: started=%d/%d parked=%d/%d resumed=%d/%d", started, wantStarted, parked, wantParked, resumed, wantResumed)
 }
 
 func newTrackingReadyRunner() *trackingReadyRunner {
@@ -74,6 +162,52 @@ func drainTrackingDaemon(t *testing.T, daemon *Daemon, cancel context.CancelFunc
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("workers did not drain")
+	}
+}
+
+func TestWebWaitCapacityTwoParkedWaitersAllowThirdTaskAndResumeOnlyAfterReacquire(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	tasks := map[string]domain.Task{}
+	workspaces := map[string]domain.Workspace{}
+	for _, tc := range []struct{ id, project string }{{"wait-a", "project-a"}, {"wait-b", "project-b"}, {"ready-c", "project-c"}} {
+		task, ws := daemonTaskFixture(tc.id, tc.project)
+		tasks[tc.id], workspaces[tc.id] = task, ws
+	}
+	store := &fakeDaemonStore{tasks: tasks, workspace: workspaces, attempts: map[string]domain.ExecutionAttempt{}}
+	governor := daemonGovernor(t, &mutableDaemonSensor{snapshot: healthyDaemonSnapshot()}, 2, 1)
+	runner := newParkingReadyRunner("wait-a", "wait-b")
+	daemon, err := NewDaemon(store, &fakeDaemonService{store: store}, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, governor, DaemonConfig{MaxConcurrentWorkers: 2, ExecutionRAMReservation: 1, ExecutionDiskReservation: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.launchReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitParkingCounts(t, runner, 2, 0, 0)
+	if daemon.ActiveCount() != 2 || daemon.capacityCount() != 2 || len(governor.Active()) != 2 {
+		t.Fatalf("initial workers did not occupy exactly two execution slots: active=%d capacity=%d claims=%d", daemon.ActiveCount(), daemon.capacityCount(), len(governor.Active()))
+	}
+	close(runner.allowPark)
+	waitParkingCounts(t, runner, 2, 2, 0)
+	if daemon.ActiveCount() != 2 || daemon.capacityCount() != 0 || len(governor.Active()) != 0 {
+		t.Fatalf("parked Web waiters retained scarce capacity: active=%d capacity=%d claims=%d", daemon.ActiveCount(), daemon.capacityCount(), len(governor.Active()))
+	}
+	if err := daemon.launchReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	waitParkingCounts(t, runner, 3, 2, 0)
+	if daemon.ActiveCount() != 3 || daemon.capacityCount() != 1 || len(governor.Active()) != 1 {
+		t.Fatalf("third READY task was not admitted through yielded capacity: active=%d capacity=%d claims=%d", daemon.ActiveCount(), daemon.capacityCount(), len(governor.Active()))
+	}
+	close(runner.resume["wait-a"])
+	waitParkingCounts(t, runner, 3, 2, 1)
+	if daemon.capacityCount() != 2 || len(governor.Active()) != 2 {
+		t.Fatalf("resumed waiter did not reacquire capacity before continuing: capacity=%d claims=%d", daemon.capacityCount(), len(governor.Active()))
+	}
+	drainTrackingDaemon(t, daemon, cancel)
+	if daemon.ActiveCount() != 0 || daemon.capacityCount() != 0 || len(governor.Active()) != 0 {
+		t.Fatalf("Web-wait capacity lifecycle leaked resources: active=%d capacity=%d claims=%d", daemon.ActiveCount(), daemon.capacityCount(), len(governor.Active()))
 	}
 }
 

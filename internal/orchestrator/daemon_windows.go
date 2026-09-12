@@ -15,6 +15,7 @@ import (
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/service"
+	"mar/internal/worker"
 )
 
 type taskStateStore interface {
@@ -33,6 +34,36 @@ type schedulerDriver interface {
 
 type readyTaskRunner interface {
 	RunWorkspaceReady(context.Context, string, domain.Workspace) (RunOutcome, error)
+}
+
+type capacityAwareReadyTaskRunner interface {
+	RunWorkspaceReadyWithCapacity(context.Context, string, domain.Workspace, worker.WaitCapacity) (RunOutcome, error)
+}
+
+type activeExecution struct {
+	cancel   context.CancelFunc
+	claim    resourcegov.Claim
+	lease    *resourcegov.Lease
+	resuming bool
+}
+
+type daemonWaitCapacity struct {
+	daemon *Daemon
+	taskID string
+}
+
+func (c *daemonWaitCapacity) Park(ctx context.Context) (bool, error) {
+	if c == nil || c.daemon == nil {
+		return false, errors.New("execution capacity controller is unavailable")
+	}
+	return c.daemon.parkExecutionCapacity(ctx, c.taskID)
+}
+
+func (c *daemonWaitCapacity) Resume(ctx context.Context) error {
+	if c == nil || c.daemon == nil {
+		return errors.New("execution capacity controller is unavailable")
+	}
+	return c.daemon.resumeExecutionCapacity(ctx, c.taskID)
 }
 
 type integrationRecoverer interface {
@@ -99,7 +130,7 @@ type Daemon struct {
 	cfg         DaemonConfig
 
 	mu     sync.Mutex
-	active map[string]context.CancelFunc
+	active map[string]*activeExecution
 	wg     sync.WaitGroup
 }
 
@@ -117,7 +148,7 @@ func NewDaemon(store taskStateStore, taskService daemonTaskService, preflight pr
 		integration: integration,
 		governor:    governor,
 		cfg:         cfg,
-		active:      make(map[string]context.CancelFunc),
+		active:      make(map[string]*activeExecution),
 	}, nil
 }
 
@@ -309,7 +340,7 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 			pending = append(pending, task)
 		}
 	}
-	for d.activeCount() < d.cfg.MaxConcurrentWorkers && len(pending) > 0 {
+	for d.capacityCount() < d.cfg.MaxConcurrentWorkers && len(pending) > 0 {
 		activeByProject := make(map[string]int)
 		for _, claim := range d.governor.Active() {
 			if claim.Heavy {
@@ -332,14 +363,15 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 
 		launched := false
 		for i, task := range pending {
-			lease, decision, acquireErr := d.governor.TryAcquire(ctx, resourcegov.Claim{
+			claim := resourcegov.Claim{
 				ID:        "execution:" + task.ID,
 				ProjectID: task.Contract.ProjectID,
 				Class:     resourcegov.WorkloadBuild,
 				RAMBytes:  d.cfg.ExecutionRAMReservation,
 				DiskBytes: d.cfg.ExecutionDiskReservation,
 				Heavy:     true,
-			})
+			}
+			lease, decision, acquireErr := d.governor.TryAcquire(ctx, claim)
 			if acquireErr != nil {
 				d.report(acquireErr)
 				continue
@@ -355,7 +387,7 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 				launched = true
 				break
 			}
-			d.launch(ctx, task.ID, workspace, lease)
+			d.launch(ctx, task.ID, workspace, claim, lease)
 			pending = append(pending[:i], pending[i+1:]...)
 			launched = true
 			break
@@ -366,29 +398,34 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 	}
 	return nil
 }
-func (d *Daemon) launch(parent context.Context, taskID string, workspace domain.Workspace, lease *resourcegov.Lease) {
+func (d *Daemon) launch(parent context.Context, taskID string, workspace domain.Workspace, claim resourcegov.Claim, lease *resourcegov.Lease) {
 	taskCtx, cancel := context.WithCancel(parent)
 	d.mu.Lock()
-	if _, exists := d.active[taskID]; exists || len(d.active) >= d.cfg.MaxConcurrentWorkers {
+	if _, exists := d.active[taskID]; exists || d.capacityCountLocked() >= d.cfg.MaxConcurrentWorkers || len(d.active) >= 2*d.cfg.MaxConcurrentWorkers {
 		d.mu.Unlock()
 		cancel()
 		lease.Release()
 		return
 	}
-	d.active[taskID] = cancel
+	d.active[taskID] = &activeExecution{cancel: cancel, claim: claim, lease: lease}
 	d.mu.Unlock()
 
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		defer lease.Release()
 		defer d.removeActive(taskID)
 		monitorDone := make(chan struct{})
 		go func() {
 			defer close(monitorDone)
 			d.monitorCancellation(taskCtx, taskID, cancel)
 		}()
-		_, err := d.runner.RunWorkspaceReady(taskCtx, taskID, workspace)
+		capacity := &daemonWaitCapacity{daemon: d, taskID: taskID}
+		var err error
+		if aware, ok := d.runner.(capacityAwareReadyTaskRunner); ok {
+			_, err = aware.RunWorkspaceReadyWithCapacity(taskCtx, taskID, workspace, capacity)
+		} else {
+			_, err = d.runner.RunWorkspaceReady(taskCtx, taskID, workspace)
+		}
 		cancel()
 		<-monitorDone
 		if err != nil && !errors.Is(err, context.Canceled) {
@@ -489,6 +526,119 @@ func (d *Daemon) activeCount() int {
 	return len(d.active)
 }
 
+func (d *Daemon) capacityCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.capacityCountLocked()
+}
+
+func (d *Daemon) capacityCountLocked() int {
+	count := 0
+	for _, active := range d.active {
+		if active != nil && (active.lease != nil || active.resuming) {
+			count++
+		}
+	}
+	return count
+}
+
+func (d *Daemon) parkedCountLocked() int {
+	count := 0
+	for _, active := range d.active {
+		if active != nil && active.lease == nil && !active.resuming {
+			count++
+		}
+	}
+	return count
+}
+
+func (d *Daemon) parkExecutionCapacity(ctx context.Context, taskID string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	d.mu.Lock()
+	active, ok := d.active[taskID]
+	if !ok || active == nil {
+		d.mu.Unlock()
+		return false, errors.New("execution capacity task is no longer active")
+	}
+	if active.lease == nil || active.resuming {
+		d.mu.Unlock()
+		return false, nil
+	}
+	// Keep resident waiting workers bounded. At most one parked cohort equal to
+	// MaxConcurrentWorkers may exist; additional waiters retain their slot.
+	if d.parkedCountLocked() >= d.cfg.MaxConcurrentWorkers {
+		d.mu.Unlock()
+		return false, nil
+	}
+	lease := active.lease
+	active.lease = nil
+	d.mu.Unlock()
+	lease.Release()
+	return true, nil
+}
+
+func (d *Daemon) resumeExecutionCapacity(ctx context.Context, taskID string) error {
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		d.mu.Lock()
+		active, ok := d.active[taskID]
+		if !ok || active == nil {
+			d.mu.Unlock()
+			return errors.New("execution capacity task is no longer active")
+		}
+		if active.lease != nil {
+			d.mu.Unlock()
+			return nil
+		}
+		if !active.resuming && d.capacityCountLocked() < d.cfg.MaxConcurrentWorkers {
+			active.resuming = true
+			claim := active.claim
+			d.mu.Unlock()
+
+			lease, decision, acquireErr := d.governor.TryAcquire(ctx, claim)
+			d.mu.Lock()
+			current, stillActive := d.active[taskID]
+			if !stillActive || current != active {
+				d.mu.Unlock()
+				if lease != nil {
+					lease.Release()
+				}
+				if acquireErr != nil {
+					return acquireErr
+				}
+				return errors.New("execution ended while reacquiring capacity")
+			}
+			current.resuming = false
+			if acquireErr == nil && decision.Allowed {
+				current.lease = lease
+				d.mu.Unlock()
+				return nil
+			}
+			d.mu.Unlock()
+			if lease != nil {
+				lease.Release()
+			}
+			if acquireErr != nil {
+				return acquireErr
+			}
+		} else {
+			d.mu.Unlock()
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func (d *Daemon) isActive(taskID string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -498,19 +648,27 @@ func (d *Daemon) isActive(taskID string) bool {
 
 func (d *Daemon) removeActive(taskID string) {
 	d.mu.Lock()
-	cancel := d.active[taskID]
+	active := d.active[taskID]
 	delete(d.active, taskID)
 	d.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if active == nil {
+		return
+	}
+	if active.lease != nil {
+		active.lease.Release()
+	}
+	if active.cancel != nil {
+		active.cancel()
 	}
 }
 
 func (d *Daemon) cancelAll() {
 	d.mu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(d.active))
-	for _, cancel := range d.active {
-		cancels = append(cancels, cancel)
+	for _, active := range d.active {
+		if active != nil && active.cancel != nil {
+			cancels = append(cancels, active.cancel)
+		}
 	}
 	d.mu.Unlock()
 	for _, cancel := range cancels {

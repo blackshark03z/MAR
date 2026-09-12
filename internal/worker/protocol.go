@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -12,6 +13,15 @@ import (
 )
 
 const protocolVersion = 1
+
+// WaitCapacity allows the parent runtime to park scarce execution capacity
+// while a worker is durably waiting for external Web cognition. The worker
+// process/attempt remains authoritative; mutation may resume only after Resume
+// reacquires the parent-owned capacity grant.
+type WaitCapacity interface {
+	Park(context.Context) (bool, error)
+	Resume(context.Context) error
+}
 
 type BrainMode string
 
@@ -45,6 +55,7 @@ type StartRequest struct {
 	GoModuleCache         string                  `json:"go_module_cache,omitempty"`
 	CommandTimeout        time.Duration           `json:"command_timeout,omitempty"`
 	MemoryPressurePercent float64                 `json:"memory_pressure_percent,omitempty"`
+	Capacity              WaitCapacity            `json:"-"`
 }
 
 func (r StartRequest) Validate() error {

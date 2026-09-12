@@ -125,6 +125,14 @@ func NewTaskRunner(s taskService, workerProcess workerProcess, verifier verifier
 // revision-bound outcome. Only then is physical termination recorded and the
 // integration lane allowed to advance authoritative Git state.
 func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, workspace domain.Workspace) (RunOutcome, error) {
+	return r.runWorkspaceReady(ctx, taskID, workspace, nil)
+}
+
+func (r *TaskRunner) RunWorkspaceReadyWithCapacity(ctx context.Context, taskID string, workspace domain.Workspace, capacity worker.WaitCapacity) (RunOutcome, error) {
+	return r.runWorkspaceReady(ctx, taskID, workspace, capacity)
+}
+
+func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, workspace domain.Workspace, capacity worker.WaitCapacity) (RunOutcome, error) {
 	if strings.TrimSpace(taskID) == "" || workspace.TaskID != taskID || workspace.State != domain.WorkspaceReady || strings.TrimSpace(workspace.Path) == "" {
 		return RunOutcome{}, errors.New("task runner requires matching READY workspace")
 	}
@@ -168,6 +176,7 @@ func (r *TaskRunner) RunWorkspaceReady(ctx context.Context, taskID string, works
 		GoModuleCache:         r.cfg.GoModuleCache,
 		CommandTimeout:        r.cfg.CommandTimeout,
 		MemoryPressurePercent: r.cfg.MemoryPressurePercent,
+		Capacity:              capacity,
 	}
 	agentResult, proof, runErr := r.worker.Run(ctx, start)
 	outcome := RunOutcome{TaskID: taskID, Agent: agentResult}

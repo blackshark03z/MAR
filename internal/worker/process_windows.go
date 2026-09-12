@@ -306,6 +306,14 @@ func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, 
 	if response, available, err := r.backend.WebTurnResponse(ctx, turn.ID); err != nil || available {
 		return response, err
 	}
+	capacityReleased := false
+	if start.Capacity != nil {
+		released, err := start.Capacity.Park(ctx)
+		if err != nil {
+			return model.TurnResponse{}, fmt.Errorf("park web brain execution capacity: %w", err)
+		}
+		capacityReleased = released
+	}
 	waitLimit := start.AgentConfig.MaxDuration
 	if waitLimit <= 0 {
 		waitLimit = 30 * time.Minute
@@ -336,6 +344,12 @@ func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, 
 				return model.TurnResponse{}, err
 			}
 			if available {
+				if capacityReleased && start.Capacity != nil {
+					if err := start.Capacity.Resume(ctx); err != nil {
+						return model.TurnResponse{}, fmt.Errorf("resume web brain execution capacity: %w", err)
+					}
+					capacityReleased = false
+				}
 				return response, nil
 			}
 		}
