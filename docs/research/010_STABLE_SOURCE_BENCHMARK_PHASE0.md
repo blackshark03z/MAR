@@ -69,6 +69,10 @@ This proves that the file currently named `mar-v1-stable.exe` is not schema-comp
 
 The final V1.1 release record binds the accepted implementation HEAD but does not bind one exact release executable SHA-256. Historical handoff sections contain several binary hashes from earlier engineering points, so filename alone is insufficient release identity.
 
+The retained runtime manifest `.mar/runtime/v1-release-final.json` makes the provenance gap explicit. It records a promotion at `2026-09-09T17:25:53.2379551Z` from source HEAD `0f01136c94f1747948c61e1d91111f2287e618f4`, with candidate `mar-v5-final-head.exe` SHA-256 `2F2D381E140B2440B8438F3D07E17574E1B8E71FD0ED1348EE9D56366C9F0A76`, promoted to the path `D:\\MAR\\.mar\\runtime\\mar-v1-stable.exe`. The later Owner-accepted V1.1 implementation HEAD is `a6fa0279631c7a8f05f484a5bba7b20b73e0188f`. Therefore the retained promotion manifest predates and does not identify the accepted V1.1 implementation.
+
+The current on-disk `mar-v1-stable.exe` hash (`A53878...`) also does not match the candidate hash stored in that retained manifest, so the filename has accumulated at least one later replacement without a final V1.1 artifact manifest that binds it to `a6fa027...`.
+
 This is classified as **RELEASE_ARTIFACT_IDENTITY_SIGNAL**, not yet as a production-code regression.
 
 ## Why the three blockers are separate
