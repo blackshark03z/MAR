@@ -182,6 +182,27 @@ func run(ctx context.Context, args []string) error {
 	case "worker-run":
 		return worker.RunChild(ctx, os.Stdin, os.Stdout)
 
+	case "release-manifest":
+		fs := flag.NewFlagSet("release-manifest", flag.ContinueOnError)
+		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
+		releaseVersion := fs.String("release", "", "release version written into the immutable identity manifest")
+		outPath := fs.String("out", "", "output manifest path; defaults to <data-root>/runtime/release-manifest.json")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(*outPath) == "" {
+			*outPath = filepath.Join(*dataRoot, "runtime", releaseIdentityManifestName)
+		}
+		manifest, err := writeCurrentReleaseManifest(*releaseVersion, executable, *outPath)
+		if err != nil {
+			return err
+		}
+		return printJSON(manifest)
+
 	case "sandbox-host-check":
 		fs := flag.NewFlagSet("sandbox-host-check", flag.ContinueOnError)
 		workspace := fs.String("workspace", ".", "Workspace used for the AppContainer readiness probe")
@@ -506,5 +527,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|sandbox-host-check|sandbox-host-prepare> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|release-manifest|sandbox-host-check|sandbox-host-prepare> [options]")
 }

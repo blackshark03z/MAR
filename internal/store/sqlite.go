@@ -26,6 +26,8 @@ var (
 
 const latestSchemaVersion = 14
 
+func SupportedSchemaVersion() int { return latestSchemaVersion }
+
 type SQLite struct {
 	db                      *sql.DB
 	observationArtifactRoot string
@@ -70,6 +72,14 @@ func Open(path string) (*SQLite, error) {
 }
 
 func (s *SQLite) Close() error { return s.db.Close() }
+
+func (s *SQLite) SchemaVersion(ctx context.Context) (int, error) {
+	var version int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version;").Scan(&version); err != nil {
+		return 0, fmt.Errorf("read sqlite schema version: %w", err)
+	}
+	return version, nil
+}
 
 func (s *SQLite) migrate(ctx context.Context) error {
 	var version int

@@ -67,6 +67,9 @@ type ownerUIBackend struct {
 	sandboxPrepare  func(context.Context, string, string) error
 	sandboxCheck    func(context.Context, string, string) (bool, string)
 	projectPicker   func(context.Context) (string, error)
+	executionProbe  func(context.Context) error
+	executionPID    int
+	runtimeIdentity runtimeIdentity
 }
 
 type ownerProjectView struct {
@@ -306,6 +309,11 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 	}
 	defer db.Close()
 
+	identity := collectRuntimeIdentity(ctx, executable, opts.DataRoot, db)
+	executionPID := 0
+	if cmd.Process != nil {
+		executionPID = cmd.Process.Pid
+	}
 	backend := &ownerUIBackend{
 		db:              db,
 		svc:             service.NewTaskService(db),
@@ -324,8 +332,12 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		sessionToken:    newOwnerUIID("session"),
 		sandboxPrepare:  runElevatedSandboxPrepare,
 		sandboxCheck:    checkSandboxHostReadiness,
+		executionPID:    executionPID,
+		runtimeIdentity: identity,
 	}
-	backend.bridge = newRemoteBridgeManager(ctx, backend.svc, opts.DataRoot)
+	backend.executionProbe = func(context.Context) error { return processIsRunning(cmd.Process) }
+	executionBackend := executionAwareBackend{Backend: backend.svc, readiness: backend.executionRuntimeReadiness}
+	backend.bridge = newRemoteBridgeManager(ctx, executionBackend, opts.DataRoot)
 	profiles, err := ensureRemoteConnectorProfiles(ctx, db)
 	if err != nil {
 		return fmt.Errorf("initialize remote connector profiles: %w", err)
@@ -337,7 +349,7 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		go func() { _, _ = backend.bridge.StartTemporary() }()
 	}
 	defer backend.bridge.Close()
-	backend.openAITunnel = newOpenAITunnelManager(ctx, backend.svc, opts.DataRoot)
+	backend.openAITunnel = newOpenAITunnelManager(ctx, executionBackend, opts.DataRoot)
 	tunnelConfig, err := db.EnsureOpenAITunnelConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("initialize OpenAI tunnel config: %w", err)
@@ -942,8 +954,8 @@ func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Reque
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"sandbox_host_ready": true, "detail": detail})
 }
 
-func buildOwnerSystemAttention(sandboxReady bool, sandboxDetail string, connections []ownerConnectionView) []ownerAttentionItem {
-	items := make([]ownerAttentionItem, 0, 4)
+func buildOwnerSystemAttention(executionReady bool, executionDetail string, sandboxReady bool, sandboxDetail string, connections []ownerConnectionView) []ownerAttentionItem {
+	items := make([]ownerAttentionItem, 0, 5)
 	seen := make(map[string]struct{}, 4)
 	add := func(item ownerAttentionItem) {
 		if _, exists := seen[item.ID]; exists {
@@ -951,6 +963,9 @@ func buildOwnerSystemAttention(sandboxReady bool, sandboxDetail string, connecti
 		}
 		seen[item.ID] = struct{}{}
 		items = append(items, item)
+	}
+	if !executionReady {
+		add(ownerAttentionItem{ID: "execution-runtime", Severity: "high", Title: "Execution runtime không hoạt động", Detail: executionDetail, NextAction: "Khởi động lại MAR runtime trước khi gửi hoặc tiếp tục task coding.", View: "connections"})
 	}
 	if !sandboxReady {
 		add(ownerAttentionItem{ID: "sandbox", Severity: "high", Title: "Sandbox Windows cần chuẩn bị", Detail: sandboxDetail, NextAction: "Chuẩn bị sandbox và xác nhận UAC của Windows.", View: "connections"})
@@ -973,10 +988,21 @@ func buildOwnerSystemAttention(sandboxReady bool, sandboxDetail string, connecti
 	return items
 }
 
+func (b *ownerUIBackend) executionRuntimeReadiness(ctx context.Context) (bool, string) {
+	if b.executionProbe == nil {
+		return false, "Execution runtime probe is unavailable."
+	}
+	if err := b.executionProbe(ctx); err != nil {
+		return false, "Execution runtime child is unavailable: " + err.Error()
+	}
+	return true, "Execution runtime child is ready."
+}
+
 func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	bridge := b.currentBridgeState()
 	tunnel := b.currentOpenAITunnelState()
+	executionReady, executionDetail := b.executionRuntimeReadiness(r.Context())
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
@@ -995,8 +1021,12 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	} else if !providerReady {
 		nextAction = "Provider brain is not fully configured; relaunch MAR UI with provider base URL, model, and API key environment configured."
 	}
-	if !sandboxReady {
+	if !executionReady {
+		nextAction = "Execution runtime is unavailable. Restart MAR before submitting or resuming coding work."
+	} else if !sandboxReady {
 		nextAction = "Windows sandbox protection needs preparation for this boot before MAR can run coding workers. Use Prepare sandbox in Connections and approve the Windows UAC prompt."
+	} else if !b.runtimeIdentity.TrustedForRelease {
+		nextAction = "Runtime is operational but not release-trusted. Use the binary and release manifest produced from the same clean source revision before release acceptance."
 	}
 
 	stdioArgs := b.webStdioArgs()
@@ -1048,7 +1078,22 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			connections[i].SessionCountDetail = "Không có session identity/lifecycle authoritative trên transport này; MAR không suy đoán số session từ trạng thái kết nối hoặc recent activity."
 		}
 	}
-	attention := buildOwnerSystemAttention(sandboxReady, sandboxDetail, connections)
+	attention := buildOwnerSystemAttention(executionReady, executionDetail, sandboxReady, sandboxDetail, connections)
+	if !b.runtimeIdentity.TrustedForRelease {
+		attention = append(attention, ownerAttentionItem{ID: "release-identity", Severity: "medium", Title: "Runtime chưa được xác thực theo release manifest", Detail: strings.Join(b.runtimeIdentity.Reasons, "; "), NextAction: "Dùng binary + release manifest cùng nguồn trước khi coi runtime là release-trusted.", View: "diagnostics"})
+	}
+	remoteRouteReachable := tunnel.Connected
+	for _, connector := range bridge.Connectors {
+		if connector.RouteReady {
+			remoteRouteReachable = true
+			break
+		}
+	}
+	workerCapacityAvailable := executionReady && sandboxReady
+	runtimeHealth := "HEALTHY"
+	if !workerCapacityAvailable || !b.runtimeIdentity.TrustedForRelease {
+		runtimeHealth = "DEGRADED"
+	}
 	uptimeSeconds := int64(0)
 	if !b.startedAt.IsZero() {
 		uptimeSeconds = int64(time.Since(b.startedAt).Seconds())
@@ -1058,6 +1103,14 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOwnerJSON(w, http.StatusOK, map[string]any{
 		"brain_mode":                    b.brainMode,
+		"runtime_identity":              b.runtimeIdentity,
+		"runtime_health":                runtimeHealth,
+		"owner_surface_reachable":       true,
+		"remote_route_reachable":        remoteRouteReachable,
+		"execution_runtime_ready":       executionReady,
+		"execution_runtime_detail":      executionDetail,
+		"execution_runtime_pid":         b.executionPID,
+		"worker_capacity_available":     workerCapacityAvailable,
 		"model":                         b.model,
 		"reasoning":                     b.reasoning,
 		"max_workers":                   b.maxWorkers,

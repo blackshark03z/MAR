@@ -68,6 +68,7 @@ func TestOwnerUIRuntimeSurfacesBrainReadinessWithoutSecret(t *testing.T) {
 		sandboxCheck: func(context.Context, string, string) (bool, string) {
 			return true, "prepared"
 		},
+		executionProbe: func(context.Context) error { return nil },
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
 	req.Host = "127.0.0.1:8787"
@@ -126,7 +127,7 @@ func TestOwnerUISystemAttentionUsesRealStateAndDeduplicates(t *testing.T) {
 		{ID: "openai-tunnel", Status: "ERROR", DesiredRunning: true, Connected: false, LastError: "duplicate GPT observation"},
 		{ID: store.RemoteConnectorClaudeWeb, Status: "ROUTE_OFFLINE", LastError: "route health failed"},
 	}
-	items := buildOwnerSystemAttention(false, "sandbox probe failed", connections)
+	items := buildOwnerSystemAttention(true, "execution ready", false, "sandbox probe failed", connections)
 	if len(items) != 3 {
 		t.Fatalf("expected sandbox + deduplicated GPT + Claude attention, got %+v", items)
 	}
@@ -144,6 +145,70 @@ func TestOwnerUISystemAttentionUsesRealStateAndDeduplicates(t *testing.T) {
 		if !seen[id] {
 			t.Fatalf("missing attention item %q: %+v", id, items)
 		}
+	}
+}
+
+func TestOwnerUIRuntimeSeparatesExecutionReadinessFromSurfaceReachability(t *testing.T) {
+	backend := &ownerUIBackend{
+		brainMode:  "web",
+		model:      "gpt-5.6-sol",
+		reasoning:  "high",
+		executable: "mar.exe",
+		dataRoot:   t.TempDir(),
+		executionPID: 4242,
+		executionProbe: func(context.Context) error {
+			return errors.New("child exited")
+		},
+		sandboxCheck: func(context.Context, string, string) (bool, string) {
+			return true, "prepared"
+		},
+		runtimeIdentity: runtimeIdentity{Status: "ALIGNED", TrustedForRelease: true},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
+	req.Host = "127.0.0.1:8787"
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["owner_surface_reachable"] != true || payload["execution_runtime_ready"] != false || payload["worker_capacity_available"] != false {
+		t.Fatalf("runtime reachability was collapsed incorrectly: %#v", payload)
+	}
+	if payload["runtime_health"] != "DEGRADED" || !strings.Contains(fmt.Sprint(payload["execution_runtime_detail"]), "child exited") {
+		t.Fatalf("missing execution degradation truth: %#v", payload)
+	}
+	if !strings.Contains(fmt.Sprint(payload["brain_next_action"]), "Execution runtime") {
+		t.Fatalf("missing execution recovery guidance: %#v", payload)
+	}
+	attention, ok := payload["attention"].([]any)
+	if !ok || len(attention) == 0 {
+		t.Fatalf("missing runtime attention: %#v", payload["attention"])
+	}
+	found := false
+	for _, raw := range attention {
+		item, _ := raw.(map[string]any)
+		if item["id"] == "execution-runtime" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("execution runtime attention missing: %#v", attention)
+	}
+}
+
+func TestExecutionAwareBackendRejectsMutationAdmissionWhenExecutionUnavailable(t *testing.T) {
+	backend := executionAwareBackend{readiness: func(context.Context) (bool, string) {
+		return false, "mcp-stdio child exited"
+	}}
+	if _, _, err := backend.Submit(context.Background(), "k", domain.GoalContract{}); !errors.Is(err, errExecutionRuntimeUnavailable) {
+		t.Fatalf("submit must fail closed while execution is unavailable: %v", err)
+	}
+	if _, _, err := backend.RespondWebTurn(context.Background(), "task", "turn", model.Message{Role: model.RoleAssistant, Content: "resume"}, "stop"); !errors.Is(err, errExecutionRuntimeUnavailable) {
+		t.Fatalf("brain response must not resume a task without execution runtime: %v", err)
 	}
 }
 
