@@ -2,19 +2,20 @@
 
 **Mode:** `RESEARCH_ONLY`  
 **Stable baseline:** MAR v1.1.0 remains frozen  
-**Date:** 2026-09-12
+**Date:** 2026-09-13
 
 ## Current priority
 
-Broad P0 research is now **converged**. R-022 is the evidence ledger; R-027 is the bounded V1.2 candidate synthesis. Do not open additional broad research topics unless new evidence invalidates that synthesis.
+Broad P0 research is **converged**. R-022 is the evidence ledger, R-027 is the candidate synthesis, and R-028 is the bounded V1.2 scope decision. Do not open additional broad research topics unless new evidence invalidates that decision.
 
 Default next action:
 
 ```text
-review R-027 candidates
-  -> confirm implementation scope/order with Owner
-  -> only then authorize bounded V1.2 slices
-  -> preserve v1.1 production freeze until that decision
+use R-028 as implementation entry contract
+  -> open Slice A only when implementation is explicitly authorized
+  -> keep Slices B-D sequential and acceptance-gated
+  -> E1/E2 remain optional bounded follow-up
+  -> preserve V1.1 safety invariants and stop V1.2 after acceptance
 ```
 
 The only material unclosed proof is actual OS worker-process continuity during external route loss, currently `BLOCKED_BY_SANDBOX` on this boot. It does not block the candidate synthesis because transport/durable-state continuity is already proven across ACK loss, session expiry and real Quick Tunnel replacement.
@@ -64,7 +65,7 @@ These are source/durable facts, not performance conclusions:
 - Owner backend polling has now been A/B tested on an accepted-source isolated runtime. `/api/runtime` at the UI's 2-second cadence creates exactly one real `sandbox-host-check` child per poll (5/5 in every repeat), with ~102–133 ms median endpoint latency and ~29–31 MiB transient process-tree RSS increase. `/api/tasks` on 30 terminal tasks is much cheaper (~8–29 ms median). A follow-up fixture with one RUNNING task carrying 19 WebTurns/~919 KiB made 10 task-list calls reread ~9.8 MiB versus ~1.25–1.29 MiB terminal-only: stable extra ~8.55 MiB/10 calls (~0.855 MiB/call), median latency ~38–45.5 ms, RSS mean +3.7–4.3 MiB, while response grew only ~975 bytes. Prioritize cached/adaptive sandbox readiness plus narrow live-usage summary queries before broad DB architecture changes.
 - Verification cache cost is structurally explained by the current safety model: Go verification uses task-local writable `GOCACHE/GOMODCACHE/GOTMPDIR` under the isolated workspace, and runtime comments explicitly expect cold self-hosting verification. Any speed experiment must preserve this authority boundary; do not reintroduce a shared writable Go cache. Research cold-vs-warm task-local cost and safe seed/reuse designs instead.
 
-R-027 now records the **candidate** V1.2 requirements and explicit no-change decisions. They remain research conclusions, not implementation authority.
+R-027 records the evidence-backed candidate requirements. R-028 narrows them into the bounded V1.2 implementation-entry scope: core Slices A-D, conditional follow-up E1/E2, explicit out-of-scope items and a release stop rule. Production implementation is still unauthorized until an implementation slice is explicitly opened.
 
 ## Proven research signals
 

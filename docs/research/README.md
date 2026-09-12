@@ -126,5 +126,6 @@ A research item should not become MAR V1.2 implementation scope merely because i
 - [R-025 — Connection self-healing and health semantics](025_CONNECTION_SELF_HEALING_AND_HEALTH_SEMANTICS.md)
 - [R-026 — Runtime child supervision and liveness](026_RUNTIME_CHILD_SUPERVISION_AND_LIVENESS.md)
 - [R-027 — MAR V1.2 candidate requirements](027_V1_2_CANDIDATE_REQUIREMENTS.md)
+- [R-028 — MAR V1.2 bounded scope decision](028_V1_2_BOUNDED_SCOPE_DECISION.md)
 
-More topics should be added only when they represent a distinct research question rather than splitting one problem into paperwork.
+Research is now converged into R-028. More topics should be added only when new evidence invalidates the bounded scope or reveals a distinct release blocker; do not extend the program by default.
