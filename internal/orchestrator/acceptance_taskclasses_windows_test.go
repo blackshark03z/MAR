@@ -377,8 +377,10 @@ func runAcceptanceTaskClass(t *testing.T, scenario acceptanceTaskClass) {
 		t.Fatalf("MCP submit failed: err=%v content=%+v", err, submit.Content)
 	}
 	var submitted struct {
-		Created bool        `json:"created"`
-		Task    domain.Task `json:"task"`
+		Created bool `json:"created"`
+		Task    struct {
+			ID string `json:"task_id"`
+		} `json:"task"`
 	}
 	raw, _ := json.Marshal(submit.StructuredContent)
 	if err := json.Unmarshal(raw, &submitted); err != nil {
