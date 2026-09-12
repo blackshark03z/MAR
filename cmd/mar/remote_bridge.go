@@ -90,23 +90,24 @@ type remoteBridgeManager struct {
 	backend  mcpedge.Backend
 	dataRoot string
 
-	lifecycleMu    sync.Mutex
-	mu             sync.Mutex
-	server         *http.Server
-	listener       net.Listener
-	listenAddr     string // tests may use an ephemeral loopback port; production defaults to remoteBridgeListen.
-	localBaseURL   string
-	routes         map[string]http.Handler
-	profiles       map[string]store.RemoteConnectorProfile
-	telemetry      map[string]*remoteConnectorTelemetry
-	quickBaseURL   string
-	starting       bool
-	startedAt      time.Time
-	lastError      string
-	tunnelStop     func() error
-	tunnelDone     <-chan error
-	healthWake     chan struct{}
-	healthLoopOnce sync.Once
+	lifecycleMu        sync.Mutex
+	mu                 sync.Mutex
+	server             *http.Server
+	listener           net.Listener
+	listenAddr         string // tests may use an ephemeral loopback port; production defaults to remoteBridgeListen.
+	localBaseURL       string
+	routes             map[string]http.Handler
+	profiles           map[string]store.RemoteConnectorProfile
+	telemetry          map[string]*remoteConnectorTelemetry
+	quickBaseURL       string
+	temporaryRouteLost bool
+	starting           bool
+	startedAt          time.Time
+	lastError          string
+	tunnelStop         func() error
+	tunnelDone         <-chan error
+	healthWake         chan struct{}
+	healthLoopOnce     sync.Once
 
 	findTunnel  func() (string, error)
 	startTunnel remoteTunnelStartFunc
@@ -335,6 +336,9 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 		if m.quickBaseURL == "" {
 			if m.starting {
 				state.Status = "CONNECTING"
+			} else if m.temporaryRouteLost {
+				state.Status = "ROUTE_LOST"
+				state.LastError = m.lastError
 			} else {
 				state.Status = "READY_TO_START"
 			}
@@ -445,6 +449,7 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 		}
 	}
 	m.lastError = ""
+	m.temporaryRouteLost = false
 	m.starting = true
 	m.mu.Unlock()
 	defer func() {
@@ -515,6 +520,10 @@ func (m *remoteBridgeManager) StartTemporary() (remoteBridgeState, error) {
 }
 
 func (m *remoteBridgeManager) StopTemporary() error {
+	return m.stopTemporary(false)
+}
+
+func (m *remoteBridgeManager) stopTemporary(routeLost bool) error {
 	m.lifecycleMu.Lock()
 	defer m.lifecycleMu.Unlock()
 	m.mu.Lock()
@@ -522,6 +531,7 @@ func (m *remoteBridgeManager) StopTemporary() error {
 	m.quickBaseURL = ""
 	m.tunnelStop = nil
 	m.tunnelDone = nil
+	m.temporaryRouteLost = routeLost
 	for id, profile := range m.profiles {
 		if profile.PreferredMode == store.RemoteConnectorModeTemporary {
 			m.telemetry[id] = &remoteConnectorTelemetry{}
@@ -628,10 +638,11 @@ func (m *remoteBridgeManager) setError(err error) {
 func (m *remoteBridgeManager) watchTunnel(tunnelDone <-chan error) {
 	select {
 	case err := <-tunnelDone:
-		if err != nil {
-			m.setError(fmt.Errorf("remote tunnel exited: %w", err))
+		if err == nil {
+			err = errors.New("remote tunnel exited")
 		}
-		_ = m.StopTemporary()
+		_ = m.stopTemporary(true)
+		m.setError(fmt.Errorf("remote tunnel exited: %w", err))
 	case <-m.ctx.Done():
 		_ = m.StopTemporary()
 	}

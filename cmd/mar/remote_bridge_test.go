@@ -216,6 +216,60 @@ func TestRemoteBridgeRetriesDeadTemporaryRouteWithinBoundedStartup(t *testing.T)
 	}
 }
 
+func TestRemoteBridgeUnexpectedQuickTunnelExitReportsRouteLostUntilExplicitRegeneration(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := store.Open(t.TempDir() + `\\mar.db`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	makeRemoteBridgePassiveForTest(manager)
+	manager.findTunnel = func() (string, error) { return `C:\\fake\\cloudflared.exe`, nil }
+	manager.waitReady = func(context.Context, string, string) error { return nil }
+	firstDone := make(chan error, 1)
+	secondDone := make(chan error, 1)
+	starts := 0
+	manager.startTunnel = func(_ context.Context, _ string, localURL string) (string, func() error, <-chan error, error) {
+		starts++
+		if starts == 1 {
+			return "https://first.trycloudflare.com", func() error { return nil }, firstDone, nil
+		}
+		return "https://second.trycloudflare.com", func() error { return nil }, secondDone, nil
+	}
+	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	first, err := manager.StartTemporary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstURL := connectorState(t, first, store.RemoteConnectorClaudeWeb).PublicURL
+	firstDone <- errors.New("simulated cloudflared crash")
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		state := connectorState(t, manager.State(), store.RemoteConnectorClaudeWeb)
+		if state.Status == "ROUTE_LOST" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	lost := connectorState(t, manager.State(), store.RemoteConnectorClaudeWeb)
+	if lost.Status != "ROUTE_LOST" || lost.PublicURL != "" || !strings.Contains(lost.LastError, "simulated cloudflared crash") || starts != 1 {
+		t.Fatalf("unexpected Quick Tunnel recovery truth: starts=%d state=%+v", starts, lost)
+	}
+	second, err := manager.StartTemporary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondURL := connectorState(t, second, store.RemoteConnectorClaudeWeb).PublicURL
+	if starts != 2 || secondURL == "" || secondURL == firstURL || connectorState(t, second, store.RemoteConnectorClaudeWeb).Status != "LINK_READY" {
+		t.Fatalf("explicit route regeneration did not create fresh temporary identity: first=%q second=%q state=%+v", firstURL, secondURL, second)
+	}
+}
+
 func TestRemoteBridgeStableProfileKeepsPersistentURLAndRevokesRotatedToken(t *testing.T) {
 	requireLoopbackTCP(t)
 	ctx, cancel := context.WithCancel(context.Background())

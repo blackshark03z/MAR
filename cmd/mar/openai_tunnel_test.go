@@ -206,36 +206,96 @@ func TestOpenAITunnelActualLocalMCPActivityEstablishesConnectionWithoutAdminGues
 	}
 }
 
-func TestOpenAITunnelCrashAndRestartStateNeverReuseStaleConnectedTruth(t *testing.T) {
-	m, process, _ := testOpenAITunnelManager(t)
+func TestOpenAITunnelCrashAutoRecoversDesiredStateWithoutStaleConnectionTruth(t *testing.T) {
+	m, first, _ := testOpenAITunnelManager(t)
 	config := validOpenAITunnelConfig()
 	config.DesiredRunning = true
+	config.AdminBaseURL = "http://127.0.0.1:1"
 	t.Setenv(config.APIKeyEnv, "test-secret")
+	m.recoveryDelay = func(int) time.Duration { return 0 }
+	m.recoverySettle = 5 * time.Millisecond
+	m.probe = func(context.Context, string, string) (bool, string) { return true, "" }
+	second := newFakeTunnelProcess()
+	starts := 0
+	m.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) {
+		starts++
+		if starts == 1 {
+			return first, nil
+		}
+		return second, nil
+	}
 	if err := m.Configure(config); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.Start(); err != nil {
 		t.Fatal(err)
 	}
-	process.finish(errors.New("simulated crash"))
+	m.refreshHealth()
+	if !m.State().Connected {
+		t.Fatalf("first process never became connected: %+v", m.State())
+	}
+	first.finish(errors.New("simulated crash"))
 	deadline := time.Now().Add(time.Second)
-	for m.State().Running && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
+		state := m.State()
+		if starts >= 2 && state.Running && !state.RecoveryInProgress {
+			break
+		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	state := m.State()
-	if state.Status != "ERROR" || state.Connected || state.Ready || state.Healthy || !strings.Contains(state.LastError, "simulated crash") {
-		t.Fatalf("crash was not detected truthfully: %+v", state)
+	if starts != 2 || !state.Running || state.RecoveryAttempts != 1 || state.Identifier != config.TunnelID {
+		t.Fatalf("desired-state recovery did not launch exactly one replacement: starts=%d state=%+v", starts, state)
 	}
+	if state.Connected && (state.StartedAt == nil || state.ConnectedSince == nil || state.ConnectedSince.Before(*state.StartedAt)) {
+		t.Fatalf("recovery reused stale connected truth: %+v", state)
+	}
+	if !state.Connected {
+		m.refreshHealth()
+	}
+	if !m.State().Connected {
+		t.Fatalf("replacement did not establish fresh readiness: %+v", m.State())
+	}
+}
 
-	// A new MAR process may see desired_running, but it starts disconnected and
-	// must establish fresh process/readiness evidence before reporting Connected.
-	m2, _, _ := testOpenAITunnelManager(t)
-	if err := m2.Configure(config); err != nil {
+func TestOpenAITunnelAutoRecoveryExhaustsBoundedBudgetWithoutSpin(t *testing.T) {
+	m, first, _ := testOpenAITunnelManager(t)
+	config := validOpenAITunnelConfig()
+	config.DesiredRunning = true
+	t.Setenv(config.APIKeyEnv, "test-secret")
+	m.recoveryDelay = func(int) time.Duration { return 0 }
+	m.recoverySettle = time.Millisecond
+	starts := 0
+	m.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) {
+		starts++
+		if starts == 1 {
+			return first, nil
+		}
+		return nil, errors.New("simulated restart failure")
+	}
+	if err := m.Configure(config); err != nil {
 		t.Fatal(err)
 	}
-	state = m2.State()
-	if state.Connected || state.Running || state.Status != "DISCONNECTED" || !state.DesiredRunning {
-		t.Fatalf("stale connected state survived restart: %+v", state)
+	if _, err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	first.finish(errors.New("simulated crash"))
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		state := m.State()
+		if !state.RecoveryInProgress && state.RecoveryAttempts == openAITunnelRecoveryLimit && strings.Contains(state.LastError, "automatic tunnel recovery exhausted") {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	state := m.State()
+	if state.Running || state.Status != "ERROR" || state.RecoveryAttempts != openAITunnelRecoveryLimit || !strings.Contains(state.LastError, "automatic tunnel recovery exhausted") {
+		t.Fatalf("recovery budget did not fail closed: starts=%d state=%+v", starts, state)
+	}
+	wantStarts := 1 + openAITunnelRecoveryLimit
+	time.Sleep(25 * time.Millisecond)
+	if starts != wantStarts {
+		t.Fatalf("recovery spun after budget exhaustion: starts=%d want=%d", starts, wantStarts)
 	}
 }
 

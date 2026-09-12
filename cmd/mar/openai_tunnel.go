@@ -21,10 +21,12 @@ import (
 )
 
 const (
-	openAITunnelInstallURL   = "https://github.com/openai/tunnel-client/releases/latest"
-	openAITunnelHealthEvery  = time.Second
-	openAITunnelProbeTimeout = 2 * time.Second
-	openAITunnelStopTimeout  = 5 * time.Second
+	openAITunnelInstallURL     = "https://github.com/openai/tunnel-client/releases/latest"
+	openAITunnelHealthEvery    = time.Second
+	openAITunnelProbeTimeout   = 2 * time.Second
+	openAITunnelStopTimeout    = 5 * time.Second
+	openAITunnelRecoveryLimit  = 3
+	openAITunnelRecoverySettle = 2 * time.Second
 )
 
 type openAITunnelState struct {
@@ -54,6 +56,9 @@ type openAITunnelState struct {
 	LastHealthAt       *time.Time `json:"last_health_at,omitempty"`
 	LastError          string     `json:"last_error,omitempty"`
 	DiagnosticsSummary string     `json:"diagnostics_summary,omitempty"`
+	RecoveryInProgress bool       `json:"recovery_in_progress"`
+	RecoveryAttempts   int        `json:"recovery_attempts"`
+	RecoveryLimit      int        `json:"recovery_limit"`
 	NextAction         string     `json:"next_action"`
 }
 
@@ -92,6 +97,10 @@ type openAITunnelManager struct {
 	diagnosticsSummary string
 	adminDiscovered    string
 	healthWake         chan struct{}
+	recovering         bool
+	recoveryAttempts   int
+	recoveryDelay      func(int) time.Duration
+	recoverySettle     time.Duration
 
 	findClient   func(store.OpenAITunnelConfig, string) (string, error)
 	runCommand   func(context.Context, string, ...string) (string, error)
@@ -101,6 +110,8 @@ type openAITunnelManager struct {
 
 func newOpenAITunnelManager(ctx context.Context, backend mcpedge.Backend, dataRoot string) *openAITunnelManager {
 	m := &openAITunnelManager{ctx: ctx, backend: backend, dataRoot: filepath.Clean(dataRoot), healthWake: make(chan struct{}, 1)}
+	m.recoveryDelay = openAITunnelRecoveryDelay
+	m.recoverySettle = openAITunnelRecoverySettle
 	m.findClient = findTunnelClient
 	m.runCommand = runTunnelClientCommand
 	m.startProcess = startManagedTunnelClient
@@ -163,6 +174,7 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 		ClientPath: clientPath, InstallURL: openAITunnelInstallURL, LocalTarget: m.localTarget,
 		AdminBaseURL: firstNonEmpty(config.AdminBaseURL, m.adminDiscovered), DesiredRunning: config.DesiredRunning,
 		LastError: m.lastError, DiagnosticsSummary: m.diagnosticsSummary,
+		RecoveryInProgress: m.recovering, RecoveryAttempts: m.recoveryAttempts, RecoveryLimit: openAITunnelRecoveryLimit,
 	}
 	if running {
 		state.PID = m.process.PID()
@@ -191,6 +203,8 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 		state.Status, state.NextAction = "MISCONFIGURED", "Đặt runtime API key trong biến "+config.APIKeyEnv+" rồi mở lại MAR Console."
 	case m.starting:
 		state.Status, state.NextAction = "CONNECTING", "MAR đang chạy Doctor và mở tunnel outbound."
+	case m.recovering && !running:
+		state.Status, state.NextAction = "RECOVERING", "MAR đang tự khôi phục tunnel theo desired state với retry có giới hạn."
 	case m.stopping:
 		state.Status, state.NextAction = "DISCONNECTING", "MAR đang dừng tunnel-client do mình sở hữu."
 	case m.terminationUnknown:
@@ -211,7 +225,25 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 	return state
 }
 
+func openAITunnelRecoveryDelay(attempt int) time.Duration {
+	switch attempt {
+	case 1:
+		return time.Second
+	case 2:
+		return 5 * time.Second
+	default:
+		return 15 * time.Second
+	}
+}
+
 func (m *openAITunnelManager) Start() (openAITunnelState, error) {
+	m.mu.Lock()
+	m.recoveryAttempts = 0
+	m.mu.Unlock()
+	return m.start()
+}
+
+func (m *openAITunnelManager) start() (openAITunnelState, error) {
 	if err := m.ensureLocalServer(); err != nil {
 		m.setError(err)
 		return m.State(), err
@@ -532,6 +564,7 @@ func (m *openAITunnelManager) watchProcess(process tunnelClientProcess) {
 			m.mu.Unlock()
 			return
 		}
+		wasStopping := m.stopping
 		m.process = nil
 		m.stopping = false
 		m.terminationUnknown = false
@@ -543,9 +576,104 @@ func (m *openAITunnelManager) watchProcess(process tunnelClientProcess) {
 			err = errors.New("tunnel-client exited")
 		}
 		m.lastError = redactTunnelOutput(err.Error(), os.Getenv(m.config.APIKeyEnv))
+		shouldRecover := !wasStopping && m.config.DesiredRunning && m.ctx.Err() == nil
 		m.mu.Unlock()
+		if shouldRecover {
+			m.scheduleDesiredRecovery()
+		}
 	case <-m.ctx.Done():
 		_ = m.Stop()
+	}
+}
+
+func (m *openAITunnelManager) scheduleDesiredRecovery() {
+	m.mu.Lock()
+	if m.recovering || !m.config.DesiredRunning || m.process != nil || m.stopping || m.terminationUnknown || m.ctx.Err() != nil {
+		m.mu.Unlock()
+		return
+	}
+	if m.recoveryAttempts >= openAITunnelRecoveryLimit {
+		if !strings.Contains(m.lastError, "automatic tunnel recovery exhausted") {
+			m.lastError = fmt.Sprintf("automatic tunnel recovery exhausted after %d attempts: %s", openAITunnelRecoveryLimit, strings.TrimSpace(m.lastError))
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.recovering = true
+	m.mu.Unlock()
+	go m.recoverDesiredState()
+}
+
+func (m *openAITunnelManager) recoverDesiredState() {
+	defer func() {
+		m.mu.Lock()
+		m.recovering = false
+		m.mu.Unlock()
+	}()
+	for {
+		m.mu.Lock()
+		if !m.config.DesiredRunning || m.process != nil || m.stopping || m.terminationUnknown || m.ctx.Err() != nil {
+			m.mu.Unlock()
+			return
+		}
+		if m.recoveryAttempts >= openAITunnelRecoveryLimit {
+			last := strings.TrimSpace(m.lastError)
+			if last == "" {
+				last = "tunnel-client remains unavailable"
+			}
+			m.lastError = fmt.Sprintf("automatic tunnel recovery exhausted after %d attempts: %s", openAITunnelRecoveryLimit, last)
+			m.mu.Unlock()
+			return
+		}
+		attempt := m.recoveryAttempts + 1
+		m.recoveryAttempts = attempt
+		delayFn := m.recoveryDelay
+		settle := m.recoverySettle
+		m.mu.Unlock()
+
+		delay := time.Duration(0)
+		if delayFn != nil {
+			delay = delayFn(attempt)
+		}
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-m.ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return
+			case <-timer.C:
+			}
+		}
+
+		m.mu.Lock()
+		shouldStart := m.config.DesiredRunning && m.process == nil && !m.stopping && !m.terminationUnknown && m.ctx.Err() == nil
+		m.mu.Unlock()
+		if !shouldStart {
+			return
+		}
+		if _, err := m.start(); err != nil {
+			continue
+		}
+		if settle <= 0 {
+			settle = openAITunnelRecoverySettle
+		}
+		timer := time.NewTimer(settle)
+		select {
+		case <-m.ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		case <-timer.C:
+		}
+		m.mu.Lock()
+		running := m.process != nil && !m.stopping && !m.terminationUnknown
+		m.mu.Unlock()
+		if running {
+			return
+		}
 	}
 }
 

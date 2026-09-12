@@ -1011,7 +1011,7 @@ func buildOwnerSystemAttention(executionReady bool, executionDetail string, sand
 				add(ownerAttentionItem{ID: "gpt-connection", Severity: "high", Title: "GPT cần kiểm tra kết nối", Detail: connection.LastError, NextAction: connection.NextAction, View: "connections"})
 			}
 		case store.RemoteConnectorClaudeWeb:
-			if slices.Contains([]string{"ERROR", "MISCONFIGURED", "DEGRADED", "ROUTE_OFFLINE", "STABLE_URL_REQUIRED", "BRIDGE_RUNTIME_MISSING"}, status) {
+			if slices.Contains([]string{"ERROR", "MISCONFIGURED", "DEGRADED", "ROUTE_OFFLINE", "ROUTE_LOST", "STABLE_URL_REQUIRED", "BRIDGE_RUNTIME_MISSING"}, status) {
 				add(ownerAttentionItem{ID: "claude-connection", Severity: "medium", Title: "Claude cần kiểm tra kết nối", Detail: connection.LastError, NextAction: "Mở Kết nối để kiểm tra route và capability URL của Claude.", View: "connections"})
 			}
 		}
