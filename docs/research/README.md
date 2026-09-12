@@ -104,5 +104,7 @@ A research item should not become MAR V1.2 implementation scope merely because i
 - [R-003 — Read-only Research Observer design](003_RESEARCH_OBSERVER_DESIGN.md)
 - [R-004 — Automated benchmark cadence](004_AUTOMATED_BENCHMARK_CADENCE.md)
 - [R-005 — Phase-0 observability gap report](005_OBSERVABILITY_GAP_REPORT_PHASE0.md)
+- [R-006 — Context amplification phase-0](006_CONTEXT_AMPLIFICATION_PHASE0.md)
+- [R-005 — Phase-0 observability gap report](005_OBSERVABILITY_GAP_REPORT_PHASE0.md)
 
 More topics should be added only when they represent a distinct research question rather than splitting one problem into paperwork.
