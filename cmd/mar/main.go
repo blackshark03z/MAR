@@ -182,6 +182,18 @@ func run(ctx context.Context, args []string) error {
 	case "worker-run":
 		return worker.RunChild(ctx, os.Stdin, os.Stdout)
 
+	case "runtime-identity":
+		fs := flag.NewFlagSet("runtime-identity", flag.ContinueOnError)
+		dataRoot := fs.String("data-root", ".mar", "MAR managed data root containing the release identity manifest")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		executable, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		return printJSON(collectRuntimeIdentity(ctx, executable, *dataRoot, nil))
+
 	case "release-manifest":
 		fs := flag.NewFlagSet("release-manifest", flag.ContinueOnError)
 		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
@@ -527,5 +539,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|release-manifest|sandbox-host-check|sandbox-host-prepare> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|runtime-identity|release-manifest|sandbox-host-check|sandbox-host-prepare> [options]")
 }
