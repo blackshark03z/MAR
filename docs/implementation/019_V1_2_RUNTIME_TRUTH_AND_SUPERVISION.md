@@ -1,6 +1,6 @@
 # Slice 019 — V1.2 runtime truth and supervision
 
-**Status:** `PLANNED / NOT_STARTED`  
+**Status:** `COMPLETE / PROMOTED_TO_CANONICAL_RUNTIME`  
 **Scope source:** `docs/research/028_V1_2_BOUNDED_SCOPE_DECISION.md`  
 **Implements:** R-027 `C-02` + `C-01`  
 **Production implementation authority:** not opened by this document
@@ -186,3 +186,13 @@ Must retain PASS for relevant existing coverage including:
 Slice 019 is complete when A1 + A2 pass and regression gates are clean. A3 is included only if safe bounded restart also passes without widening architecture.
 
 Do not absorb sandbox caching, task-summary optimization, connection self-healing or Web-wait capacity work into this slice.
+
+## Completion evidence
+
+- Product HEAD: `ed067bfce5acd7d99bb69884ba058cfc1ed74292`.
+- Promoted binary SHA-256: `2FACA27BAB49C4B3D5AC7B0FBA1ACE9F03BD3FEDF3CCCFF30D307DCD0C8E26B0`.
+- `runtime-identity`: `ALIGNED`, `trusted_for_release=true`, schema 14, React/Vite UI asset identity bound.
+- Canonical runtime `127.0.0.1:8787` verified on promoted stable binary with matching source revision and UI assets.
+- Child-death acceptance: Owner/remote surfaces remained reachable, `execution_runtime_ready=false`, remote submit failed closed, and durable task count remained unchanged (`42 -> 42`).
+- Targeted Slice 019 tests, `go vet ./cmd/mar`, and `go build` passed. Existing T7 full-package fixture remains environment-dependent on portable-Go availability and was not weakened.
+- A3 auto-restart intentionally deferred: truthful degraded state satisfied the bounded slice without reopening fencing/recovery architecture.

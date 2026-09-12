@@ -46,30 +46,34 @@ type ownerMCPClient interface {
 }
 
 type ownerUIBackend struct {
-	db              *store.SQLite
-	svc             *service.TaskService
-	session         ownerMCPClient
-	mcpMu           sync.Mutex
-	brainMode       string
-	providerBaseURL string
-	apiKeyEnv       string
-	model           string
-	reasoning       string
-	executable      string
-	dbPath          string
-	dataRoot        string
-	goPath          string
-	maxWorkers      int
-	startedAt       time.Time
-	sessionToken    string
-	bridge          *remoteBridgeManager
-	openAITunnel    *openAITunnelManager
-	sandboxPrepare  func(context.Context, string, string) error
-	sandboxCheck    func(context.Context, string, string) (bool, string)
-	projectPicker   func(context.Context) (string, error)
-	executionProbe  func(context.Context) error
-	executionPID    int
-	runtimeIdentity runtimeIdentity
+	db               *store.SQLite
+	svc              *service.TaskService
+	session          ownerMCPClient
+	mcpMu            sync.Mutex
+	brainMode        string
+	providerBaseURL  string
+	apiKeyEnv        string
+	model            string
+	reasoning        string
+	executable       string
+	dbPath           string
+	dataRoot         string
+	goPath           string
+	maxWorkers       int
+	startedAt        time.Time
+	sessionToken     string
+	bridge           *remoteBridgeManager
+	openAITunnel     *openAITunnelManager
+	sandboxPrepare   func(context.Context, string, string) error
+	sandboxCheck     func(context.Context, string, string) (bool, string)
+	sandboxMu        sync.Mutex
+	sandboxCheckedAt time.Time
+	sandboxReady     bool
+	sandboxDetail    string
+	projectPicker    func(context.Context) (string, error)
+	executionProbe   func(context.Context) error
+	executionPID     int
+	runtimeIdentity  runtimeIdentity
 }
 
 type ownerProjectView struct {
@@ -915,19 +919,46 @@ func checkSandboxHostReadiness(ctx context.Context, executable, workspace string
 	return true, "Windows sandbox host is prepared for this boot."
 }
 
+const (
+	ownerSandboxReadyTTL    = 5 * time.Minute
+	ownerSandboxNotReadyTTL = 30 * time.Second
+)
+
 func (b *ownerUIBackend) sandboxReadiness(ctx context.Context) (bool, string) {
+	return b.sandboxReadinessWithRefresh(ctx, false)
+}
+
+func (b *ownerUIBackend) sandboxReadinessWithRefresh(ctx context.Context, force bool) (bool, string) {
 	workspace := b.sandboxProbeWorkspace()
 	if strings.TrimSpace(b.executable) == "" || strings.TrimSpace(b.dataRoot) == "" {
 		return false, "Sandbox readiness is unavailable until MAR runtime paths are initialized."
 	}
+	b.sandboxMu.Lock()
+	defer b.sandboxMu.Unlock()
+	if !force && !b.sandboxCheckedAt.IsZero() {
+		ttl := ownerSandboxNotReadyTTL
+		if b.sandboxReady {
+			ttl = ownerSandboxReadyTTL
+		}
+		if time.Since(b.sandboxCheckedAt) < ttl {
+			return b.sandboxReady, b.sandboxDetail
+		}
+	}
 	if err := os.MkdirAll(workspace, 0o755); err != nil {
-		return false, "Create sandbox probe directory: " + err.Error()
+		b.sandboxCheckedAt = time.Now()
+		b.sandboxReady = false
+		b.sandboxDetail = "Create sandbox probe directory: " + err.Error()
+		return b.sandboxReady, b.sandboxDetail
 	}
 	check := b.sandboxCheck
 	if check == nil {
 		check = checkSandboxHostReadiness
 	}
-	return check(ctx, b.executable, workspace)
+	ready, detail := check(ctx, b.executable, workspace)
+	b.sandboxCheckedAt = time.Now()
+	b.sandboxReady = ready
+	b.sandboxDetail = detail
+	return ready, detail
 }
 
 func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Request) {
@@ -946,7 +977,7 @@ func (b *ownerUIBackend) prepareSandboxHost(w http.ResponseWriter, r *http.Reque
 		writeOwnerError(w, http.StatusServiceUnavailable, err)
 		return
 	}
-	ready, detail := b.sandboxReadiness(r.Context())
+	ready, detail := b.sandboxReadinessWithRefresh(r.Context(), true)
 	if !ready {
 		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("sandbox preparation returned without readiness: "+detail))
 		return

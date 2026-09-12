@@ -150,11 +150,11 @@ func TestOwnerUISystemAttentionUsesRealStateAndDeduplicates(t *testing.T) {
 
 func TestOwnerUIRuntimeSeparatesExecutionReadinessFromSurfaceReachability(t *testing.T) {
 	backend := &ownerUIBackend{
-		brainMode:  "web",
-		model:      "gpt-5.6-sol",
-		reasoning:  "high",
-		executable: "mar.exe",
-		dataRoot:   t.TempDir(),
+		brainMode:    "web",
+		model:        "gpt-5.6-sol",
+		reasoning:    "high",
+		executable:   "mar.exe",
+		dataRoot:     t.TempDir(),
 		executionPID: 4242,
 		executionProbe: func(context.Context) error {
 			return errors.New("child exited")
@@ -893,11 +893,41 @@ func TestOwnerUIStableConnectorConfigAndRotationAreIndependent(t *testing.T) {
 	}
 }
 
+func TestOwnerUISandboxReadinessCachesPollsAndRevalidatesAfterExpiry(t *testing.T) {
+	var checks atomic.Int32
+	backend := &ownerUIBackend{
+		executable: "mar.exe",
+		dataRoot:   t.TempDir(),
+		sandboxCheck: func(context.Context, string, string) (bool, string) {
+			checks.Add(1)
+			return true, "prepared"
+		},
+	}
+	for i := 0; i < 3; i++ {
+		ready, detail := backend.sandboxReadiness(context.Background())
+		if !ready || detail != "prepared" {
+			t.Fatalf("unexpected cached readiness ready=%v detail=%q", ready, detail)
+		}
+	}
+	if got := checks.Load(); got != 1 {
+		t.Fatalf("runtime polling should reuse sandbox readiness cache, checks=%d", got)
+	}
+	backend.sandboxMu.Lock()
+	backend.sandboxCheckedAt = time.Now().Add(-ownerSandboxReadyTTL - time.Second)
+	backend.sandboxMu.Unlock()
+	if ready, _ := backend.sandboxReadiness(context.Background()); !ready {
+		t.Fatal("expired readiness cache did not revalidate")
+	}
+	if got := checks.Load(); got != 2 {
+		t.Fatalf("expired cache should trigger exactly one recheck, checks=%d", got)
+	}
+}
+
 func TestOwnerUISandboxPreparationUsesUACHelperAndRechecksReadiness(t *testing.T) {
 	root := t.TempDir()
 	exe := filepath.Join(root, "mar.exe")
 	called := false
-	checked := false
+	var checks atomic.Int32
 	backend := &ownerUIBackend{
 		executable:   exe,
 		dataRoot:     filepath.Join(root, "data"),
@@ -910,12 +940,15 @@ func TestOwnerUISandboxPreparationUsesUACHelperAndRechecksReadiness(t *testing.T
 			return nil
 		},
 		sandboxCheck: func(_ context.Context, gotExe, workspace string) (bool, string) {
-			checked = true
+			checks.Add(1)
 			if gotExe != exe || workspace != filepath.Join(root, "data", "sandbox-host-probe") {
 				t.Fatalf("unexpected readiness target exe=%q workspace=%q", gotExe, workspace)
 			}
 			return true, "prepared"
 		},
+	}
+	if ready, _ := backend.sandboxReadiness(context.Background()); !ready {
+		t.Fatal("preparation fixture must begin with cached readiness")
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/runtime/sandbox/prepare", strings.NewReader(`{}`))
 	req.Host = "127.0.0.1:8787"
@@ -924,8 +957,8 @@ func TestOwnerUISandboxPreparationUsesUACHelperAndRechecksReadiness(t *testing.T
 	req.Header.Set(ownerSessionHeader, "test-owner-token")
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
-	if !called || !checked {
-		t.Fatalf("sandbox preparation lifecycle incomplete: called=%v checked=%v", called, checked)
+	if !called || checks.Load() != 2 {
+		t.Fatalf("sandbox preparation must force one fresh readiness check after preparation: called=%v checks=%d", called, checks.Load())
 	}
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"sandbox_host_ready":true`) {
 		t.Fatalf("unexpected sandbox prepare response %d: %s", rec.Code, rec.Body.String())
