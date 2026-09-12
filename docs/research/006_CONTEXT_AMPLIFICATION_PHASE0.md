@@ -184,6 +184,60 @@ cumulative_request_bytes_before_terminal_result
 
 The goal is not the smallest prompt. The goal is the smallest context that preserves or improves successful convergence.
 
+## Phase-1 optimization ladder
+
+The measured byte classes should not be treated as equally removable. Future experiments should proceed from lowest semantic/recovery risk to highest.
+
+### Tier A — Exact same-request duplicate elimination
+
+Measured target: ~468.7 KiB across the 90 DecisionProjection turns, ~8.6% of total request bytes.
+
+This is the strongest first experiment because both copies coexist inside the same request. The oracle must still prove that removing or referencing one copy does not break tool-call pairing or durable evidence interpretation.
+
+### Tier B — Large read-observation representation
+
+`read_file` accounts for ~81.7% of measured protocol-tail tool-result content. Test bounded excerpts, overlap reduction and artifact/handle retrieval before touching stable Goal/authority data.
+
+This can reduce payload while preserving the fact that the model may still request exact source when needed.
+
+### Tier C — Repository-context reuse/reference
+
+Repository context is ~32.7% of total measured DecisionProjection request bytes and is byte-identical across many adjacent turns. That is a large optimization pool, but it is **not** equivalent to proven waste.
+
+A reference/delta design must survive:
+
+- reconnect from a fresh remote session;
+- Web chat/context loss;
+- worker/attempt replacement;
+- source revision change;
+- missing/stale cache entry.
+
+Fallback to a full self-contained projection must remain possible.
+
+### Tier D — Goal Contract reuse/reference
+
+Goal Contract bytes are ~10.6% of measured DecisionProjection request volume and were identical across the measured turns. They are also core authority/intent context.
+
+Do not optimize this by relying silently on conversational memory. Any compact representation would need explicit identity/hash semantics and a proven way to recover the full immutable contract when external cognition has lost prior context.
+
+### Tier E — Broader context-protocol redesign
+
+Only after Tiers A–D are benchmarked should research consider larger changes such as differential DecisionProjection, persistent external cognition handles, or different episode semantics. A smaller request is not an improvement if reconnect reliability, correctness, or convergence worsens.
+
+## Context optimization acceptance
+
+For any candidate, compare the same fixture against current V1.1 and require all of:
+
+- same final acceptance outcome;
+- no increase in Owner intervention;
+- no loss of reconnect/fresh-session recoverability;
+- no stale revision/authority confusion;
+- lower median and cumulative request bytes;
+- no material increase in model turns or wall time;
+- no new dependency on hidden client/session state.
+
+A candidate that saves bytes but requires more turns may be a net regression. Track both `bytes/Goal` and `turns/Goal`.
+
 ## Current verdict
 
 `MATERIAL_RESEARCH_SIGNAL`

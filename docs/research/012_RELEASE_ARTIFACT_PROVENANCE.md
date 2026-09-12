@@ -62,6 +62,14 @@ sqlite schema version 14 is newer than supported 13
 
 This is direct evidence that the default startup target is not compatible with the accepted V1.1 durable store.
 
+### Live runtime behavioral identity — 2026-09-12
+
+The currently running Owner UI parent and `mcp-stdio` child both execute `D:\\MAR\\mar.exe` with SHA-256 `74FAFFC1E2FCF83EA0F317D6476F30CA7D6FDD65B2CFC03F8775F65ABA048118`. Go build metadata is readable but contains no `vcs.revision`, and no executable under `.mar/runtime` matches that root binary hash.
+
+A stronger behavioral fingerprint shows the running binary is not the accepted V1.1 runtime: its `/` surface serves a ~149 KiB monolithic HTML/CSS Owner Console and does not reference the React/Vite asset model, while accepted V1.1 source serves `cmd/mar/owner_ui_dist/index.html` with hashed `/assets/index-*.js` and `/assets/index-*.css` resources. Therefore the current live runtime is not merely `BINARY_UNBOUND`; it is behaviorally stale relative to the accepted V1.1 source.
+
+This makes current latency/mutation measurements invalid as a V1.1 performance baseline even when host resource pressure is otherwise acceptable.
+
 ## Classification
 
 Current research classification:
@@ -174,6 +182,22 @@ REGRESSION ANALYSIS
 ```
 
 If identity is `SCHEMA_INCOMPATIBLE` or `BINARY_UNBOUND`, mutation benchmarks should be `NOT_RUN` rather than contaminating the baseline.
+
+## Live runtime behavioral fingerprint — 2026-09-12
+
+The currently running Owner UI parent and `mcp-stdio` child both execute `D:\\MAR\\mar.exe` with SHA-256 `74FAFFC1E2FCF83EA0F317D6476F30CA7D6FDD65B2CFC03F8775F65ABA048118`.
+
+Go build metadata for that executable contains no `vcs.revision`, and an exact SHA-256 inventory across `.mar/runtime` found no matching archived executable. More importantly, the running Owner surface behaviorally diverges from the accepted V1.1 source: the running `/` response is a ~149 KiB monolithic HTML/CSS document with no `/assets/index-*.js` React/Vite asset reference, while accepted V1.1 source serves the React/Vite bundle from `cmd/mar/owner_ui_dist/index.html`.
+
+This upgrades the runtime-identity classification from merely `BINARY_UNBOUND` to:
+
+```text
+BINARY_UNBOUND
++ RUNNING_UI_ASSET_MODEL_MISMATCH
+= RUNNING_RUNTIME_NOT_ACCEPTED_V1_1
+```
+
+This remains a packaging/runtime-identity finding, not a source regression. Performance baselines taken against this process must remain `NOT_RUN_RUNTIME_IDENTITY`.
 
 ## Phase-0 verdict
 

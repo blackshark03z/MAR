@@ -87,9 +87,143 @@ Until these are exercised end-to-end, it is not enough to infer Web transport re
 
 During this research, a contained ChatCode `local_exec` operation launched a long-lived `mar.exe` child. The containing durable job remained `RUNNING` and held the raw-command workspace target, causing a later command to queue as `target_busy` even though the user-level intent was merely to start a background app.
 
-This is not a MAR defect. It demonstrates the exact failure mode MAR should avoid: **a long-lived child/process lifetime becoming coupled to one tool invocation/lease lifetime**.
+A second, more direct ambiguous-ACK case was then observed while attempting a structured test task. The caller received an HTTP `502 Upstream or external service error`, so from the chat side admission looked unsuccessful. A later durable Job query showed that the backend had in fact created `job-18d48837e4b6fc88-e6` for the request and advanced it through its own lifecycle. The job ultimately failed for an unrelated runner-classification reason, but the important transport fact is independent of that failure: **caller-visible 502 did not prove the operation had not been admitted**.
+
+This is not a MAR defect. It demonstrates two concrete classes MAR should handle better than an ordinary synchronous tool loop:
+
+1. long-lived child lifetime coupled to a tool/lease lifetime;
+2. ambiguous acknowledgement where the caller sees failure after the backend has already materialized durable work.
 
 MAR's durable submit -> daemon/worker architecture is conceptually better because long work is detached from the caller after durable admission. R-011 exists to prove that this advantage survives the real remote HTTP/tunnel failure windows rather than relying on architecture reasoning alone.
+
+MAR's service-level submit evidence is already strong: identical idempotency-key + identical Goal Contract returns the original task; the same key with a different Goal Contract is rejected; and a concurrency test with 12 simultaneous duplicate submits produces one durable task with exactly one creator.
+
+### Source-level remote HTTP ambiguous-ACK fault injection — PASS
+
+A research-only Go overlay test was executed against the accepted production source without modifying MAR files. The harness used the real `NewRemoteHTTPHandler`, real `TaskService`, a temporary SQLite store, and a response writer that deliberately discarded the first `submit` acknowledgement **after** the backend had durably committed the task. A new MCP client/session then retried the exact same submit idempotency key and Goal Contract.
+
+Both existing transport semantics passed:
+
+```text
+stateful:
+  first submit durable commit = YES
+  first caller usable ACK     = NO (injected loss)
+  reconnect/new session       = YES
+  retry created               = false
+  retry task_id               = original task_id
+  submit calls                = 2
+  verdict                     = PASS
+
+stateless:
+  first submit durable commit = YES
+  first caller usable ACK     = NO (injected loss)
+  reconnect/new session       = YES
+  retry created               = false
+  retry task_id               = original task_id
+  submit calls                = 2
+  verdict                     = PASS
+```
+
+The test itself completed in ~0.11 s once compiled; the enclosing research job took ~122 s because the source test was cold-compiled under a heavily loaded host. The wall-clock job duration is therefore **not** a transport latency measurement.
+
+This closes benchmark matrix case **S2 — after submit commit / before HTTP acknowledgement** for both stateful and stateless source paths.
+
+### Source-level `brain_respond` ambiguous-ACK fault injection — PASS
+
+A second research-only overlay harness created a real temporary MAR task, advanced it into an active attempt, created a durable pending WebTurn, then used the real remote HTTP handler for `brain_respond`. The response writer discarded the first acknowledgement only after `TaskService.RespondWebTurn` committed the response and resumed the task from `INPUT_REQUIRED` to `RUNNING`. A fresh MCP client/session retried the exact same turn/response.
+
+Both transport semantics passed:
+
+```text
+stateful:
+  response durable commit      = YES
+  task resumed RUNNING         = YES before caller retry
+  first caller usable ACK      = NO (injected loss)
+  reconnect/new session        = YES
+  retry created                = false
+  retry turn_id                = original turn_id
+  respond calls                = 2
+  verdict                      = PASS
+
+stateless:
+  response durable commit      = YES
+  task resumed RUNNING         = YES before caller retry
+  first caller usable ACK      = NO (injected loss)
+  reconnect/new session        = YES
+  retry created                = false
+  retry turn_id                = original turn_id
+  respond calls                = 2
+  verdict                      = PASS
+```
+
+The test body completed in ~0.12 s and the warm enclosing research job in ~3.3 s. This closes **B2 — after brain-response commit / before acknowledgement** for both stateful and stateless source paths.
+
+### Deterministic pre-commit cancellation barrier — PASS
+
+A third source-level overlay harness placed an explicit barrier in the HTTP backend **immediately before** calling the real durable `TaskService` operation. The client started the tool call, the server backend confirmed it had entered the barrier, then the client request context was cancelled. With `PropagateRequestCancellation: true`, the backend observed `ctx.Done()` and returned without invoking the durable operation. A fresh MCP session then retried normally.
+
+All four combinations passed:
+
+```text
+submit / stateful:
+  backend observed cancellation = YES
+  hidden durable submit          = NO
+  reconnect retry created task   = YES
+  verdict                        = PASS
+
+submit / stateless:
+  backend observed cancellation = YES
+  hidden durable submit          = NO
+  reconnect retry created task   = YES
+  verdict                        = PASS
+
+brain_respond / stateful:
+  backend observed cancellation = YES
+  task remained INPUT_REQUIRED   = YES
+  pending turn remained current  = YES
+  reconnect retry created reply  = YES
+  task resumed RUNNING           = YES
+  verdict                        = PASS
+
+brain_respond / stateless:
+  backend observed cancellation = YES
+  task remained INPUT_REQUIRED   = YES
+  pending turn remained current  = YES
+  reconnect retry created reply  = YES
+  task resumed RUNNING           = YES
+  verdict                        = PASS
+```
+
+The two test bodies completed in ~0.20 s total once compiled; the enclosing warm research job took ~2.4 s.
+
+This is strong evidence for S1/B1 at a deterministic **pre-TaskService/pre-transaction boundary**. It does **not** claim deterministic fault injection in the middle of SQLite commit itself. Transactional atomicity and idempotency still protect that narrower micro-window, but a dedicated storage-layer crash/cancel test would be required to label an exact mid-transaction barrier as independently proven.
+
+Stateful session-expiry recovery is now executable evidence as well. A research-only transport harness uses the same MAR `NewServer` + durable `TaskService` while shortening only the SDK session timeout to 1 second. After the original stateful session expires, its next call is rejected; a newly connected client retries the same idempotency key and receives the original task with `created=false`. The transport semantics sentinel now passes 9/9 cases, including this session-expiry path.
+
+Real Quick Tunnel process replacement is now executable evidence for durable pending cognition. A research-only handler created a real pending WebTurn, exposed it through cloudflared #1, killed that cloudflared process completely, verified the durable task remained `INPUT_REQUIRED` with the same unanswered turn, then started cloudflared #2 and reconnected through its new public hostname. `brain_respond` on the replacement route accepted the original turn and resumed the task to `RUNNING` without recreating task/turn identity.
+
+The remaining transport uncertainty is now narrow: actual OS worker-process continuity while the external route disappears/reappears, plus optional exact mid-transaction crash/cancel micro-windows. The real-worker acceptance path cannot be rerun validly on the current boot because `sandbox-host-check` is not prepared; this gap is therefore `BLOCKED_BY_SANDBOX`, not failed. Existing source semantics show the Web-wait worker polls durable turn state independently of the remote route, but that is not promoted to OS-process proof. Transport/durable-state continuity itself is proven across session expiry, ACK loss, and real Quick Tunnel process replacement.
+
+## Current transport telemetry gap
+
+Current remote telemetry is useful for live UI status but is not sufficient for fault attribution.
+
+`RemoteHTTPEvent` currently records request arrival time, HTTP method, JSON-RPC method, session ID, Host and Origin. The remote bridge then keeps request count, last-seen time, session cardinality and a few initialization/tool-list flags in memory. The Secure Tunnel observer similarly marks last activity/success when an MCP event is observed.
+
+It does **not** durably record, per request:
+
+- negotiated MCP protocol version;
+- HTTP/JSON-RPC final outcome;
+- response status/error class;
+- request/response byte counts;
+- handler duration;
+- client cancellation/disconnect timestamp;
+- retry correlation/operation identity;
+- tunnel/proxy hop responsible for a 502/504/reset.
+
+The in-memory connector telemetry is also lost across MAR process restart. Therefore existing Owner telemetry cannot reconstruct a historical disconnect timeline or prove where a failed acknowledgement originated.
+
+This is a measurement gap, not automatic authorization to add production instrumentation. The first fault-injection harness should capture these fields externally where possible. Only fields that cannot be measured reliably outside MAR should become candidates for future internal instrumentation.
 
 ## Candidate benchmark matrix
 
@@ -152,8 +286,8 @@ Promotion requires measured improvement on the benchmark matrix, not protocol no
 
 ## Phase-0 verdict
 
-`ARCHITECTURE_PROMISING_EVIDENCE_INCOMPLETE`
+`REMOTE_HTTP_PRECOMMIT_CANCEL_AND_POSTCOMMIT_ACK_LOSS_RECOVERY_PROVEN_AT_SERVICE_BOUNDARIES; TUNNEL_AND_SESSION_EVIDENCE_INCOMPLETE`
 
-The current MAR design already contains the key primitives needed for transport-independent long work, and it is structurally less coupled than a long synchronous tool-call chain. The missing evidence is remote HTTP/tunnel failure injection at ambiguous commit/reconnect boundaries.
+Accepted-source fault injection now proves both sides of the normal TaskService boundary for stateful and stateless HTTP paths: cancellation before durable service invocation propagates without hidden state change, while acknowledgement loss after durable commit recovers idempotently for both submit and brain response. The remaining evidence gap is no longer basic HTTP idempotency; it is session expiry, long worker continuity, real tunnel/process loss/replacement, and optional deeper storage-layer crash points inside transactions.
 
 No transport implementation change is authorized by this document.
