@@ -1,0 +1,15 @@
+MAR V1.2 stable-use retention release evidence
+Release: v1.2.0-requalification.4
+Source: 09745c865c164a776f19e102f8c17dc6a87a2a5b
+Binary SHA256: C1176F1F47361AC15F7AA9EC29BDB29294846A8E7914D28006276EAEEA86358A
+Runtime identity: ALIGNED, trusted_for_release=true, schema=14, HTTP 8787=200
+Post-activation CUJ: task-3fa746018aa24f02b67c1452ff9c281b
+CUJ result: COMPLETE / VERIFIED / INTEGRATED / workspace_disposition=REMOVED
+Verification evidence: evidence-d9ff0df1632d48c3a4e3fe933c4aaccc
+Acceptance oracle: README.md contains # MAR = PASS
+Attempt authority: PHYSICALLY_TERMINATED
+Workspace workspace-808414cfe790280423195495 physically absent after durable removal
+Retention backlog proof: 22 terminal workspaces physically removed; BLOCKED workspaces preserved
+Post-retention workspace root: ~0.247 GiB; task-local Go cache: 0 MiB
+Owner checkout: HEAD c2d2929a57fddff2868c2927a944e045819ba467; pre/post dirty paths and SHA256 unchanged
+Remote push/deploy: not performed
