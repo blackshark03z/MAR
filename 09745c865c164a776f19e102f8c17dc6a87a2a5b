@@ -13,3 +13,5 @@ Retention backlog proof: 22 terminal workspaces physically removed; BLOCKED work
 Post-retention workspace root: ~0.247 GiB; task-local Go cache: 0 MiB
 Owner checkout: HEAD c2d2929a57fddff2868c2927a944e045819ba467; pre/post dirty paths and SHA256 unchanged
 Remote push/deploy: not performed
+Live unsupported-profile acceptance: verification_profile=minimal rejected at MCP boundary; DB task count for probe idempotency key remained 0.
+Reconnect acceptance: targeted cmd/mar connection/bridge tests PASS on exact .4 source; frontend ready-state classifier excludes IDLE so stopped/disconnected state exposes Connect again.
