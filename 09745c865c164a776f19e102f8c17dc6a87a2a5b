@@ -15,3 +15,11 @@ Owner checkout: HEAD c2d2929a57fddff2868c2927a944e045819ba467; pre/post dirty pa
 Remote push/deploy: not performed
 Live unsupported-profile acceptance: verification_profile=minimal rejected at MCP boundary; DB task count for probe idempotency key remained 0.
 Reconnect acceptance: targeted cmd/mar connection/bridge tests PASS on exact .4 source; frontend ready-state classifier excludes IDLE so stopped/disconnected state exposes Connect again.
+Stable-use audit final disposition (supersedes the historical REQUALIFICATION_REQUIRED snapshot):
+- P1 runtime identity/manifest mismatch: CLOSED by exact clean candidate build + manifest + activation; .4 ALIGNED/trusted.
+- P1 portable-Go/ACL and host-vs-LPAC qualification gaps: CLOSED in consolidated candidate qualification.
+- P1 owner reconnect + unsupported verification-profile fixes and LF asset determinism: CLOSED in f760c0e and exact-source qualification; live unsupported-profile rejection additionally proven on .4.
+- P2 unclean-restart physical termination proof: CLOSED by 221a9dc kernel-backed recovery slice.
+- P2 terminal workspace retention/disk accumulation: CLOSED by 09745c8; live terminal backlog reclaimed and fresh post-activation CUJ auto-removed its workspace while preserving result/evidence.
+- P2 CURRENT.md/TASK.md superseded-statement cleanup: HANDOFF_HYGIENE_ONLY, not an engineering/runtime blocker. Deferred to the next source-changing release so exact .4 runtime/source identity is not disturbed solely for documentation churn.
+Engineering verdict: RELEASE_QUALIFIED_AND_RUNTIME_ACTIVATED for bounded stable-use scope. Explicit Owner real-use acceptance remains separate and is not inferred.
