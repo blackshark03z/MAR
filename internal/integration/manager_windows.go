@@ -138,25 +138,27 @@ func (m *Manager) Integrate(ctx context.Context, taskID string) (domain.Integrat
 		}
 		return domain.IntegrationAttempt{}, blocked, fmt.Errorf("%w: %s", ErrHeadDrift, reason)
 	}
-	clean, err := m.projectClean(ctx, taskID, project.Root)
-	if err != nil {
-		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
-	}
-	if !clean {
-		reason := "authoritative project worktree is not clean before integration"
-		blocked, blockErr := m.store.BlockVerifiedIntegration(ctx, taskID, reason, newID("result"), m.now().UTC())
-		if blockErr != nil {
-			return domain.IntegrationAttempt{}, domain.TaskResult{}, blockErr
+	if result.FinalRevision != workspace.BaseRevision {
+		clean, err := m.projectClean(ctx, taskID, project.Root)
+		if err != nil {
+			return domain.IntegrationAttempt{}, domain.TaskResult{}, err
 		}
-		return domain.IntegrationAttempt{}, blocked, fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
-	}
-	if _, err := m.git.Run(ctx, taskID, project.Root, "merge-base", "--is-ancestor", workspace.BaseRevision, result.FinalRevision); err != nil {
-		reason := "verified candidate is not a descendant of the resolved task base"
-		blocked, blockErr := m.store.BlockVerifiedIntegration(ctx, taskID, reason, newID("result"), m.now().UTC())
-		if blockErr != nil {
-			return domain.IntegrationAttempt{}, domain.TaskResult{}, blockErr
+		if !clean {
+			reason := "authoritative project worktree is not clean before integration"
+			blocked, blockErr := m.store.BlockVerifiedIntegration(ctx, taskID, reason, newID("result"), m.now().UTC())
+			if blockErr != nil {
+				return domain.IntegrationAttempt{}, domain.TaskResult{}, blockErr
+			}
+			return domain.IntegrationAttempt{}, blocked, fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
 		}
-		return domain.IntegrationAttempt{}, blocked, fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
+		if _, err := m.git.Run(ctx, taskID, project.Root, "merge-base", "--is-ancestor", workspace.BaseRevision, result.FinalRevision); err != nil {
+			reason := "verified candidate is not a descendant of the resolved task base"
+			blocked, blockErr := m.store.BlockVerifiedIntegration(ctx, taskID, reason, newID("result"), m.now().UTC())
+			if blockErr != nil {
+				return domain.IntegrationAttempt{}, domain.TaskResult{}, blockErr
+			}
+			return domain.IntegrationAttempt{}, blocked, fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
+		}
 	}
 	seed := domain.IntegrationAttempt{
 		ID:                 newID("integration"),
@@ -239,15 +241,17 @@ func (m *Manager) RetryBlockedVerifiedIntegration(ctx context.Context, taskID st
 		reason := fmt.Sprintf("authoritative head drift during verified integration retry: expected=%s observed=%s", workspace.BaseRevision, actualHead)
 		return ackBlocked(fmt.Errorf("%w: %s", ErrHeadDrift, reason))
 	}
-	clean, err := m.projectClean(ctx, taskID, project.Root)
-	if err != nil {
-		return ackBlocked(err)
-	}
-	if !clean {
-		return ackBlocked(fmt.Errorf("%w: authoritative project worktree is not clean before verified integration retry", ErrIntegrationBlocked))
-	}
-	if _, err := m.git.Run(ctx, taskID, project.Root, "merge-base", "--is-ancestor", workspace.BaseRevision, latest.FinalRevision); err != nil {
-		return ackBlocked(fmt.Errorf("%w: verified candidate is not a descendant of the resolved task base", ErrIntegrationBlocked))
+	if latest.FinalRevision != workspace.BaseRevision {
+		clean, err := m.projectClean(ctx, taskID, project.Root)
+		if err != nil {
+			return ackBlocked(err)
+		}
+		if !clean {
+			return ackBlocked(fmt.Errorf("%w: authoritative project worktree is not clean before verified integration retry", ErrIntegrationBlocked))
+		}
+		if _, err := m.git.Run(ctx, taskID, project.Root, "merge-base", "--is-ancestor", workspace.BaseRevision, latest.FinalRevision); err != nil {
+			return ackBlocked(fmt.Errorf("%w: verified candidate is not a descendant of the resolved task base", ErrIntegrationBlocked))
+		}
 	}
 	seed := domain.IntegrationAttempt{
 		ID:                 newID("integration"),
@@ -346,13 +350,15 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 			}
 			return m.blockAttempt(ctx, attempt, project.Root, reason)
 		}
-		clean, cleanErr := m.projectClean(ctx, attempt.TaskID, project.Root)
-		if cleanErr != nil || !clean {
-			reason := "authoritative project worktree became dirty before integration dispatch"
-			if cleanErr != nil {
-				reason += ": " + cleanErr.Error()
+		if attempt.CandidateRevision != attempt.ExpectedHead {
+			clean, cleanErr := m.projectClean(ctx, attempt.TaskID, project.Root)
+			if cleanErr != nil || !clean {
+				reason := "authoritative project worktree became dirty before integration dispatch"
+				if cleanErr != nil {
+					reason += ": " + cleanErr.Error()
+				}
+				return m.blockAttempt(ctx, attempt, project.Root, reason)
 			}
-			return m.blockAttempt(ctx, attempt, project.Root, reason)
 		}
 		attempt, err = m.store.MarkIntegrationDispatched(ctx, attempt.ID, m.now().UTC())
 		if err != nil {
@@ -366,6 +372,28 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 	head, err := m.refHead(ctx, attempt.TaskID, project.Root, attempt.ExpectedRef)
 	if err != nil {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
+	}
+	if attempt.CandidateRevision == attempt.ExpectedHead {
+		freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, attempt.TaskID)
+		if gateErr != nil || !fresh || freshResult.ID != attempt.TaskResultID || freshResult.EvidenceID != attempt.EvidenceID {
+			reason := "verification evidence became stale before no-op integration finalization"
+			if gateErr != nil {
+				reason += ": " + gateErr.Error()
+			}
+			return m.blockAttempt(ctx, attempt, project.Root, reason)
+		}
+		if head != attempt.ExpectedHead {
+			return m.blockAttempt(ctx, attempt, project.Root, fmt.Sprintf("no-op integration observed unexpected authoritative head %s", head))
+		}
+		result, err := m.store.FinalizeIntegrationApplied(ctx, attempt.ID, attempt.CandidateRevision, newID("result"), m.now().UTC())
+		if err != nil {
+			return domain.IntegrationAttempt{}, domain.TaskResult{}, err
+		}
+		completed, err := m.store.GetIntegrationAttempt(ctx, attempt.ID)
+		if err != nil {
+			return domain.IntegrationAttempt{}, domain.TaskResult{}, err
+		}
+		return completed, result, nil
 	}
 	advancedRef := false
 	if head == attempt.ExpectedHead {

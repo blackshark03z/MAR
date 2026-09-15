@@ -368,3 +368,21 @@ The engineering/self-hosting path has real durable evidence. `PRODUCT_ACCEPTED` 
 - Managed Go 1.27.0 is restored under `D:\MAR\.mar\runtime\go-portable\go`; managed/source `go.exe` SHA256 is `7D828191BA32519A9C9361789AB647486236ED45C660889196C7770A8FF1985C`. Keep MAR verification on this managed path; do not fall back to `C:\Program Files\Go` inside Coding ACI.
 - C: storage recovered to approximately 21.18 GiB free during the latest continuation; D:-hosted test temp remains a valid low-risk regression location.
 - The Go race detector remains unavailable because the installed host C compiler lacks required 64-bit support; this is an environment limitation, not a passing race result.
+
+
+## 2026-09-15 real Web CUJ requalification: verified no-op integration
+
+Runtime candidate `f760c0eddc972f6a25c77aa4deb80a1976b74a43` was activated on the canonical local runtime and reached `HEALTHY`, `ALIGNED`, `trusted_for_release=true`, `sandbox_host_ready=true`, and `worker_capacity_available=true` after repairing launcher-owned MAR-managed ACLs created during the SSD move.
+
+A new read-only Web-brain CUJ, task `task-83ae4949634548249118faa11b1ab09d`, used profile `go-docs` with all mutation/network/deploy authority disabled. Verification itself PASSed completely: `go test -run ^$ ./...`, `go vet ./...`, and `go build ./...` all exited 0; acceptance oracle `file_contains:README.md:# MAR` PASSed; durable verification verdict was `VERIFIED`; candidate revision equaled base revision and `changed_areas=[]`.
+
+The task then became `BLOCKED` only because authoritative integration required a clean registered checkout even though the verified candidate was a no-op (`final_revision == base_revision`). The registered checkout intentionally contained Owner work, so the old integration path incorrectly treated that Owner work as an integration blocker.
+
+Frozen correction contract:
+- A verified no-op candidate must still revalidate fresh verification evidence and authoritative HEAD identity.
+- If `candidate_revision == expected_head`, integration must not require a clean Owner checkout.
+- A no-op integration must not run `merge-base`, `update-ref`, `read-tree`, or any other Git mutation/synchronization step.
+- It must finalize the durable integration result/task state through the normal store transition so recovery remains idempotent.
+- Real revision-changing candidates retain the existing clean-worktree, descendant, CAS, and checkout-synchronization gates unchanged.
+
+Regression coverage added in `internal/integration/manager_windows_test.go` proves both normal no-op integration and recovery from an already-dispatched no-op preserve a dirty Owner checkout with zero Git mutation calls.

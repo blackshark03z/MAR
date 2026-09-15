@@ -129,11 +129,24 @@ func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...
 }
 
 func newIntegrationHarness(t *testing.T) integrationHarness {
+	return newIntegrationHarnessWithNoop(t, false)
+}
+
+func newNoopIntegrationHarness(t *testing.T) integrationHarness {
+	return newIntegrationHarnessWithNoop(t, true)
+}
+
+func newIntegrationHarnessWithNoop(t *testing.T, noop bool) integrationHarness {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now().UTC()
 	base := "base-revision"
 	candidate := "candidate-revision"
+	changedAreas := []string{"internal/example.go"}
+	if noop {
+		candidate = base
+		changedAreas = []string{}
+	}
 	dbPath := filepath.Join(t.TempDir(), "mar.db")
 	s, err := store.Open(dbPath)
 	if err != nil {
@@ -239,7 +252,7 @@ func newIntegrationHarness(t *testing.T) integrationHarness {
 		GoalHash:             task.ContractHash,
 		BaseRevision:         base,
 		FinalRevision:        candidate,
-		ChangedAreas:         []string{"internal/example.go"},
+		ChangedAreas:         changedAreas,
 		EvidenceID:           evidence.ID,
 		VerificationExecuted: []string{"go test ./..."},
 		PassFailEvidence:     []string{"command:1:PASS"},
@@ -670,5 +683,60 @@ func TestPreparedAttemptRejectsEvidenceThatBecomesStaleBeforeDispatch(t *testing
 	}
 	if blockedAttempt.Status != domain.IntegrationBlocked || blockedResult.IntegrationStatus != "BLOCKED" || git.updateCalls != 0 {
 		t.Fatalf("stale evidence reached integration side effect: attempt=%+v result=%+v calls=%d", blockedAttempt, blockedResult, git.updateCalls)
+	}
+}
+
+func TestIntegrateNoopVerifiedCandidatePreservesDirtyOwnerCheckout(t *testing.T) {
+	h := newNoopIntegrationHarness(t)
+	defer h.store.Close()
+
+	git := &fakeIntegrationGit{ref: "refs/heads/main", head: h.base, clean: false, staged: true, descendant: false}
+	gate := &fakeFreshResultGate{result: h.result, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, result, err := manager.Integrate(context.Background(), h.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != domain.IntegrationComplete || result.IntegrationStatus != "INTEGRATED" {
+		t.Fatalf("no-op integration did not complete: attempt=%+v result=%+v", completed, result)
+	}
+	if git.updateCalls != 0 || git.resetCalls != 0 {
+		t.Fatalf("no-op integration mutated Git: update=%d read-tree=%d", git.updateCalls, git.resetCalls)
+	}
+	if !git.staged || git.clean {
+		t.Fatalf("no-op integration disturbed Owner checkout: staged=%v clean=%v", git.staged, git.clean)
+	}
+	task, err := h.store.GetTask(context.Background(), h.task.ID)
+	if err != nil || task.State != domain.TaskComplete {
+		t.Fatalf("no-op task did not finalize COMPLETE: task=%+v err=%v", task, err)
+	}
+}
+
+func TestRecoverDispatchedNoopPreservesDirtyOwnerCheckout(t *testing.T) {
+	h := newNoopIntegrationHarness(t)
+	defer h.store.Close()
+	attempt := prepareDispatchedAttempt(t, h)
+
+	git := &fakeIntegrationGit{ref: attempt.ExpectedRef, head: h.base, clean: false, staged: true, descendant: false}
+	gate := &fakeFreshResultGate{result: h.result, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completed, result, err := manager.RecoverAttempt(context.Background(), attempt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.Status != domain.IntegrationComplete || result.IntegrationStatus != "INTEGRATED" {
+		t.Fatalf("recovered no-op integration did not complete: attempt=%+v result=%+v", completed, result)
+	}
+	if git.updateCalls != 0 || git.resetCalls != 0 {
+		t.Fatalf("recovered no-op integration mutated Git: update=%d read-tree=%d", git.updateCalls, git.resetCalls)
+	}
+	if !git.staged || git.clean {
+		t.Fatalf("recovered no-op integration disturbed Owner checkout: staged=%v clean=%v", git.staged, git.clean)
 	}
 }
