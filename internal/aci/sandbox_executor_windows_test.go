@@ -73,9 +73,9 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main_test.go"), []byte("package sandboxprobe\n\nimport \"testing\"\n\nfunc TestProbe(t *testing.T) {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	goBin := filepath.Join(os.Getenv("ProgramFiles"), "Go", "bin")
+	goBin := filepath.Dir(findPortableGoForACI(t))
 	t.Setenv("PATH", goBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	executor, err := NewWindowsSandboxExecutor(root)
+	executor, err := NewWindowsSandboxExecutor(root, filepath.Dir(goBin))
 	if err != nil {
 		t.Fatal(err)
 	}

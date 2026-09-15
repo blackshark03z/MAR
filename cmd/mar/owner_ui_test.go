@@ -42,6 +42,24 @@ func (f *fakeOwnerMCP) CallTool(_ context.Context, params *mcp.CallToolParams) (
 	return &mcp.CallToolResult{StructuredContent: map[string]any{"created": true, "task": map[string]any{"id": "task-ui-test"}}}, nil
 }
 
+func TestReactConnectionIdleReturnsToConnectAction(t *testing.T) {
+	path := filepath.Join("..", "..", "ui", "owner-console", "src", "App.tsx")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if strings.Contains(text, "['CONNECTED','LINK_READY','IDLE','READY','AVAILABLE_LOCAL']") {
+		t.Fatal("IDLE is still treated as route-ready, which hides Connect after Disconnect")
+	}
+	if !strings.Contains(text, "['CONNECTED','LINK_READY','READY','AVAILABLE_LOCAL']") {
+		t.Fatal("routeReady no longer preserves the intended ready status set")
+	}
+	if !strings.Contains(text, "{!ready&&<button className=\"primary-button\"") || !strings.Contains(text, "onClick={()=>act('start')}") || !strings.Contains(text, "Kết nối</button>}") {
+		t.Fatal("disconnected connection no longer exposes the Connect action")
+	}
+}
+
 func TestOwnerUIRequiresLoopbackListen(t *testing.T) {
 	for _, address := range []string{"127.0.0.1:8787", "[::1]:8787", "localhost:8787"} {
 		if err := requireLoopbackListen(address); err != nil {

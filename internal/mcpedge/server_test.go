@@ -17,12 +17,14 @@ import (
 )
 
 type fakeBackend struct {
-	steerTask string
-	steerKey  string
-	steer     domain.SteerPayload
+	steerTask  string
+	steerKey   string
+	steer      domain.SteerPayload
+	submitCalls int
 }
 
 func (f *fakeBackend) Submit(_ context.Context, key string, contract domain.GoalContract) (domain.Task, bool, error) {
+	f.submitCalls++
 	return domain.Task{ID: "task-submit", IdempotencyKey: key, Contract: contract, ContractHash: "hash", State: domain.TaskSubmitted, CreatedAt: time.Unix(1, 0).UTC(), UpdatedAt: time.Unix(1, 0).UTC()}, true, nil
 }
 func (f *fakeBackend) StatusSnapshot(_ context.Context, taskID string) (service.TaskStatusSnapshot, error) {
@@ -122,6 +124,41 @@ func connectTestMCP(t *testing.T, backend Backend) *mcp.ClientSession {
 	}
 	t.Cleanup(func() { _ = clientSession.Close() })
 	return clientSession
+}
+
+func TestSubmitRejectsUnsupportedVerificationProfileBeforeBackend(t *testing.T) {
+	backend := &fakeBackend{}
+	session := connectTestMCP(t, backend)
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
+		"idempotency_key": "invalid-profile", "contract": map[string]any{
+			"goal": "bounded change", "acceptance": []string{"done"}, "boundaries": []string{"bounded"}, "non_goals": []string{"none"}, "project_id": "mar", "base_revision": "abc", "verification_profile": "minimal", "priority": "P2", "authority": map[string]any{"local_file_write": false, "local_git_write": false, "network_allowed": false, "remote_git_write": false, "deploy_allowed": false},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("invalid profile escaped as protocol error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatalf("unsupported verification profile was accepted: %+v", result.StructuredContent)
+	}
+	if backend.submitCalls != 0 {
+		t.Fatalf("unsupported verification profile reached backend submit: calls=%d", backend.submitCalls)
+	}
+	text, _ := json.Marshal(result.Content)
+	if !strings.Contains(string(text), "go-standard") || !strings.Contains(string(text), "go-docs") {
+		t.Fatalf("validation error omitted supported profiles: %s", text)
+	}
+
+	valid, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
+		"idempotency_key": "valid-profile", "contract": map[string]any{
+			"goal": "bounded docs change", "acceptance": []string{"done"}, "boundaries": []string{"bounded"}, "non_goals": []string{"none"}, "project_id": "mar", "base_revision": "abc", "verification_profile": "go-docs", "priority": "P2", "authority": map[string]any{"local_file_write": false, "local_git_write": false, "network_allowed": false, "remote_git_write": false, "deploy_allowed": false},
+		},
+	}})
+	if err != nil || valid.IsError {
+		t.Fatalf("supported verification profile was rejected: err=%v result=%+v", err, valid)
+	}
+	if backend.submitCalls != 1 {
+		t.Fatalf("supported verification profile did not reach backend exactly once: calls=%d", backend.submitCalls)
+	}
 }
 
 func TestPublicToolSurfaceListsExactlySixCanonicalTools(t *testing.T) {

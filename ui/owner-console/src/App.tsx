@@ -56,7 +56,7 @@ function taskTitle(t: any) {
 function connectionProvider(c: any) { return c?.id === 'claude-web' ? 'Claude' : 'GPT' }
 function routeReady(c: any) {
   const s = String(c?.status || '').toUpperCase()
-  return !!c && (c.connected === true || c.ready === true || c.route_ready === true || ['CONNECTED','LINK_READY','IDLE','READY','AVAILABLE_LOCAL'].includes(s))
+  return !!c && (c.connected === true || c.ready === true || c.route_ready === true || ['CONNECTED','LINK_READY','READY','AVAILABLE_LOCAL'].includes(s))
 }
 function actionableConnection(c: any) {
   return ['ERROR','MISCONFIGURED','DEGRADED','ROUTE_OFFLINE','BRIDGE_RUNTIME_MISSING','STABLE_URL_REQUIRED','REMOTE_BRIDGE_REQUIRED'].includes(String(c?.status || '').toUpperCase())

@@ -12927,7 +12927,6 @@ function routeReady(c) {
 	return !!c && (c.connected === true || c.ready === true || c.route_ready === true || [
 		"CONNECTED",
 		"LINK_READY",
-		"IDLE",
 		"READY",
 		"AVAILABLE_LOCAL"
 	].includes(s));

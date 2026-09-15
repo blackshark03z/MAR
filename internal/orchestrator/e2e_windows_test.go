@@ -648,6 +648,7 @@ complete:
 }
 
 func TestRuntimeE2EWebWaitCapacityAllowsThirdReadyTask(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
 		t.Skip("worker helper process")
 	}

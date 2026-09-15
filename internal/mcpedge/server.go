@@ -35,6 +35,18 @@ type submitArgs struct {
 	Contract       domain.GoalContract `json:"contract" jsonschema:"immutable MAR Goal Contract"`
 }
 
+func validatePublicVerificationProfile(profile string) error {
+	profile = strings.TrimSpace(profile)
+	switch profile {
+	case "go-standard", "go-docs":
+		return nil
+	case "":
+		return errors.New("verification_profile is required")
+	default:
+		return fmt.Errorf("verification_profile %q is unsupported; must be go-standard or go-docs", profile)
+	}
+}
+
 type taskArgs struct {
 	TaskID string `json:"task_id" jsonschema:"MAR durable task id"`
 }
@@ -84,6 +96,9 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding or mutation work. Resolve technical project fields with project operation=context first when needed."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args submitArgs) (*mcp.CallToolResult, map[string]any, error) {
+			if err := validatePublicVerificationProfile(args.Contract.VerificationProfile); err != nil {
+				return nil, nil, err
+			}
 			task, created, err := backend.Submit(ctx, args.IdempotencyKey, args.Contract)
 			if err != nil {
 				return nil, nil, err

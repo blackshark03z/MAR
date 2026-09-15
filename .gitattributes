@@ -1,2 +1,5 @@
 ui/owner-console/*.html text eol=lf
 cmd/mar/owner_ui_dist/*.html text eol=lf
+ui/owner-console/src/** text eol=lf
+cmd/mar/owner_ui_dist/assets/*.js text eol=lf
+cmd/mar/owner_ui_dist/assets/*.css text eol=lf
