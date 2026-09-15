@@ -148,7 +148,7 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 	if cfg.Daemon.ExecutionDiskReservation == 0 {
 		cfg.Daemon.ExecutionDiskReservation = cfg.Scheduler.WorkspaceDiskReservation
 	}
-	processRunner, err := worker.NewProcessRunner(taskService, processctl.NewSupervisor(), worker.ProcessConfig{
+	processRunner, err := worker.NewProcessRunner(taskService, processctl.NewSupervisorWithRecoveryRoot(filepath.Join(cfg.DataRoot, "runtime", "attempt-recovery")), worker.ProcessConfig{
 		Executable:    cfg.Executable,
 		Arguments:     append([]string{}, cfg.WorkerArguments...),
 		Environment:   workerEnvironment(os.Environ(), pathEntries),

@@ -165,3 +165,81 @@ func TestZeroTerminationProofIsInvalid(t *testing.T) {
 		t.Fatal("unexpected empty formatting")
 	}
 }
+
+func TestRecoverTerminationReopensArmedNamedJob(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	root := t.TempDir()
+	ref := AttemptRef{TaskID: "task-recover-job", AttemptID: "attempt-recover-job", RunEpoch: 7}
+	owner := NewSupervisorWithRecoveryRoot(root)
+	tree, err := owner.Start(Spec{
+		Attempt: ref,
+		Path:    os.Args[0],
+		Args:    []string{"-test.run=TestHelperProcess"},
+		Env:     append(os.Environ(), "MAR_TEST_HELPER_MODE=leaf"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.CloseUnverified()
+	pid := tree.PID()
+	marker := owner.markerPath(ref)
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("assigned recovery marker missing before worker resume returned: %v", err)
+	}
+
+	restarted := NewSupervisorWithRecoveryRoot(root)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proof, available, err := restarted.RecoverTermination(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !available || !proof.Valid() || proof.Attempt() != ref {
+		t.Fatalf("named-job recovery proof mismatch: available=%v proof=%+v", available, proof)
+	}
+	assertProcessNotActive(t, pid)
+}
+
+func TestRecoverTerminationWithoutAssignedMarkerFailsClosed(t *testing.T) {
+	s := NewSupervisorWithRecoveryRoot(t.TempDir())
+	ref := AttemptRef{TaskID: "task-no-marker", AttemptID: "attempt-no-marker", RunEpoch: 1}
+	proof, available, err := s.RecoverTermination(context.Background(), ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available || proof.Valid() {
+		t.Fatalf("missing recovery marker fabricated physical proof: available=%v proof=%+v", available, proof)
+	}
+}
+
+func TestRecoverTerminationAfterUnverifiedJobHandleLoss(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	root := t.TempDir()
+	ref := AttemptRef{TaskID: "task-handle-loss", AttemptID: "attempt-handle-loss", RunEpoch: 9}
+	owner := NewSupervisorWithRecoveryRoot(root)
+	tree, err := owner.Start(Spec{
+		Attempt: ref,
+		Path:    os.Args[0],
+		Args:    []string{"-test.run=TestHelperProcess"},
+		Env:     append(os.Environ(), "MAR_TEST_HELPER_MODE=leaf"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid := tree.PID()
+	if err := tree.CloseUnverified(); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := NewSupervisorWithRecoveryRoot(root)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proof, available, err := restarted.RecoverTermination(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !available || !proof.Valid() || proof.Attempt() != ref {
+		t.Fatalf("lost-handle recovery proof mismatch: available=%v proof=%+v", available, proof)
+	}
+	assertProcessNotActive(t, pid)
+}

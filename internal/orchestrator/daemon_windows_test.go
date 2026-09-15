@@ -5,14 +5,17 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/processctl"
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/service"
+	"mar/internal/testsupport"
 )
 
 type fakeDaemonStore struct {
@@ -56,6 +59,7 @@ type fakeDaemonService struct {
 	cancel        bool
 	latestControl *domain.TaskControl
 	recoveryCalls int
+	confirmCalls  int
 	retryCalls    int
 	exhaustCalls  int
 }
@@ -80,6 +84,26 @@ func (s *fakeDaemonService) RequirePhysicalRecovery(_ context.Context, taskID, a
 	}
 	attempt.AuthorityState = domain.AttemptLogicallyFenced
 	s.store.attempts[taskID] = attempt
+	return nil
+}
+
+func (s *fakeDaemonService) ConfirmAttemptProcessTermination(_ context.Context, proof processctl.TerminationProof, terminalStatus string) error {
+	s.confirmCalls++
+	if !proof.Valid() {
+		return errors.New("invalid fake physical termination proof")
+	}
+	ref := proof.Attempt()
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	attempt, ok := s.store.attempts[ref.TaskID]
+	if !ok || attempt.ID != ref.AttemptID || attempt.RunEpoch != ref.RunEpoch {
+		return errors.New("physical termination proof identity mismatch")
+	}
+	confirmedAt := proof.ConfirmedAt()
+	attempt.AuthorityState = domain.AttemptPhysicallyTerminated
+	attempt.TerminatedAt = &confirmedAt
+	attempt.TerminalStatus = terminalStatus
+	s.store.attempts[ref.TaskID] = attempt
 	return nil
 }
 
@@ -136,6 +160,42 @@ func (r *fakeReadyRunner) RunWorkspaceReady(ctx context.Context, taskID string, 
 	<-ctx.Done()
 	r.stopOnce.Do(func() { close(r.stopped) })
 	return RunOutcome{TaskID: taskID}, ctx.Err()
+}
+
+type fakePhysicalRecoveryRunner struct {
+	*fakeReadyRunner
+	proof     processctl.TerminationProof
+	available bool
+	err       error
+}
+
+func (r *fakePhysicalRecoveryRunner) RecoverAttemptTermination(context.Context, domain.ExecutionAttempt) (processctl.TerminationProof, bool, error) {
+	return r.proof, r.available, r.err
+}
+
+func validPhysicalProofForAttempt(t *testing.T, attempt domain.ExecutionAttempt) processctl.TerminationProof {
+	t.Helper()
+	testsupport.RequireOutsideAppContainer(t)
+	cmd, err := exec.LookPath("cmd.exe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err := processctl.NewSupervisor().Start(processctl.Spec{
+		Attempt: processctl.AttemptRef{TaskID: attempt.TaskID, AttemptID: attempt.ID, RunEpoch: attempt.RunEpoch},
+		Path:    cmd,
+		Args:    []string{"/c", "exit", "0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tree.CloseUnverified()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proof, err := tree.WaitAndConfirm(ctx)
+	if err != nil || !proof.Valid() {
+		t.Fatalf("build physical proof: proof=%+v err=%v", proof, err)
+	}
+	return proof
 }
 
 type fakeIntegrationRecoverer struct {
@@ -233,6 +293,43 @@ func TestDaemonStartupFencesUnprovenAttemptAndBlocksTask(t *testing.T) {
 	store.mu.Unlock()
 	if gotTask.State != domain.TaskBlocked || gotAttempt.AuthorityState != domain.AttemptLogicallyFenced {
 		t.Fatalf("fail-closed recovery mismatch: task=%s attempt=%s", gotTask.State, gotAttempt.AuthorityState)
+	}
+}
+
+func TestDaemonStartupConfirmsAvailableKernelRecoveryProofWithoutReplacement(t *testing.T) {
+	task := domain.Task{ID: "task-recovery-proof", State: domain.TaskRunning, RunEpoch: 4}
+	attempt := domain.ExecutionAttempt{ID: "attempt-recovery-proof", TaskID: task.ID, RunEpoch: 4, AuthorityState: domain.AttemptActive}
+	store := &fakeDaemonStore{
+		tasks:     map[string]domain.Task{task.ID: task},
+		workspace: map[string]domain.Workspace{},
+		attempts:  map[string]domain.ExecutionAttempt{task.ID: attempt},
+	}
+	svc := &fakeDaemonService{store: store}
+	proof := validPhysicalProofForAttempt(t, attempt)
+	runner := &fakePhysicalRecoveryRunner{
+		fakeReadyRunner: &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})},
+		proof:           proof,
+		available:       true,
+	}
+	daemon, err := NewDaemon(store, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.reconcileUnprovenAttempts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	gotTask := store.tasks[task.ID]
+	gotAttempt := store.attempts[task.ID]
+	store.mu.Unlock()
+	if gotTask.State != domain.TaskBlocked {
+		t.Fatalf("recovery proof unexpectedly re-admitted work: state=%s", gotTask.State)
+	}
+	if gotAttempt.AuthorityState != domain.AttemptPhysicallyTerminated || svc.confirmCalls != 1 {
+		t.Fatalf("kernel recovery proof was not durably confirmed: attempt=%+v confirm_calls=%d", gotAttempt, svc.confirmCalls)
+	}
+	if svc.retryCalls != 0 {
+		t.Fatalf("physical proof silently admitted a replacement worker: retry_calls=%d", svc.retryCalls)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"mar/internal/domain"
 )
 
-const protocolVersion = 1
+const protocolVersion = 2
 
 // WaitCapacity allows the parent runtime to park scarce execution capacity
 // while a worker is durably waiting for external Web cognition. The worker
@@ -121,12 +121,12 @@ func protocolPathWithin(path, root string) bool {
 }
 
 type frame struct {
-	Version int             `json:"version"`
-	Type    string          `json:"type"`
-	ID      uint64          `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
-	Payload json.RawMessage `json:"payload,omitempty"`
-	Error   string          `json:"error,omitempty"`
+	Version int    `json:"version"`
+	Type    string `json:"type"`
+	ID      uint64 `json:"id,omitempty"`
+	Method  string `json:"method,omitempty"`
+	Payload []byte `json:"payload,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 const (
@@ -149,17 +149,18 @@ const (
 )
 
 func marshalFrame(kind string, id uint64, method string, payload any, errText string) (frame, error) {
-	var raw json.RawMessage
+	var raw []byte
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return frame{}, err
 		}
-		// Own the raw frame payload independently of encoding/json's internal
-		// marshal buffer. Go 1.27 validates RawMessage again when the outer frame
-		// is encoded; keeping an explicit copy prevents pooled-buffer reuse from
-		// surfacing as corrupt/NUL-prefixed JSON on a later frame encode.
-		raw = append(json.RawMessage(nil), encoded...)
+		// Keep the inner payload as owned JSON bytes, but carry those bytes as a
+		// normal []byte in the outer frame. Go 1.27 routes encoding/json through
+		// JSON v2, where RawMessage/jsontext.Value validation can surface intermittent
+		// NUL-prefixed failures under framed worker traffic. The outer []byte is
+		// base64 encoded and decoded back to the same JSON bytes before inner unmarshal.
+		raw = append([]byte(nil), encoded...)
 	}
 	return frame{Version: protocolVersion, Type: kind, ID: id, Method: method, Payload: raw, Error: errText}, nil
 }

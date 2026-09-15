@@ -53,6 +53,13 @@ type frameRead struct {
 	err   error
 }
 
+func (r *ProcessRunner) RecoverAttemptTermination(ctx context.Context, attempt domain.ExecutionAttempt) (processctl.TerminationProof, bool, error) {
+	if r == nil || r.supervisor == nil {
+		return processctl.TerminationProof{}, false, errors.New("worker process supervisor is unavailable")
+	}
+	return r.supervisor.RecoverTermination(ctx, processctl.AttemptRef{TaskID: attempt.TaskID, AttemptID: attempt.ID, RunEpoch: attempt.RunEpoch})
+}
+
 func NewProcessRunner(backend ControlBackend, supervisor *processctl.Supervisor, cfg ProcessConfig) (*ProcessRunner, error) {
 	if backend == nil || supervisor == nil {
 		return nil, errors.New("worker process runner requires backend and supervisor")

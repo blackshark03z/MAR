@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/processctl"
 	"mar/internal/resourcegov"
 	"mar/internal/scheduler"
 	"mar/internal/service"
@@ -38,6 +39,10 @@ type readyTaskRunner interface {
 
 type capacityAwareReadyTaskRunner interface {
 	RunWorkspaceReadyWithCapacity(context.Context, string, domain.Workspace, worker.WaitCapacity) (RunOutcome, error)
+}
+
+type physicalRecoveryRunner interface {
+	RecoverAttemptTermination(context.Context, domain.ExecutionAttempt) (processctl.TerminationProof, bool, error)
 }
 
 type activeExecution struct {
@@ -74,6 +79,7 @@ type integrationRecoverer interface {
 type daemonTaskService interface {
 	StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error)
 	RequirePhysicalRecovery(context.Context, string, string, int64) error
+	ConfirmAttemptProcessTermination(context.Context, processctl.TerminationProof, string) error
 	RecoverForReplacement(context.Context, string) error
 	ExhaustRetryBudget(context.Context, string) error
 }
@@ -511,6 +517,21 @@ func (d *Daemon) reconcileUnprovenAttempts(ctx context.Context) error {
 				continue
 			}
 			if err := d.service.RequirePhysicalRecovery(ctx, task.ID, attempt.ID, attempt.RunEpoch); err != nil {
+				return err
+			}
+			recoverer, supported := d.runner.(physicalRecoveryRunner)
+			if !supported {
+				continue
+			}
+			proof, available, recoverErr := recoverer.RecoverAttemptTermination(ctx, attempt)
+			if recoverErr != nil {
+				d.cfg.ErrorSink(fmt.Errorf("recover physical termination for task %s attempt %s: %w", task.ID, attempt.ID, recoverErr))
+				continue
+			}
+			if !available || !proof.Valid() {
+				continue
+			}
+			if err := d.service.ConfirmAttemptProcessTermination(ctx, proof, "recovered-after-daemon-restart"); err != nil {
 				return err
 			}
 		}

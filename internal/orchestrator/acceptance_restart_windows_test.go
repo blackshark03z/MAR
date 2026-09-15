@@ -4,14 +4,29 @@ package orchestrator
 
 import (
 	"context"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/processctl"
 	"mar/internal/service"
 	"mar/internal/store"
+	"mar/internal/testsupport"
 )
+
+type acceptanceRestartRecoveryRunner struct {
+	supervisor *processctl.Supervisor
+}
+
+func (r *acceptanceRestartRecoveryRunner) RunWorkspaceReady(context.Context, string, domain.Workspace) (RunOutcome, error) {
+	return RunOutcome{}, nil
+}
+
+func (r *acceptanceRestartRecoveryRunner) RecoverAttemptTermination(ctx context.Context, attempt domain.ExecutionAttempt) (processctl.TerminationProof, bool, error) {
+	return r.supervisor.RecoverTermination(ctx, processctl.AttemptRef{TaskID: attempt.TaskID, AttemptID: attempt.ID, RunEpoch: attempt.RunEpoch})
+}
 
 func TestAcceptanceT9DaemonRestartReconcilesRealSQLiteAttemptWithoutFalseCompletion(t *testing.T) {
 	ctx := context.Background()
@@ -80,5 +95,108 @@ func TestAcceptanceT9DaemonRestartReconcilesRealSQLiteAttemptWithoutFalseComplet
 	}
 	if result, available, err := restartedSvc.Result(ctx, task.ID); err != nil || available {
 		t.Fatalf("daemon restart fabricated completion evidence: available=%v result=%+v err=%v", available, result, err)
+	}
+}
+
+func TestAcceptanceT9ArmedNamedJobRecoversPhysicalProofBeforeReplacement(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	dbPath := filepath.Join(root, "mar.db")
+	recoveryRoot := filepath.Join(root, "attempt-recovery")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewTaskService(s)
+	if _, _, err := svc.RegisterProject(ctx, "t9-kernel-project", t.TempDir()); err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "recover kernel-backed attempt fencing after daemon handle loss",
+		Acceptance:          []string{"physical proof precedes replacement admission"},
+		ProjectID:           "t9-kernel-project",
+		BaseRevision:        "base-t9-kernel",
+		Authority:           domain.Authority{LocalFileWrite: true, LocalGitWrite: true},
+		VerificationProfile: "t9-profile",
+		Priority:            "P2",
+	}
+	task, _, err := svc.Submit(ctx, "t9-kernel-submit", contract)
+	if err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			_ = s.Close()
+			t.Fatal(err)
+		}
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "t9-kernel-worker", "t9-kernel-daemon", time.Minute)
+	if err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	cmd, err := exec.LookPath("cmd.exe")
+	if err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	originalSupervisor := processctl.NewSupervisorWithRecoveryRoot(recoveryRoot)
+	tree, err := originalSupervisor.Start(processctl.Spec{
+		Attempt: processctl.AttemptRef{TaskID: task.ID, AttemptID: attempt.ID, RunEpoch: attempt.RunEpoch},
+		Path:    cmd,
+		Args:    []string{"/c", "ping -n 30 127.0.0.1 > nul"},
+	})
+	if err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	// Simulate loss of the daemon's in-memory tree handle. CloseUnverified is
+	// deliberately not a physical proof; the durable ASSIGNED marker and named
+	// kernel Job Object are the only recovery evidence available after reopen.
+	if err := tree.CloseUnverified(); err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	restartedSvc := service.NewTaskService(reopened)
+	runner := &acceptanceRestartRecoveryRunner{supervisor: processctl.NewSupervisorWithRecoveryRoot(recoveryRoot)}
+	daemon, err := NewDaemon(reopened, restartedSvc, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := daemon.reconcileUnprovenAttempts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	gotTask, err := restartedSvc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotAttempt, ok, err := reopened.CurrentAttemptByTask(ctx, task.ID)
+	if err != nil || !ok {
+		t.Fatalf("restart lost attempt: ok=%v err=%v", ok, err)
+	}
+	if gotTask.State != domain.TaskBlocked || gotAttempt.AuthorityState != domain.AttemptPhysicallyTerminated || gotAttempt.TerminalStatus != "recovered-after-daemon-restart" {
+		t.Fatalf("restart did not confirm kernel-backed physical proof conservatively: task=%s attempt=%+v", gotTask.State, gotAttempt)
+	}
+	if result, available, err := restartedSvc.Result(ctx, task.ID); err != nil || available {
+		t.Fatalf("restart fabricated result before replacement: available=%v result=%+v err=%v", available, result, err)
+	}
+	if err := restartedSvc.RecoverForReplacement(ctx, task.ID); err != nil {
+		t.Fatalf("physically proven attempt did not permit bounded replacement admission: %v", err)
+	}
+	gotTask, err = restartedSvc.Status(ctx, task.ID)
+	if err != nil || gotTask.State != domain.TaskWorkspaceReady {
+		t.Fatalf("replacement admission after proof mismatch: task=%+v err=%v", gotTask, err)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,9 +52,19 @@ type Spec struct {
 	Limits  Limits
 }
 
-type Supervisor struct{}
+type Supervisor struct {
+	recoveryRoot string
+}
 
 func NewSupervisor() *Supervisor { return &Supervisor{} }
+
+func NewSupervisorWithRecoveryRoot(root string) *Supervisor {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		return NewSupervisor()
+	}
+	return &Supervisor{recoveryRoot: filepath.Clean(root)}
+}
 
 func windowsJobLimits(limits Limits) []winjob.Limit {
 	out := []winjob.Limit{winjob.LimitKillOnJobClose}
@@ -129,7 +141,7 @@ func (s *Supervisor) Start(spec Spec) (*Tree, error) {
 
 	// Start creates the process suspended, assigns it to the Job Object, then
 	// resumes it. We intentionally do NOT enable BREAKAWAY_OK/SILENT_BREAKAWAY.
-	job, err := winjob.Start(cmd, windowsJobLimits(spec.Limits)...)
+	job, err := s.startContainedJob(cmd, spec.Attempt, spec.Limits)
 	if err != nil {
 		// go-winjob may have created a suspended process before an assignment
 		// failure. Kill/wait defensively so a failed Start cannot leak it.
