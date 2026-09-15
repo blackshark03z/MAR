@@ -78,6 +78,55 @@ func (s *SQLite) GetWorkspaceByTask(ctx context.Context, taskID string) (domain.
 	return getWorkspaceWithQueryer(ctx, s.db, `SELECT id, task_id, project_id, path, base_revision, head_revision, state, failure, created_at, updated_at, removed_at FROM workspaces WHERE task_id = ?`, taskID)
 }
 
+func (s *SQLite) ListTerminalWorkspaceRemovalCandidates(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.id
+FROM tasks t
+JOIN workspaces w ON w.task_id = t.id
+WHERE w.state IN (?, ?, ?)
+  AND NOT EXISTS (
+      SELECT 1 FROM execution_attempts a
+      WHERE a.task_id = t.id AND a.authority_state <> 'PHYSICALLY_TERMINATED'
+  )
+  AND (
+      t.state IN (?, ?)
+      OR (
+          t.state = ?
+          AND EXISTS (
+              SELECT 1
+              FROM task_results tr
+              WHERE tr.task_id = t.id
+                AND tr.version = (SELECT MAX(latest.version) FROM task_results latest WHERE latest.task_id = t.id)
+                AND tr.verdict = ?
+                AND tr.integration_status = 'INTEGRATED'
+                AND tr.workspace_disposition = 'RETAINED'
+                AND tr.final_revision = w.head_revision
+          )
+      )
+  )
+ORDER BY t.updated_at ASC, t.id ASC
+LIMIT ?`,
+		string(domain.WorkspaceReady), string(domain.WorkspaceFailed), string(domain.WorkspaceRemoving),
+		string(domain.TaskCancelled), string(domain.TaskFailed), string(domain.TaskComplete), string(domain.ResultVerified), limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var taskIDs []string
+	for rows.Next() {
+		var taskID string
+		if err := rows.Scan(&taskID); err != nil {
+			return nil, err
+		}
+		taskIDs = append(taskIDs, taskID)
+	}
+	return taskIDs, rows.Err()
+}
+
 func (s *SQLite) MarkWorkspaceReady(ctx context.Context, workspaceID, taskID, headRevision string, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -175,6 +224,31 @@ func (s *SQLite) MarkWorkspaceFailed(ctx context.Context, workspaceID, taskID, f
 }
 
 func (s *SQLite) BeginWorkspaceRemoval(ctx context.Context, taskID string, now time.Time) (domain.Workspace, error) {
+	workspaceSnapshot, err := s.GetWorkspaceByTask(ctx, taskID)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	if workspaceSnapshot.State == domain.WorkspaceRemoved {
+		return workspaceSnapshot, nil
+	}
+	taskSnapshot, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	var completeResult domain.TaskResult
+	if taskSnapshot.State == domain.TaskComplete {
+		latest, ok, resultErr := s.LatestTaskResult(ctx, taskID)
+		if resultErr != nil {
+			return domain.Workspace{}, resultErr
+		}
+		if !ok || latest.Verdict != domain.ResultVerified || latest.IntegrationStatus != "INTEGRATED" || latest.WorkspaceDisposition != "RETAINED" || latest.FinalRevision != workspaceSnapshot.HeadRevision {
+			return domain.Workspace{}, ErrWorkspaceRemovalUnsafe
+		}
+		completeResult = latest
+	} else if taskSnapshot.State != domain.TaskCancelled && taskSnapshot.State != domain.TaskFailed {
+		return domain.Workspace{}, ErrWorkspaceRemovalUnsafe
+	}
+
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return domain.Workspace{}, err
@@ -185,11 +259,35 @@ func (s *SQLite) BeginWorkspaceRemoval(ctx context.Context, taskID string, now t
 	if err != nil {
 		return domain.Workspace{}, err
 	}
+	if workspace.State == domain.WorkspaceRemoved {
+		if err := tx.Commit(); err != nil {
+			return domain.Workspace{}, err
+		}
+		return workspace, nil
+	}
 	var taskState string
 	if err := tx.QueryRowContext(ctx, `SELECT state FROM tasks WHERE id = ?`, taskID).Scan(&taskState); err != nil {
 		return domain.Workspace{}, err
 	}
-	if domain.TaskState(taskState) != domain.TaskCancelled && domain.TaskState(taskState) != domain.TaskFailed {
+	state := domain.TaskState(taskState)
+	switch state {
+	case domain.TaskCancelled, domain.TaskFailed:
+		if state != taskSnapshot.State {
+			return domain.Workspace{}, ErrStateConflict
+		}
+	case domain.TaskComplete:
+		if taskSnapshot.State != domain.TaskComplete {
+			return domain.Workspace{}, ErrStateConflict
+		}
+		var currentResultID string
+		var currentResultVersion int64
+		if err := tx.QueryRowContext(ctx, `SELECT result_id, version FROM task_results WHERE task_id = ? ORDER BY version DESC LIMIT 1`, taskID).Scan(&currentResultID, &currentResultVersion); err != nil {
+			return domain.Workspace{}, err
+		}
+		if currentResultID != completeResult.ID || currentResultVersion != completeResult.Version || completeResult.FinalRevision != workspace.HeadRevision {
+			return domain.Workspace{}, ErrStateConflict
+		}
+	default:
 		return domain.Workspace{}, ErrWorkspaceRemovalUnsafe
 	}
 	var unsafeAttempts int
@@ -200,7 +298,7 @@ func (s *SQLite) BeginWorkspaceRemoval(ctx context.Context, taskID string, now t
 	if unsafeAttempts != 0 {
 		return domain.Workspace{}, ErrPhysicalFenceRequired
 	}
-	if workspace.State == domain.WorkspaceRemoved || workspace.State == domain.WorkspaceRemoving {
+	if workspace.State == domain.WorkspaceRemoving {
 		if err := tx.Commit(); err != nil {
 			return domain.Workspace{}, err
 		}
@@ -227,9 +325,85 @@ func (s *SQLite) BeginWorkspaceRemoval(ctx context.Context, taskID string, now t
 	return workspace, nil
 }
 
-func (s *SQLite) FinishWorkspaceRemoval(ctx context.Context, workspaceID string, now time.Time) error {
+func (s *SQLite) FinishWorkspaceRemoval(ctx context.Context, workspaceID, newResultID string, now time.Time) error {
+	workspaceSnapshot, err := getWorkspaceWithQueryer(ctx, s.db, `SELECT id, task_id, project_id, path, base_revision, head_revision, state, failure, created_at, updated_at, removed_at FROM workspaces WHERE id = ?`, workspaceID)
+	if err != nil {
+		return err
+	}
+	if workspaceSnapshot.State == domain.WorkspaceRemoved {
+		return nil
+	}
+	taskSnapshot, err := s.GetTask(ctx, workspaceSnapshot.TaskID)
+	if err != nil {
+		return err
+	}
+	var completeResult domain.TaskResult
+	if taskSnapshot.State == domain.TaskComplete {
+		latest, ok, resultErr := s.LatestTaskResult(ctx, workspaceSnapshot.TaskID)
+		if resultErr != nil {
+			return resultErr
+		}
+		if !ok || latest.Verdict != domain.ResultVerified || latest.IntegrationStatus != "INTEGRATED" || latest.WorkspaceDisposition != "RETAINED" || latest.FinalRevision != workspaceSnapshot.HeadRevision || newResultID == "" {
+			return ErrWorkspaceRemovalUnsafe
+		}
+		completeResult = latest
+	} else if taskSnapshot.State != domain.TaskCancelled && taskSnapshot.State != domain.TaskFailed {
+		return ErrWorkspaceRemovalUnsafe
+	}
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	workspace, err := getWorkspaceWithQueryer(ctx, tx, `SELECT id, task_id, project_id, path, base_revision, head_revision, state, failure, created_at, updated_at, removed_at FROM workspaces WHERE id = ?`, workspaceID)
+	if err != nil {
+		return err
+	}
+	if workspace.State == domain.WorkspaceRemoved {
+		return tx.Commit()
+	}
+	if workspace.State != domain.WorkspaceRemoving {
+		return ErrWorkspaceRemovalUnsafe
+	}
+	var taskState string
+	if err := tx.QueryRowContext(ctx, `SELECT state FROM tasks WHERE id = ?`, workspace.TaskID).Scan(&taskState); err != nil {
+		return err
+	}
+	state := domain.TaskState(taskState)
+	if state == domain.TaskComplete {
+		if taskSnapshot.State != domain.TaskComplete {
+			return ErrStateConflict
+		}
+		var currentResultID string
+		var currentResultVersion int64
+		if err := tx.QueryRowContext(ctx, `SELECT result_id, version FROM task_results WHERE task_id = ? ORDER BY version DESC LIMIT 1`, workspace.TaskID).Scan(&currentResultID, &currentResultVersion); err != nil {
+			return err
+		}
+		if currentResultID != completeResult.ID || currentResultVersion != completeResult.Version || completeResult.FinalRevision != workspace.HeadRevision {
+			return ErrStateConflict
+		}
+		removed := completeResult
+		removed.ID = newResultID
+		removed.Version = completeResult.Version + 1
+		removed.WorkspaceDisposition = "REMOVED"
+		removed.PassFailEvidence = append(append([]string{}, completeResult.PassFailEvidence...), "workspace:"+workspace.ID+":REMOVED")
+		removed.ChangedAreas = append([]string{}, completeResult.ChangedAreas...)
+		removed.VerificationExecuted = append([]string{}, completeResult.VerificationExecuted...)
+		removed.UnresolvedRisks = append([]string{}, completeResult.UnresolvedRisks...)
+		removed.CreatedAt = now.UTC()
+		removed.IntegrityHash, err = removed.IntegrityDigest()
+		if err != nil {
+			return err
+		}
+		if err := insertIntegrationResultTx(ctx, tx, removed); err != nil {
+			return err
+		}
+	} else if state != domain.TaskCancelled && state != domain.TaskFailed {
+		return ErrWorkspaceRemovalUnsafe
+	}
 	stamp := now.UTC().Format(time.RFC3339Nano)
-	res, err := s.db.ExecContext(ctx, `UPDATE workspaces SET state = ?, updated_at = ?, removed_at = ? WHERE id = ? AND state = ?`,
+	res, err := tx.ExecContext(ctx, `UPDATE workspaces SET state = ?, updated_at = ?, removed_at = ? WHERE id = ? AND state = ?`,
 		string(domain.WorkspaceRemoved), stamp, stamp, workspaceID, string(domain.WorkspaceRemoving))
 	if err != nil {
 		return err
@@ -238,7 +412,7 @@ func (s *SQLite) FinishWorkspaceRemoval(ctx context.Context, workspaceID string,
 	if rows != 1 {
 		return ErrStateConflict
 	}
-	return nil
+	return tx.Commit()
 }
 
 func getWorkspaceWithQueryer(ctx context.Context, q queryer, query string, arg string) (domain.Workspace, error) {

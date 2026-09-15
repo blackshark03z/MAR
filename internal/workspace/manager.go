@@ -199,7 +199,39 @@ func (m *Manager) RemoveTerminal(ctx context.Context, taskID string) error {
 		return statErr
 	}
 	_, _ = m.git(ctx, taskID, repoRoot, "worktree", "prune")
-	return m.store.FinishWorkspaceRemoval(ctx, workspace.ID, m.now().UTC())
+	return m.store.FinishWorkspaceRemoval(ctx, workspace.ID, deterministicID("result-workspace-removed", workspace.TaskID), m.now().UTC())
+}
+
+func (m *Manager) ReclaimTerminal(ctx context.Context, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	candidateLimit := limit * 4
+	if candidateLimit < limit {
+		candidateLimit = limit
+	}
+	taskIDs, err := m.store.ListTerminalWorkspaceRemovalCandidates(ctx, candidateLimit)
+	if err != nil {
+		return 0, err
+	}
+	reclaimed := 0
+	var firstErr error
+	for _, taskID := range taskIDs {
+		if reclaimed >= limit {
+			break
+		}
+		if err := m.RemoveTerminal(ctx, taskID); err != nil {
+			if errors.Is(err, store.ErrWorkspaceRemovalUnsafe) || errors.Is(err, store.ErrPhysicalFenceRequired) || errors.Is(err, store.ErrStateConflict) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("reclaim terminal workspace for task %s: %w", taskID, err)
+			}
+			continue
+		}
+		reclaimed++
+	}
+	return reclaimed, firstErr
 }
 
 func (m *Manager) createWorktree(ctx context.Context, taskID, repoRoot, path, base string) error {

@@ -18,6 +18,10 @@ type WorkspaceProvisioner interface {
 	EnsureMutable(context.Context, string) (domain.Workspace, error)
 }
 
+type terminalWorkspaceReclaimer interface {
+	ReclaimTerminal(context.Context, int) (int, error)
+}
+
 type Config struct {
 	AgingInterval            time.Duration
 	WorkspaceRAMReservation  uint64
@@ -65,6 +69,14 @@ func New(s *store.SQLite, governor *resourcegov.Governor, workspace WorkspacePro
 		return nil, err
 	}
 	return &Scheduler{store: s, governor: governor, workspace: workspace, cfg: cfg, now: time.Now}, nil
+}
+
+func (s *Scheduler) ReclaimTerminal(ctx context.Context, limit int) (int, error) {
+	reclaimer, ok := s.workspace.(terminalWorkspaceReclaimer)
+	if !ok {
+		return 0, nil
+	}
+	return reclaimer.ReclaimTerminal(ctx, limit)
 }
 
 // Step performs one authoritative scheduling decision. It is intentionally

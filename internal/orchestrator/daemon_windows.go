@@ -33,6 +33,10 @@ type schedulerDriver interface {
 	Step(context.Context) (scheduler.StepResult, error)
 }
 
+type terminalWorkspaceReclaimer interface {
+	ReclaimTerminal(context.Context, int) (int, error)
+}
+
 type readyTaskRunner interface {
 	RunWorkspaceReady(context.Context, string, domain.Workspace) (RunOutcome, error)
 }
@@ -94,6 +98,7 @@ type DaemonConfig struct {
 	ResourcePollInterval     time.Duration
 	ExecutionRAMReservation  uint64
 	ExecutionDiskReservation uint64
+	TerminalReclaimsPerTick  int
 	ErrorSink                func(error)
 }
 
@@ -118,6 +123,9 @@ func (c DaemonConfig) withDefaults() DaemonConfig {
 	}
 	if c.ResourcePollInterval <= 0 {
 		c.ResourcePollInterval = time.Second
+	}
+	if c.TerminalReclaimsPerTick <= 0 {
+		c.TerminalReclaimsPerTick = 2
 	}
 	if c.ErrorSink == nil {
 		c.ErrorSink = func(error) {}
@@ -210,6 +218,11 @@ func (d *Daemon) runResourcePressureLoop(ctx context.Context) {
 }
 
 func (d *Daemon) step(ctx context.Context) {
+	if reclaimer, ok := d.scheduler.(terminalWorkspaceReclaimer); ok {
+		if _, err := reclaimer.ReclaimTerminal(ctx, d.cfg.TerminalReclaimsPerTick); err != nil {
+			d.report(fmt.Errorf("reclaim terminal workspaces: %w", err))
+		}
+	}
 	if err := d.drivePreflight(ctx); err != nil {
 		d.report(err)
 	}

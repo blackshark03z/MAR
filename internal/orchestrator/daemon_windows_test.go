@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os/exec"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -148,6 +149,24 @@ func (s *fakeSchedulerDriver) Step(context.Context) (scheduler.StepResult, error
 	return scheduler.StepResult{Action: scheduler.ActionIdle}, nil
 }
 
+type fakeReclaimingScheduler struct {
+	stepCalls    int
+	reclaimCalls int
+	lastLimit    int
+	reclaimErr   error
+}
+
+func (s *fakeReclaimingScheduler) Step(context.Context) (scheduler.StepResult, error) {
+	s.stepCalls++
+	return scheduler.StepResult{Action: scheduler.ActionIdle}, nil
+}
+
+func (s *fakeReclaimingScheduler) ReclaimTerminal(_ context.Context, limit int) (int, error) {
+	s.reclaimCalls++
+	s.lastLimit = limit
+	return 0, s.reclaimErr
+}
+
 type fakeReadyRunner struct {
 	started   chan struct{}
 	stopped   chan struct{}
@@ -266,6 +285,39 @@ func daemonGovernor(t *testing.T, sensor resourcegov.Sensor, maxHeavy, maxPerPro
 
 func healthyDaemonGovernor(t *testing.T) *resourcegov.Governor {
 	return daemonGovernor(t, &mutableDaemonSensor{snapshot: healthyDaemonSnapshot()}, 8, 8)
+}
+
+func TestDaemonTerminalWorkspaceReclaimIsBoundedAndBestEffort(t *testing.T) {
+	store := &fakeDaemonStore{
+		tasks:     map[string]domain.Task{},
+		workspace: map[string]domain.Workspace{},
+		attempts:  map[string]domain.ExecutionAttempt{},
+	}
+	schedulerDriver := &fakeReclaimingScheduler{reclaimErr: errors.New("fixture cleanup failure")}
+	var reported []error
+	daemon, err := NewDaemon(
+		store,
+		&fakeDaemonService{store: store},
+		fakePreflightDriver{},
+		schedulerDriver,
+		&fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})},
+		&fakeIntegrationRecoverer{},
+		healthyDaemonGovernor(t),
+		DaemonConfig{TerminalReclaimsPerTick: 3, ErrorSink: func(err error) { reported = append(reported, err) }},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon.step(context.Background())
+	if schedulerDriver.reclaimCalls != 1 || schedulerDriver.lastLimit != 3 {
+		t.Fatalf("workspace reclaim was not bounded by daemon config: calls=%d limit=%d", schedulerDriver.reclaimCalls, schedulerDriver.lastLimit)
+	}
+	if schedulerDriver.stepCalls != 1 {
+		t.Fatalf("reclaim failure blocked normal scheduler step: calls=%d", schedulerDriver.stepCalls)
+	}
+	if len(reported) != 1 || !strings.Contains(reported[0].Error(), "reclaim terminal workspaces") {
+		t.Fatalf("reclaim failure was not reported independently: %v", reported)
+	}
 }
 
 func TestDaemonStartupFencesUnprovenAttemptAndBlocksTask(t *testing.T) {
