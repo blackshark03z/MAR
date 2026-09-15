@@ -23,3 +23,5 @@ Stable-use audit final disposition (supersedes the historical REQUALIFICATION_RE
 - P2 terminal workspace retention/disk accumulation: CLOSED by 09745c8; live terminal backlog reclaimed and fresh post-activation CUJ auto-removed its workspace while preserving result/evidence.
 - P2 CURRENT.md/TASK.md superseded-statement cleanup: HANDOFF_HYGIENE_ONLY, not an engineering/runtime blocker. Deferred to the next source-changing release so exact .4 runtime/source identity is not disturbed solely for documentation churn.
 Engineering verdict: RELEASE_QUALIFIED_AND_RUNTIME_ACTIVATED for bounded stable-use scope. Explicit Owner real-use acceptance remains separate and is not inferred.
+Handoff docs branch: docs/stable-use-handoff-20260916 @ 69c7838d1020843b2d1ed853038cee74a239c94b
+Owner real-use acceptance: intentionally deferred until a suitable real project exists.
