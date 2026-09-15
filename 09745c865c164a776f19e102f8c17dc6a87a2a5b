@@ -1,4 +1,4 @@
-MAR V1.2 stable-use retention release evidence
+﻿MAR V1.2 stable-use retention release evidence
 Release: v1.2.0-requalification.4
 Source: 09745c865c164a776f19e102f8c17dc6a87a2a5b
 Binary SHA256: C1176F1F47361AC15F7AA9EC29BDB29294846A8E7914D28006276EAEEA86358A
@@ -25,3 +25,4 @@ Stable-use audit final disposition (supersedes the historical REQUALIFICATION_RE
 Engineering verdict: RELEASE_QUALIFIED_AND_RUNTIME_ACTIVATED for bounded stable-use scope. Explicit Owner real-use acceptance remains separate and is not inferred.
 Handoff docs branch: docs/stable-use-handoff-20260916 @ 69c7838d1020843b2d1ed853038cee74a239c94b
 Owner real-use acceptance: intentionally deferred until a suitable real project exists.
+Canonical reconciliation: master fast-forwarded from c2d2929 to exact release 09745c8 after proving all 7 prior Owner dirty paths redundant/superseded; targeted tests+vet PASS, worktree clean, runtime remained ALIGNED/trusted. Local recovery snapshot retained.
