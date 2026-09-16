@@ -1,0 +1,14 @@
+MAR v1.2.0-requalification.7 release evidence — 2026-09-16
+Exact source: 73d75558946ac2570d3d1319d1461b2126ce9049
+Parent recovery candidate: 7e6b8d6ffe4fe8818447f4c2ea8f5648b17cae0a
+Root cause closed: periodic physical-recovery sweep could fence an attempt still owned by the live daemon; periodic reconciliation now skips d.active while startup reconciliation remains fail-closed.
+Qualification: 21/21 Go packages PASS; targeted live-attempt/stale-attempt recovery regression PASS; go vet PASS; go build PASS.
+Binary SHA256: A809D8F0A4ED0DA3B27B11F1F551B4C71417354FCD0FA45F5DC5CC71A4FC8E84
+UI SHA256: F1EF68C2551BE783AD478275DB49A5BFBE51F01592D424144140680EA7B2C3A0
+Activation: runtime HEALTHY; ALIGNED; trusted_for_release=true; schema 14; HTTP 200.
+Post-activation CUJ: task-0db4eb285d554e03a5c59502eb5b8046 COMPLETE; VERIFIED; INTEGRATED; changed_areas=[]; workspace REMOVED.
+Verification evidence: evidence-54d7e1eb44fa4eef9790baef7b7df9ad
+Result integrity: 07d411d90db832194c867d13a5b8eb2c881a75be7622196fbc9a5cc43add2687
+Attempt: attempt-394e6059edd94114b37de0267d3169ab PHYSICALLY_TERMINATED.
+Release .6 was a non-qualified runtime candidate and is superseded by .7; no .6 release-qualified tag is created.
+Owner real-use acceptance remains deferred; engineering verdict is release-qualified/runtime-activated, not Product Accepted.
