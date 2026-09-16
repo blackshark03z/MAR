@@ -52,7 +52,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 	}
 })();
 //#endregion
-//#region node_modules/react/cjs/react.production.js
+//#region ../../../../../ui/owner-console/node_modules/react/cjs/react.production.js
 /**
 * @license React
 * react.production.js
@@ -439,12 +439,12 @@ var require_react_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	exports.version = "19.3.0";
 }));
 //#endregion
-//#region node_modules/react/index.js
+//#region ../../../../../ui/owner-console/node_modules/react/index.js
 var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_production();
 }));
 //#endregion
-//#region node_modules/scheduler/cjs/scheduler.production.js
+//#region ../../../../../ui/owner-console/node_modules/scheduler/cjs/scheduler.production.js
 /**
 * @license React
 * scheduler.production.js
@@ -699,12 +699,12 @@ var require_scheduler_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	};
 }));
 //#endregion
-//#region node_modules/scheduler/index.js
+//#region ../../../../../ui/owner-console/node_modules/scheduler/index.js
 var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_scheduler_production();
 }));
 //#endregion
-//#region node_modules/react-dom/cjs/react-dom.production.js
+//#region ../../../../../ui/owner-console/node_modules/react-dom/cjs/react-dom.production.js
 /**
 * @license React
 * react-dom.production.js
@@ -857,7 +857,7 @@ var require_react_dom_production = /* @__PURE__ */ __commonJSMin(((exports) => {
 	exports.version = "19.3.0";
 }));
 //#endregion
-//#region node_modules/react-dom/index.js
+//#region ../../../../../ui/owner-console/node_modules/react-dom/index.js
 var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function checkDCE() {
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -871,7 +871,7 @@ var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_dom_production();
 }));
 //#endregion
-//#region node_modules/react-dom/cjs/react-dom-client.production.js
+//#region ../../../../../ui/owner-console/node_modules/react-dom/cjs/react-dom-client.production.js
 /**
 * @license React
 * react-dom-client.production.js
@@ -11446,7 +11446,7 @@ var require_react_dom_client_production = /* @__PURE__ */ __commonJSMin(((export
 	};
 }));
 //#endregion
-//#region node_modules/react-dom/client.js
+//#region ../../../../../ui/owner-console/node_modules/react-dom/client.js
 var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	function checkDCE() {
 		if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -11460,7 +11460,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 	module.exports = require_react_dom_client_production();
 }));
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/toKebabCase.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/toKebabCase.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11469,7 +11469,7 @@ var require_client = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 */
 var toKebabCase = (string) => string?.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/toLucideIconData.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/toLucideIconData.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11486,7 +11486,7 @@ function toLucideIconData(iconName, iconNode, aliases = []) {
 	};
 }
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/toCamelCase.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/toCamelCase.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11508,7 +11508,7 @@ var toCamelCase = (string) => {
 	return out;
 };
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/toPascalCase.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/toPascalCase.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11520,7 +11520,7 @@ var toPascalCase = (string) => {
 	return camelCase.charAt(0).toUpperCase() + camelCase.slice(1);
 };
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/mergeClasses.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/mergeClasses.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11531,7 +11531,7 @@ var mergeClasses = (...classes) => classes.filter((className, index, array) => {
 	return Boolean(className) && className.trim() !== "" && array.indexOf(className) === index;
 }).join(" ").trim();
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/build/defaultAttributes.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/build/defaultAttributes.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11550,7 +11550,7 @@ var defaultAttributes = {
 	"stroke-linejoin": "round"
 };
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/build/buildLucideIconNode.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/build/buildLucideIconNode.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11605,7 +11605,7 @@ function buildLucideIconNode(icon, params = {}) {
 	];
 }
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/build/buildLucideIconForReact.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/build/buildLucideIconForReact.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11626,7 +11626,7 @@ function buildLucideIconForReact(icon, params = {}) {
 	});
 }
 //#endregion
-//#region node_modules/lucide-react/dist/esm/shared/src/utils/hasA11yProp.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/shared/src/utils/hasA11yProp.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11638,7 +11638,7 @@ var hasA11yProp = (props) => {
 	return false;
 };
 //#endregion
-//#region node_modules/lucide-react/dist/esm/context.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/context.mjs
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 /**
 * @license lucide-react v1.45.0 - ISC
@@ -11649,7 +11649,7 @@ var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
 var LucideContext = (0, import_react.createContext)({});
 var useLucideContext = () => (0, import_react.useContext)(LucideContext);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/Icon.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/Icon.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11680,7 +11680,7 @@ var Icon = (0, import_react.forwardRef)(({ color, size, width, height, strokeWid
 	}, [...builtIconNode.map(([tag, attrs]) => (0, import_react.createElement)(tag, attrs)), ...Array.isArray(children) ? children : [children]]);
 });
 //#endregion
-//#region node_modules/lucide-react/dist/esm/createLucideIcon.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/createLucideIcon.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11699,7 +11699,7 @@ function createLucideIcon(iconDataOrName, iconNode = [], aliases = []) {
 	return Component;
 }
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/activity.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/activity.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11717,7 +11717,7 @@ var __iconData$32 = {
 __iconData$32.node;
 var Activity = createLucideIcon(__iconData$32);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/bot.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/bot.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11761,7 +11761,7 @@ var __iconData$31 = {
 __iconData$31.node;
 var Bot = createLucideIcon(__iconData$31);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/chart-column.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/chart-column.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11794,7 +11794,7 @@ var __iconData$30 = {
 __iconData$30.node;
 var ChartColumn = createLucideIcon(__iconData$30);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/chevron-down.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/chevron-down.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11812,7 +11812,7 @@ var __iconData$29 = {
 __iconData$29.node;
 var ChevronDown = createLucideIcon(__iconData$29);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/circle-check.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/circle-check.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11836,7 +11836,7 @@ var __iconData$28 = {
 __iconData$28.node;
 var CircleCheck = createLucideIcon(__iconData$28);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/circle-dot.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/circle-dot.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11861,7 +11861,7 @@ var __iconData$27 = {
 __iconData$27.node;
 var CircleDot = createLucideIcon(__iconData$27);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/circle-stop.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/circle-stop.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11889,7 +11889,7 @@ var __iconData$26 = {
 __iconData$26.node;
 var CircleStop = createLucideIcon(__iconData$26);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/circle-x.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/circle-x.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11920,7 +11920,7 @@ var __iconData$25 = {
 __iconData$25.node;
 var CircleX = createLucideIcon(__iconData$25);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/clipboard-list.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/clipboard-list.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11965,7 +11965,7 @@ var __iconData$24 = {
 __iconData$24.node;
 var ClipboardList = createLucideIcon(__iconData$24);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/copy.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/copy.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -11991,7 +11991,7 @@ var __iconData$23 = {
 __iconData$23.node;
 var Copy = createLucideIcon(__iconData$23);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/cpu.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/cpu.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12071,7 +12071,7 @@ var __iconData$22 = {
 __iconData$22.node;
 var Cpu = createLucideIcon(__iconData$22);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/database.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/database.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12102,7 +12102,7 @@ var __iconData$21 = {
 __iconData$21.node;
 var Database = createLucideIcon(__iconData$21);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/external-link.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/external-link.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12130,7 +12130,7 @@ var __iconData$20 = {
 __iconData$20.node;
 var ExternalLink = createLucideIcon(__iconData$20);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/folder-git-2.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/folder-git-2.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12166,7 +12166,7 @@ var __iconData$19 = {
 __iconData$19.node;
 var FolderGit2 = createLucideIcon(__iconData$19);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/gauge.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/gauge.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12187,7 +12187,7 @@ var __iconData$18 = {
 __iconData$18.node;
 var Gauge = createLucideIcon(__iconData$18);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/house.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/house.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12209,7 +12209,7 @@ var __iconData$17 = {
 __iconData$17.node;
 var House = createLucideIcon(__iconData$17);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/link-2.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/link-2.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12240,7 +12240,7 @@ var __iconData$16 = {
 __iconData$16.node;
 var Link2 = createLucideIcon(__iconData$16);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/list-todo.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/list-todo.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12280,7 +12280,7 @@ var __iconData$15 = {
 __iconData$15.node;
 var ListTodo = createLucideIcon(__iconData$15);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/loader-circle.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/loader-circle.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12299,7 +12299,7 @@ var __iconData$14 = {
 __iconData$14.node;
 var LoaderCircle = createLucideIcon(__iconData$14);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/network.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/network.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12347,7 +12347,7 @@ var __iconData$13 = {
 __iconData$13.node;
 var Network = createLucideIcon(__iconData$13);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/play.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/play.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12365,7 +12365,7 @@ var __iconData$12 = {
 __iconData$12.node;
 var Play = createLucideIcon(__iconData$12);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/plus.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/plus.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12386,7 +12386,7 @@ var __iconData$11 = {
 __iconData$11.node;
 var Plus = createLucideIcon(__iconData$11);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/refresh-cw.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/refresh-cw.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12418,7 +12418,7 @@ var __iconData$10 = {
 __iconData$10.node;
 var RefreshCw = createLucideIcon(__iconData$10);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/rotate-ccw.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/rotate-ccw.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12439,7 +12439,7 @@ var __iconData$9 = {
 __iconData$9.node;
 var RotateCcw = createLucideIcon(__iconData$9);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/search.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/search.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12462,7 +12462,7 @@ var __iconData$8 = {
 __iconData$8.node;
 var Search = createLucideIcon(__iconData$8);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/settings.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/settings.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12485,7 +12485,7 @@ var __iconData$7 = {
 __iconData$7.node;
 var Settings = createLucideIcon(__iconData$7);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/shield-check.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/shield-check.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12506,7 +12506,7 @@ var __iconData$6 = {
 __iconData$6.node;
 var ShieldCheck = createLucideIcon(__iconData$6);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/square-terminal.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/square-terminal.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12540,7 +12540,7 @@ var __iconData$5 = {
 __iconData$5.node;
 var SquareTerminal = createLucideIcon(__iconData$5);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/triangle-alert.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/triangle-alert.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12569,7 +12569,7 @@ var __iconData$4 = {
 __iconData$4.node;
 var TriangleAlert = createLucideIcon(__iconData$4);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/user-round.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/user-round.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12593,7 +12593,7 @@ var __iconData$3 = {
 __iconData$3.node;
 var UserRound = createLucideIcon(__iconData$3);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/users.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/users.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12627,7 +12627,7 @@ var __iconData$2 = {
 __iconData$2.node;
 var Users = createLucideIcon(__iconData$2);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/workflow.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/workflow.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12663,7 +12663,7 @@ var __iconData$1 = {
 __iconData$1.node;
 var Workflow = createLucideIcon(__iconData$1);
 //#endregion
-//#region node_modules/lucide-react/dist/esm/icons/zap.mjs
+//#region ../../../../../ui/owner-console/node_modules/lucide-react/dist/esm/icons/zap.mjs
 /**
 * @license lucide-react v1.45.0 - ISC
 *
@@ -12790,7 +12790,7 @@ function fmtDuration(seconds) {
 	return `${Math.floor(s / 86400)}d ${Math.floor(s % 86400 / 3600)}h`;
 }
 //#endregion
-//#region node_modules/react/cjs/react-jsx-runtime.production.js
+//#region ../../../../../ui/owner-console/node_modules/react/cjs/react-jsx-runtime.production.js
 /**
 * @license React
 * react-jsx-runtime.production.js
@@ -13422,14 +13422,24 @@ function ProviderZone({ provider, runtime }) {
 		]
 	});
 }
-function Overview({ runtime, tasks, usage, setView, workspace }) {
+function taskProjectHead(t, projects) {
+	return String(projects.find((p) => p.id === t.project_id)?.head || "").trim();
+}
+function isHistoricalBlockedTask(t, projects) {
+	const state = String(t.state || "").toUpperCase();
+	if (!["BLOCKED", "FAILED"].includes(state)) return false;
+	const base = String(t.base_revision || "").trim(), head = taskProjectHead(t, projects);
+	return !!base && !!head && base !== head;
+}
+function isActionableBlockedTask(t, projects) {
+	const state = String(t.state || "").toUpperCase();
+	if (state === "INPUT_REQUIRED") return true;
+	return ["BLOCKED", "FAILED"].includes(state) && !isHistoricalBlockedTask(t, projects);
+}
+function Overview({ runtime, tasks, usage, setView, workspace, projects }) {
 	const scoped = workspace ? tasks.filter((t) => t.project_id === workspace) : tasks;
 	const active = scoped.filter(isTaskActive);
-	const blocked = scoped.filter((t) => [
-		"BLOCKED",
-		"FAILED",
-		"INPUT_REQUIRED"
-	].includes(String(t.state).toUpperCase()));
+	const blocked = scoped.filter((t) => isActionableBlockedTask(t, projects));
 	const health = systemHealth(runtime);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13536,16 +13546,16 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 	const scoped = workspace ? tasks.filter((t) => t.project_id === workspace) : tasks;
 	const [filter, setFilter] = (0, import_react.useState)("all"), [query, setQuery] = (0, import_react.useState)(""), [selected, setSelected] = (0, import_react.useState)("");
 	(0, import_react.useEffect)(() => {
-		if (!selected && scoped.length) setSelected((scoped.find((t) => t.needs_attention) || scoped[0]).id);
+		if (!selected && scoped.length) setSelected((scoped.find((t) => isActionableBlockedTask(t, projects)) || scoped[0]).id);
 		if (selected && !scoped.some((t) => t.id === selected)) setSelected("");
-	}, [tasks, workspace]);
+	}, [
+		tasks,
+		workspace,
+		projects
+	]);
 	const filtered = scoped.filter((t) => {
 		const state = String(t.state || "").toUpperCase();
-		const status = filter === "all" || filter === "active" && (isTaskActive(t) || state === "INPUT_REQUIRED") || filter === "blocked" && [
-			"BLOCKED",
-			"FAILED",
-			"INPUT_REQUIRED"
-		].includes(state) || filter === "complete" && state === "COMPLETE";
+		const status = filter === "all" || filter === "active" && (isTaskActive(t) || state === "INPUT_REQUIRED") || filter === "blocked" && isActionableBlockedTask(t, projects) || filter === "history" && isHistoricalBlockedTask(t, projects) || filter === "complete" && state === "COMPLETE";
 		const text = `${t.goal || ""} ${t.id || ""} ${t.project_id || ""}`.toLowerCase();
 		return status && (!query || text.includes(query.toLowerCase()));
 	});
@@ -13570,7 +13580,11 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 						value: "blocked",
-						children: "Blocked"
+						children: "Cần xử lý"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+						value: "history",
+						children: "Lịch sử / superseded"
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 						value: "complete",
@@ -13620,6 +13634,7 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 								className: "task-item-meta",
 								children: [
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.project_id }),
+									isHistoricalBlockedTask(t, projects) && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lịch sử / superseded" }),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.live_usage?.tokens_available ? `~${fmtNumber(t.live_usage.total_tokens)} tokens` : fmtNumber(t.usage?.model_total_tokens || 0) + " tokens" }),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: fmtTime(t.updated_at) })
 								]
@@ -14709,7 +14724,8 @@ function App() {
 		tasks,
 		usage,
 		setView,
-		workspace
+		workspace,
+		projects
 	});
 	else if (view === "tasks") content = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TasksPage, {
 		tasks,

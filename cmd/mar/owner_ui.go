@@ -135,6 +135,7 @@ type ownerLiveUsageView struct {
 type ownerTaskView struct {
 	ID                  string                 `json:"id"`
 	ProjectID           string                 `json:"project_id"`
+	BaseRevision        string                 `json:"base_revision,omitempty"`
 	Goal                string                 `json:"goal"`
 	State               domain.TaskState       `json:"state"`
 	RunEpoch            int64                  `json:"run_epoch"`
@@ -1500,7 +1501,7 @@ func (b *ownerUIBackend) serveTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]ownerTaskView, 0, len(tasks))
 	for _, task := range tasks {
-		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, Goal: task.Contract.Goal, State: task.State, RunEpoch: task.RunEpoch, UpdatedAt: task.UpdatedAt}
+		view := ownerTaskView{ID: task.ID, ProjectID: task.Contract.ProjectID, BaseRevision: task.Contract.BaseRevision, Goal: task.Contract.Goal, State: task.State, RunEpoch: task.RunEpoch, UpdatedAt: task.UpdatedAt}
 		liveUsage, liveErr := b.liveUsageForTask(r.Context(), task)
 		if liveErr != nil {
 			writeOwnerError(w, http.StatusInternalServerError, fmt.Errorf("read live usage for %s: %w", task.ID, liveErr))

@@ -311,13 +311,19 @@ func TestOwnerUIWorkspaceSelectionAndSidebarAlignmentContract(t *testing.T) {
 	}
 }
 
-func TestOwnerUITaskFlowIdentityIncludesRunEpoch(t *testing.T) {
-	payload, err := json.Marshal(ownerTaskView{ID: "task-1", ProjectID: "mar", Goal: "observe flow", State: domain.TaskRunning, RunEpoch: 7})
+func TestOwnerUITaskFlowIdentityIncludesRunEpochAndBaseRevision(t *testing.T) {
+	payload, err := json.Marshal(ownerTaskView{ID: "task-1", ProjectID: "mar", BaseRevision: "base-123", Goal: "observe flow", State: domain.TaskRunning, RunEpoch: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(payload), `"run_epoch":7`) {
-		t.Fatalf("owner task flow identity lost run epoch: %s", payload)
+	if !strings.Contains(string(payload), `"run_epoch":7`) || !strings.Contains(string(payload), `"base_revision":"base-123"`) {
+		t.Fatalf("owner task flow identity lost run epoch/base revision: %s", payload)
+	}
+	bundle := ownerUIContractText()
+	for _, marker := range []string{"isHistoricalBlockedTask", "isActionableBlockedTask", "Lịch sử / superseded", "Cần xử lý"} {
+		if !strings.Contains(bundle, marker) {
+			t.Fatalf("Owner Console historical/actionable task contract missing %q", marker)
+		}
 	}
 }
 
