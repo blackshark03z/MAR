@@ -531,6 +531,12 @@ func (d *Daemon) reconcileUnprovenAttempts(ctx context.Context) error {
 			return err
 		}
 		for _, task := range tasks {
+			// Periodic recovery must never fence an attempt that is still owned by
+			// this live daemon. Startup reconciliation runs before active executions
+			// exist, so stale attempts from a prior process are still recovered.
+			if d.isActive(task.ID) {
+				continue
+			}
 			if _, duplicate := seen[task.ID]; duplicate {
 				continue
 			}

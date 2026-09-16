@@ -391,6 +391,49 @@ func TestDaemonStartupConfirmsAvailableKernelRecoveryProofWithoutReplacement(t *
 	}
 }
 
+func TestDaemonPeriodicRecoverySkipsAttemptOwnedByLiveDaemon(t *testing.T) {
+	task := domain.Task{ID: "task-live-recovery", State: domain.TaskRunning, RunEpoch: 2}
+	attempt := domain.ExecutionAttempt{ID: "attempt-live-recovery", TaskID: task.ID, RunEpoch: 2, AuthorityState: domain.AttemptActive}
+	store := &fakeDaemonStore{
+		tasks:     map[string]domain.Task{task.ID: task},
+		workspace: map[string]domain.Workspace{},
+		attempts:  map[string]domain.ExecutionAttempt{task.ID: attempt},
+	}
+	svc := &fakeDaemonService{store: store}
+	runner := &fakePhysicalRecoveryRunner{
+		fakeReadyRunner: &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})},
+		proof:           validPhysicalProofForAttempt(t, attempt),
+		available:       true,
+	}
+	daemon, err := NewDaemon(
+		store,
+		svc,
+		fakePreflightDriver{},
+		&fakeSchedulerDriver{},
+		runner,
+		&fakeIntegrationRecoverer{},
+		healthyDaemonGovernor(t),
+		DaemonConfig{PhysicalRecoveryInterval: time.Second},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	daemon.active[task.ID] = &activeExecution{}
+	daemon.lastPhysicalRecovery = time.Now().UTC().Add(-2 * time.Second)
+
+	daemon.step(context.Background())
+
+	store.mu.Lock()
+	gotTask := store.tasks[task.ID]
+	gotAttempt := store.attempts[task.ID]
+	store.mu.Unlock()
+	if gotTask.State != domain.TaskRunning || gotAttempt.AuthorityState != domain.AttemptActive {
+		t.Fatalf("periodic recovery fenced live attempt: task=%s attempt=%s", gotTask.State, gotAttempt.AuthorityState)
+	}
+	if runner.recoverCalls != 0 || svc.confirmCalls != 0 {
+		t.Fatalf("periodic recovery touched live attempt: recover=%d confirm=%d", runner.recoverCalls, svc.confirmCalls)
+	}
+}
 func TestDaemonPeriodicRecoveryRetriesTransientStartupMissWithoutReplacement(t *testing.T) {
 	task := domain.Task{ID: "task-recovery-transient", State: domain.TaskRunning, RunEpoch: 5}
 	attempt := domain.ExecutionAttempt{ID: "attempt-recovery-transient", TaskID: task.ID, RunEpoch: 5, AuthorityState: domain.AttemptActive}
