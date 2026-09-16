@@ -2,10 +2,13 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -177,20 +180,85 @@ FROM execution_attempts WHERE task_id=? ORDER BY run_epoch`, taskID)
 	return out, nil
 }
 
-func (s *SQLite) attemptProgressSignature(ctx context.Context, taskID string, epoch int64) (string, error) {
-	var revision string
-	err := s.db.QueryRowContext(ctx, `
-SELECT current_revision FROM semantic_checkpoints
-WHERE task_id=? AND run_epoch=? ORDER BY version DESC LIMIT 1`, taskID, epoch).Scan(&revision)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "none", nil
+type semanticProgressProjection struct {
+	CurrentRevision     string   `json:"current_revision"`
+	CompletedWork       []string `json:"completed_work"`
+	ChangedAreas        []string `json:"changed_areas"`
+	VerificationStatus  string   `json:"verification_status"`
+	CriticalEvidenceRef []string `json:"critical_evidence_refs"`
+}
+
+func normalizedProgressStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			out = append(out, value)
+		}
 	}
+	slices.Sort(out)
+	return out
+}
+
+func semanticProgressSignature(checkpoint domain.SemanticCheckpoint) (string, error) {
+	projection := semanticProgressProjection{
+		CurrentRevision:     strings.TrimSpace(checkpoint.CurrentRevision),
+		CompletedWork:       normalizedProgressStrings(checkpoint.Payload.CompletedWork),
+		ChangedAreas:        normalizedProgressStrings(checkpoint.Payload.ChangedAreas),
+		VerificationStatus:  strings.TrimSpace(checkpoint.Payload.VerificationStatus),
+		CriticalEvidenceRef: normalizedProgressStrings(checkpoint.Payload.CriticalEvidenceRefs),
+	}
+	raw, err := json.Marshal(projection)
 	if err != nil {
 		return "", err
 	}
-	revision = strings.TrimSpace(revision)
-	if revision == "" {
-		return "none", nil
+	sum := sha256.Sum256(raw)
+	return "semantic:" + hex.EncodeToString(sum[:]), nil
+}
+
+func (s *SQLite) attemptProgressSignature(ctx context.Context, taskID string, epoch int64) (string, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return "", err
 	}
-	return revision, nil
+	rows, err := s.db.QueryContext(ctx, `
+SELECT c.checkpoint_id, c.task_id, c.attempt_id, c.run_epoch, c.version, c.goal_hash,
+       c.base_revision, c.current_revision, c.payload_json, c.integrity_hash, c.created_at,
+       a.task_id, a.run_epoch
+FROM semantic_checkpoints c
+JOIN execution_attempts a ON a.attempt_id = c.attempt_id
+WHERE c.task_id = ? AND c.run_epoch = ?
+ORDER BY c.version DESC`, taskID, epoch)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var checkpoint domain.SemanticCheckpoint
+		var payloadJSON []byte
+		var createdRaw string
+		var attemptTaskID string
+		var attemptEpoch int64
+		if err := rows.Scan(
+			&checkpoint.ID, &checkpoint.TaskID, &checkpoint.AttemptID, &checkpoint.RunEpoch, &checkpoint.Version,
+			&checkpoint.GoalHash, &checkpoint.BaseRevision, &checkpoint.CurrentRevision, &payloadJSON,
+			&checkpoint.IntegrityHash, &createdRaw, &attemptTaskID, &attemptEpoch,
+		); err != nil {
+			return "", err
+		}
+		if attemptTaskID != checkpoint.TaskID || attemptEpoch != checkpoint.RunEpoch || checkpoint.GoalHash != task.ContractHash || checkpoint.BaseRevision != task.Contract.BaseRevision {
+			continue
+		}
+		if err := json.Unmarshal(payloadJSON, &checkpoint.Payload); err != nil {
+			continue
+		}
+		checkpoint.CreatedAt, err = time.Parse(time.RFC3339Nano, createdRaw)
+		if err != nil || !checkpoint.IntegrityValid() {
+			continue
+		}
+		return semanticProgressSignature(checkpoint)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return "none", nil
 }

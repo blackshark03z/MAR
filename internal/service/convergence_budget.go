@@ -137,7 +137,7 @@ func (s *TaskService) TaskConvergenceBudget(ctx context.Context, taskID string) 
 	if err != nil {
 		return TaskConvergenceBudget{}, err
 	}
-	b := TaskConvergenceBudget{Usage: u, RemainingModelDecisions: DefaultTaskMaxModelDecisions - u.ModelDecisions, RemainingWorkerToolCalls: DefaultTaskMaxWorkerToolCalls - u.WorkerToolCalls, RemainingModelTokens: DefaultTaskMaxModelTotalTokens - u.ModelTotalTokens, RemainingActiveExecution: DefaultTaskMaxActiveExecution - u.ActiveExecution, RemainingAttempts: DefaultTaskMaxAttempts - u.Attempts, NoProgress: u.NoProgressStreak >= 1}
+	b := TaskConvergenceBudget{Usage: u, RemainingModelDecisions: DefaultTaskMaxModelDecisions - u.ModelDecisions, RemainingWorkerToolCalls: DefaultTaskMaxWorkerToolCalls - u.WorkerToolCalls, RemainingModelTokens: DefaultTaskMaxModelTotalTokens - u.ModelTotalTokens, RemainingActiveExecution: DefaultTaskMaxActiveExecution - u.ActiveExecution, RemainingAttempts: DefaultTaskMaxAttempts - u.Attempts, NoProgress: u.NoProgressStreak >= 2}
 	if b.RemainingModelDecisions < 0 {
 		b.RemainingModelDecisions = 0
 	}
