@@ -1,0 +1,15 @@
+MAR v1.2.0-requalification.5 release evidence — 2026-09-16
+Exact source: 066e86944f40fd438a2cd10e8be93ee54cea5638
+Convergence core: 9455532479c2bde03e7dc8400acbe022f2131e5f
+Binary SHA256: A9B1769579F7A0CDD8ACBAD748E5711ECD3ADC2B3CCEA5DD0FDE07A3BBD6E0E5
+UI SHA256: F1EF68C2551BE783AD478275DB49A5BFBE51F01592D424144140680EA7B2C3A0
+Qualification: 21/21 Go packages PASS; go vet PASS; go build PASS; cmd/mar focused/production bundle PASS.
+Activation: runtime ALIGNED; trusted_for_release=true; schema 14; Owner Console HTTP 200.
+Post-activation CUJ: task-bac2d0d41847408a950666f34a219a55 COMPLETE; VERIFIED; INTEGRATED; changed_areas=[]; workspace REMOVED.
+Verification evidence: evidence-d51f56dcc1bc47a6851aee83714275c8
+Result integrity: cb5696ad8f4f6b0e3a2400255c165671a88a5e94bf1d6ff0168aa8ef9784854c
+Attempt: attempt-db6dc44139ed47278c33d9f66d5d3c9a PHYSICALLY_TERMINATED.
+Superseded Slice-A worker attempt attempt-5551e76e687d42ee922b32ff0516cabd reconciled via production RecoverTermination + TaskService ConfirmAttemptProcessTermination; no SQL bypass; task remains historical BLOCKED for audit.
+Live Owner classification after activation: 24 historical/superseded, 0 actionable blocked/input-required.
+Owner real-use acceptance remains deferred; this record is engineering release qualification/runtime activation evidence, not Product Accepted.
+Remote push: NOT performed in this sealing step.
