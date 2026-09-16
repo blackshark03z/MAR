@@ -12,3 +12,5 @@ Result integrity: 07d411d90db832194c867d13a5b8eb2c881a75be7622196fbc9a5cc43add26
 Attempt: attempt-394e6059edd94114b37de0267d3169ab PHYSICALLY_TERMINATED.
 Release .6 was a non-qualified runtime candidate and is superseded by .7; no .6 release-qualified tag is created.
 Owner real-use acceptance remains deferred; engineering verdict is release-qualified/runtime-activated, not Product Accepted.
+
+Handoff current-truth branch: docs/requalification7-handoff-20260916 @ de3d5a631c1d3af69f13598acb46ce90f5536691 (docs-only; not runtime source).
