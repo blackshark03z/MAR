@@ -183,12 +183,18 @@ func (r *fakeReadyRunner) RunWorkspaceReady(ctx context.Context, taskID string, 
 
 type fakePhysicalRecoveryRunner struct {
 	*fakeReadyRunner
-	proof     processctl.TerminationProof
-	available bool
-	err       error
+	proof        processctl.TerminationProof
+	available    bool
+	err          error
+	transientErr error
+	recoverCalls int
 }
 
 func (r *fakePhysicalRecoveryRunner) RecoverAttemptTermination(context.Context, domain.ExecutionAttempt) (processctl.TerminationProof, bool, error) {
+	r.recoverCalls++
+	if r.recoverCalls == 1 && r.transientErr != nil {
+		return processctl.TerminationProof{}, false, r.transientErr
+	}
 	return r.proof, r.available, r.err
 }
 
@@ -382,6 +388,76 @@ func TestDaemonStartupConfirmsAvailableKernelRecoveryProofWithoutReplacement(t *
 	}
 	if svc.retryCalls != 0 {
 		t.Fatalf("physical proof silently admitted a replacement worker: retry_calls=%d", svc.retryCalls)
+	}
+}
+
+func TestDaemonPeriodicRecoveryRetriesTransientStartupMissWithoutReplacement(t *testing.T) {
+	task := domain.Task{ID: "task-recovery-transient", State: domain.TaskRunning, RunEpoch: 5}
+	attempt := domain.ExecutionAttempt{ID: "attempt-recovery-transient", TaskID: task.ID, RunEpoch: 5, AuthorityState: domain.AttemptActive}
+	store := &fakeDaemonStore{
+		tasks:     map[string]domain.Task{task.ID: task},
+		workspace: map[string]domain.Workspace{},
+		attempts:  map[string]domain.ExecutionAttempt{task.ID: attempt},
+	}
+	svc := &fakeDaemonService{store: store}
+	proof := validPhysicalProofForAttempt(t, attempt)
+	runner := &fakePhysicalRecoveryRunner{
+		fakeReadyRunner: &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})},
+		proof:           proof,
+		available:       true,
+		transientErr:    errors.New("transient named job teardown"),
+	}
+	var reported []error
+	daemon, err := NewDaemon(
+		store,
+		svc,
+		fakePreflightDriver{},
+		&fakeSchedulerDriver{},
+		runner,
+		&fakeIntegrationRecoverer{},
+		healthyDaemonGovernor(t),
+		DaemonConfig{PhysicalRecoveryInterval: time.Hour, ErrorSink: func(err error) { reported = append(reported, err) }},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := daemon.reconcileUnprovenAttempts(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	store.mu.Lock()
+	firstTask := store.tasks[task.ID]
+	firstAttempt := store.attempts[task.ID]
+	store.mu.Unlock()
+	if firstTask.State != domain.TaskBlocked || firstAttempt.AuthorityState != domain.AttemptLogicallyFenced {
+		t.Fatalf("transient recovery miss did not fail closed: task=%s attempt=%s", firstTask.State, firstAttempt.AuthorityState)
+	}
+	if runner.recoverCalls != 1 || svc.confirmCalls != 0 || svc.retryCalls != 0 {
+		t.Fatalf("unexpected first recovery outcome: recover=%d confirm=%d retry=%d", runner.recoverCalls, svc.confirmCalls, svc.retryCalls)
+	}
+	if len(reported) != 1 || !strings.Contains(reported[0].Error(), "transient named job teardown") {
+		t.Fatalf("transient recovery error was not reported: %v", reported)
+	}
+
+	daemon.lastPhysicalRecovery = time.Now().UTC().Add(-2 * time.Hour)
+	daemon.step(context.Background())
+	store.mu.Lock()
+	gotTask := store.tasks[task.ID]
+	gotAttempt := store.attempts[task.ID]
+	store.mu.Unlock()
+	if gotTask.State != domain.TaskBlocked {
+		t.Fatalf("periodic physical recovery silently re-admitted task: %s", gotTask.State)
+	}
+	if gotAttempt.AuthorityState != domain.AttemptPhysicallyTerminated || gotAttempt.TerminalStatus != "recovered-after-daemon-restart" {
+		t.Fatalf("periodic recovery did not confirm physical termination: %+v", gotAttempt)
+	}
+	if runner.recoverCalls != 2 || svc.confirmCalls != 1 || svc.retryCalls != 0 {
+		t.Fatalf("periodic recovery admitted duplicate work: recover=%d confirm=%d retry=%d", runner.recoverCalls, svc.confirmCalls, svc.retryCalls)
+	}
+
+	daemon.step(context.Background())
+	if runner.recoverCalls != 2 {
+		t.Fatalf("physical recovery retried before the configured interval: calls=%d", runner.recoverCalls)
 	}
 }
 

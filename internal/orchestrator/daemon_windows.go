@@ -96,6 +96,7 @@ type DaemonConfig struct {
 	MaxConcurrentWorkers     int
 	MaxPreflightPerTick      int
 	ResourcePollInterval     time.Duration
+	PhysicalRecoveryInterval time.Duration
 	ExecutionRAMReservation  uint64
 	ExecutionDiskReservation uint64
 	TerminalReclaimsPerTick  int
@@ -124,6 +125,9 @@ func (c DaemonConfig) withDefaults() DaemonConfig {
 	if c.ResourcePollInterval <= 0 {
 		c.ResourcePollInterval = time.Second
 	}
+	if c.PhysicalRecoveryInterval <= 0 {
+		c.PhysicalRecoveryInterval = 5 * time.Second
+	}
 	if c.TerminalReclaimsPerTick <= 0 {
 		c.TerminalReclaimsPerTick = 2
 	}
@@ -143,9 +147,10 @@ type Daemon struct {
 	governor    *resourcegov.Governor
 	cfg         DaemonConfig
 
-	mu     sync.Mutex
-	active map[string]*activeExecution
-	wg     sync.WaitGroup
+	mu                   sync.Mutex
+	active               map[string]*activeExecution
+	wg                   sync.WaitGroup
+	lastPhysicalRecovery time.Time
 }
 
 func NewDaemon(store taskStateStore, taskService daemonTaskService, preflight preflightDriver, scheduler schedulerDriver, runner readyTaskRunner, integration integrationRecoverer, governor *resourcegov.Governor, cfg DaemonConfig) (*Daemon, error) {
@@ -176,6 +181,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err := d.reconcileUnprovenAttempts(ctx); err != nil {
 		return err
 	}
+	d.lastPhysicalRecovery = time.Now().UTC()
 	pressureCtx, stopPressure := context.WithCancel(ctx)
 	pressureDone := make(chan struct{})
 	go func() {
@@ -218,6 +224,13 @@ func (d *Daemon) runResourcePressureLoop(ctx context.Context) {
 }
 
 func (d *Daemon) step(ctx context.Context) {
+	now := time.Now().UTC()
+	if d.lastPhysicalRecovery.IsZero() || now.Sub(d.lastPhysicalRecovery) >= d.cfg.PhysicalRecoveryInterval {
+		d.lastPhysicalRecovery = now
+		if err := d.reconcileUnprovenAttempts(ctx); err != nil {
+			d.report(fmt.Errorf("retry physical attempt recovery: %w", err))
+		}
+	}
 	if reclaimer, ok := d.scheduler.(terminalWorkspaceReclaimer); ok {
 		if _, err := reclaimer.ReclaimTerminal(ctx, d.cfg.TerminalReclaimsPerTick); err != nil {
 			d.report(fmt.Errorf("reclaim terminal workspaces: %w", err))
