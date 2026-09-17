@@ -1,3 +1,6 @@
+# 2026-09-17 — Independent audit reconciliation
+
+Current release remains engineering-qualified and runtime-activated at `v1.2.0-requalification.7` / `73d75558946ac2570d3d1319d1461b2126ce9049`, but **Installation Security Qualified = NOT QUALIFIED** until the bounded security/reproducibility remediation is complete. Canonical decision record: `docs/decisions/MAR_AUDIT_RECONCILIATION_2026_09_17.md`. Confirmed priorities are credential remediation, installation ACL hardening, explicit line-ending policy, one reproducible Windows verification entry point, and CI/secret/dependency scanning. Do not collapse Engineering Release Qualified, Runtime Activated, Installation Security Qualified, and Product Accepted into one generic release/stable label.
 # MAR — Current Tech-Lead Handoff
 
 Updated: 2026-09-16

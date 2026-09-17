@@ -1,3 +1,6 @@
+# CURRENT NEXT BOUNDED SLICE — 2026-09-17
+
+`MAR Installation Security & Reproducibility Hardening` is the next recorded remediation slice. Implementation has **not** been started by this documentation update. Order: (1) rotate/remove plaintext tunnel/control-plane credential and add repo ignore/secret scan policy; (2) harden `.mar`/SQLite/runtime/recovery ACLs to the single-owner threat model with diagnostic coverage; (3) explicit `.gitattributes`/line-ending normalization with semantic-diff proof; (4) canonical Windows verification script; (5) Windows CI + secret/dependency scanning. Frontend strict-mode migration and input-hardening items remain follow-up backlog unless required by this slice. Source decision: `docs/decisions/MAR_AUDIT_RECONCILIATION_2026_09_17.md`.
 # MAR — Current Task
 
 Updated: 2026-09-16

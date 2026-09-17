@@ -1,3 +1,6 @@
+# 2026-09-17 — Audit reconciliation is current research truth
+
+See `docs/decisions/MAR_AUDIT_RECONCILIATION_2026_09_17.md`. The Owner-supplied independent audit was reconciled against live `.7`: plaintext local credential handling and broad installation ACLs are confirmed security gaps; the reported 73-file dirty tree is not current (canonical `.7` is clean) although line-ending configuration remains environment-sensitive; inability of the external audit environment to run Windows Go does not invalidate the existing `.7` test/vet/build + post-activation CUJ evidence.
 # MAR Research — Current
 
 Updated: 2026-09-16
