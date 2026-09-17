@@ -13544,9 +13544,10 @@ function Overview({ runtime, tasks, usage, setView, workspace, projects }) {
 }
 function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 	const scoped = workspace ? tasks.filter((t) => t.project_id === workspace) : tasks;
-	const [filter, setFilter] = (0, import_react.useState)("all"), [query, setQuery] = (0, import_react.useState)(""), [selected, setSelected] = (0, import_react.useState)("");
+	const current = scoped.filter((t) => !isHistoricalBlockedTask(t, projects));
+	const [filter, setFilter] = (0, import_react.useState)("current"), [query, setQuery] = (0, import_react.useState)(""), [selected, setSelected] = (0, import_react.useState)("");
 	(0, import_react.useEffect)(() => {
-		if (!selected && scoped.length) setSelected((scoped.find((t) => isActionableBlockedTask(t, projects)) || scoped[0]).id);
+		if (!selected && scoped.length) setSelected((scoped.find((t) => isActionableBlockedTask(t, projects)) || current[0] || scoped[0]).id);
 		if (selected && !scoped.some((t) => t.id === selected)) setSelected("");
 	}, [
 		tasks,
@@ -13555,7 +13556,7 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 	]);
 	const filtered = scoped.filter((t) => {
 		const state = String(t.state || "").toUpperCase();
-		const status = filter === "all" || filter === "active" && (isTaskActive(t) || state === "INPUT_REQUIRED") || filter === "blocked" && isActionableBlockedTask(t, projects) || filter === "history" && isHistoricalBlockedTask(t, projects) || filter === "complete" && state === "COMPLETE";
+		const status = filter === "current" && !isHistoricalBlockedTask(t, projects) || filter === "all" || filter === "active" && (isTaskActive(t) || state === "INPUT_REQUIRED") || filter === "blocked" && isActionableBlockedTask(t, projects) || filter === "history" && isHistoricalBlockedTask(t, projects) || filter === "complete" && state === "COMPLETE";
 		const text = `${t.goal || ""} ${t.id || ""} ${t.project_id || ""}`.toLowerCase();
 		return status && (!query || text.includes(query.toLowerCase()));
 	});
@@ -13571,24 +13572,28 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 				onChange: (e) => setFilter(e.target.value),
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
-						value: "all",
-						children: ["Tất cả · ", scoped.length]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "active",
-						children: "Đang chạy"
+						value: "current",
+						children: ["Hiện tại · ", current.length]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 						value: "blocked",
 						children: "Cần xử lý"
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "history",
-						children: "Lịch sử / superseded"
+						value: "active",
+						children: "Đang chạy"
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 						value: "complete",
 						children: "Hoàn tất"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+						value: "history",
+						children: "Lịch sử / superseded"
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
+						value: "all",
+						children: ["Tất cả · ", scoped.length]
 					})
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13621,25 +13626,31 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 						})]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "task-list",
-						children: filtered.length ? filtered.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							className: `task-item ${selected === t.id ? "selected" : ""}`,
-							onClick: () => setSelected(t.id),
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "task-item-top",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
-									title: taskTitle(t),
-									children: taskTitle(t)
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-								className: "task-item-meta",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.project_id }),
-									isHistoricalBlockedTask(t, projects) && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lịch sử / superseded" }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.live_usage?.tokens_available ? `~${fmtNumber(t.live_usage.total_tokens)} tokens` : fmtNumber(t.usage?.model_total_tokens || 0) + " tokens" }),
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: fmtTime(t.updated_at) })
-								]
-							})]
-						}, t.id)) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
+						children: filtered.length ? filtered.map((t) => {
+							const historical = isHistoricalBlockedTask(t, projects);
+							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: `task-item ${selected === t.id ? "selected" : ""}`,
+								onClick: () => setSelected(t.id),
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "task-item-top",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+										title: taskTitle(t),
+										children: taskTitle(t)
+									}), historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, {
+										state: "CANCELLED",
+										children: "Lịch sử"
+									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
+								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+									className: "task-item-meta",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.project_id }),
+										historical && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lịch sử / superseded" }),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.live_usage?.tokens_available ? `~${fmtNumber(t.live_usage.total_tokens)} tokens` : fmtNumber(t.usage?.model_total_tokens || 0) + " tokens" }),
+										historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lưu trữ" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: fmtTime(t.updated_at) })
+									]
+								})]
+							}, t.id);
+						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
 							icon: ListTodo,
 							title: "Không có task phù hợp"
 						})
@@ -13647,7 +13658,8 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TaskDetail, {
 					id: selected,
-					reloadTasks
+					reloadTasks,
+					projects
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CreateTaskPanel, {
 					projects,
@@ -13658,7 +13670,7 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 		})
 	] });
 }
-function TaskDetail({ id, reloadTasks }) {
+function TaskDetail({ id, reloadTasks, projects }) {
 	const [data, setData] = (0, import_react.useState)(null), [loading, setLoading] = (0, import_react.useState)(false), [input, setInput] = (0, import_react.useState)(""), [feedback, setFeedback] = (0, import_react.useState)("");
 	const refresh = async () => {
 		if (!id) return;
@@ -13702,7 +13714,12 @@ function TaskDetail({ id, reloadTasks }) {
 		})
 	});
 	const s = data.status?.status || data.status || {}, task = s.task || {}, state = String(task.state || "").toUpperCase(), result = data.result?.result || null, feedbackRows = data.feedback?.feedback || [];
-	const goal = task.contract?.goal || id, needsInput = state === "INPUT_REQUIRED" && !s.brain_turn_available;
+	const historical = isHistoricalBlockedTask({
+		state,
+		project_id: task.contract?.project_id,
+		base_revision: task.contract?.base_revision
+	}, projects);
+	const goal = task.contract?.goal || id, needsInput = !historical && state === "INPUT_REQUIRED" && !s.brain_turn_available;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "panel task-detail-panel",
 		children: [
@@ -13715,7 +13732,10 @@ function TaskDetail({ id, reloadTasks }) {
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: goal }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("code", { children: id })
-				] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state })]
+				] }), historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, {
+					state: "CANCELLED",
+					children: "Lịch sử / superseded"
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state })]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "detail-tabs",
@@ -13736,7 +13756,7 @@ function TaskDetail({ id, reloadTasks }) {
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: `task-message ${needsInput ? "warning" : ""}`,
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: needsInput ? "Bạn cần làm:" : "Trạng thái kỹ thuật:" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: needsInput ? s.next_action || s.detail || "MAR đang chờ thông tin của bạn." : stateText(state) })]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: historical ? "Bản ghi lịch sử:" : needsInput ? "Bạn cần làm:" : "Trạng thái kỹ thuật:" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: historical ? "Task này thuộc revision cũ và được giữ lại để audit; không cần Owner xử lý." : needsInput ? s.next_action || s.detail || "MAR đang chờ thông tin của bạn." : stateText(state) })]
 			}),
 			result ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "result-grid",
@@ -13789,7 +13809,7 @@ function TaskDetail({ id, reloadTasks }) {
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 					onClick: refresh,
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { size: 16 }), "Làm mới"]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+				}), !historical && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 					className: "danger-button",
 					disabled: TERMINAL_STATES.has(state),
 					onClick: async () => {

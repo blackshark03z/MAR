@@ -64,15 +64,20 @@ WHERE attempt_id = ? AND task_id = ? AND run_epoch = ? AND authority_state = ?`,
 			return ErrStaleAttempt
 		}
 	}
-	res, err := tx.ExecContext(ctx, `
+	// Recovery may revisit an already-BLOCKED historical task while it is still
+	// trying to obtain physical termination proof. That maintenance retry is not
+	// a user-visible task-state transition, so preserve the task's recency.
+	if domain.TaskState(state) != domain.TaskBlocked {
+		res, err := tx.ExecContext(ctx, `
 UPDATE tasks SET state = ?, updated_at = ?
 WHERE id = ? AND run_epoch = ?`, string(domain.TaskBlocked), stamp, taskID, epoch)
-	if err != nil {
-		return err
-	}
-	rows, _ := res.RowsAffected()
-	if rows != 1 {
-		return ErrStateConflict
+		if err != nil {
+			return err
+		}
+		rows, _ := res.RowsAffected()
+		if rows != 1 {
+			return ErrStateConflict
+		}
 	}
 	return tx.Commit()
 }

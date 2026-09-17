@@ -1383,3 +1383,22 @@ func runOwnerGit(t *testing.T, root string, args ...string) string {
 	}
 	return string(out)
 }
+
+func TestOwnerUIHistoricalTasksAreCalmAndNonActionable(t *testing.T) {
+	path := filepath.Join("..", "..", "ui", "owner-console", "src", "App.tsx")
+	raw, err := os.ReadFile(path)
+	if err != nil { t.Fatal(err) }
+	text := string(raw)
+	for _, marker := range []string{
+		"useState('current')",
+		"filter==='current'&&!isHistoricalBlockedTask(t,projects)",
+		"<option value=\"history\">Lịch sử / superseded</option>",
+		"<StatusBadge state=\"CANCELLED\">Lịch sử</StatusBadge>",
+		"historical?<span>Lưu trữ</span>:<span>{fmtTime(t.updated_at)}</span>",
+		"<TaskDetail id={selected} reloadTasks={reloadTasks} projects={projects}/>",
+		"Task này thuộc revision cũ và được giữ lại để audit; không cần Owner xử lý.",
+		"{!historical&&<button className=\"danger-button\"",
+	} {
+		if !strings.Contains(text, marker) { t.Fatalf("historical task UX marker missing: %s", marker) }
+	}
+}
