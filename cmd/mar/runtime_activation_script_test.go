@@ -26,6 +26,8 @@ func TestActivateCurrentHeadScriptPreservesPromotionAndRollbackContract(t *testi
 		"mar.db-shm",
 		"source_revision",
 		"trusted_for_release",
+		"Get-OptionalPropertyValue",
+		"PSObject.Properties[$Name]",
 		"start-owner-console.ps1",
 		"Stop-MARListener",
 		"Restore-BackupFile",

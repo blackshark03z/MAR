@@ -16,6 +16,21 @@ function Get-MARRuntimeIdentity {
     }
 }
 
+function Get-OptionalPropertyValue {
+    param(
+        [AllowNull()][object]$InputObject,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    if ($null -eq $InputObject) {
+        return $null
+    }
+    $property = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
 function Get-MARListener {
     return Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort 8787 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
 }
@@ -43,8 +58,10 @@ function Wait-MARRuntime {
     for ($i = 0; $i -lt 60; $i++) {
         $identity = Get-MARRuntimeIdentity
         if ($identity) {
-            $revisionMatches = [string]$identity.source_revision -eq $ExpectedRevision
-            $trustMatches = (-not $RequireTrusted) -or ([bool]$identity.trusted_for_release)
+            $observedRevision = Get-OptionalPropertyValue -InputObject $identity -Name 'source_revision'
+            $observedTrusted = Get-OptionalPropertyValue -InputObject $identity -Name 'trusted_for_release'
+            $revisionMatches = [string]$observedRevision -eq $ExpectedRevision
+            $trustMatches = (-not $RequireTrusted) -or (($null -ne $observedTrusted) -and ([bool]$observedTrusted))
             if ($revisionMatches -and $trustMatches) {
                 return $identity
             }
@@ -145,7 +162,8 @@ if ($priorListener -and -not $priorIdentity) {
     throw "Port 127.0.0.1:8787 is occupied but does not expose a valid MAR runtime identity."
 }
 $priorWasRunning = [bool]$priorListener
-$priorRevision = if ($priorIdentity) { [string]$priorIdentity.source_revision } else { "" }
+$priorRevisionValue = Get-OptionalPropertyValue -InputObject $priorIdentity -Name 'source_revision'
+$priorRevision = if ($null -eq $priorRevisionValue) { "" } else { [string]$priorRevisionValue }
 
 $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
 $backupRoot = Join-Path $dataRoot "recovery\activation-$stamp-$shortHead"
