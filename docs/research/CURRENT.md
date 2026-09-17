@@ -27,3 +27,5 @@ MAR `v1.2.0-requalification.7` is engineering release-qualified and runtime-acti
 For each new `.7` task, retain: final state, blocker category, active execution time, model decisions, worker tool calls, model tokens, attempt count, semantic progress streak, verification result, integration result, and whether Owner input was genuinely required. Compare only `.7+` tasks when estimating current block rate.
 
 Stop research when the product path is working; do not turn MAR into an endless optimization project.
+## Cognition protocol review - 2026-09-17
+Accepted architecture guidance is recorded in `docs/decisions/MAR_COGNITION_PROTOCOL_REVIEW_2026_09_17.md`. Keep the frozen ChatWeb -> MAR -> Worker authority topology. Treat Action Batch / Decision Episode / Observation Receipt as existing or derived protocol concepts, not new services. After Installation Security & Reproducibility, measure stage-level performance before authorizing cognition-efficiency or adaptive-context work.

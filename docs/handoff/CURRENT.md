@@ -67,3 +67,5 @@ There is intentionally **no automatic stale-lock deletion** in `.7`: lock presen
 ## Next action
 
 Use `.7` for normal project development. Collect real task outcomes and block reasons. Only open Convergence v2 Slice B (adaptive budget) or additional recovery work if repeated real-project evidence justifies it. Direct ChatCode/operator mutation is now bootstrap/emergency recovery, not the normal development path.
+## Cognition protocol review - 2026-09-17
+Accepted architecture guidance is recorded in `docs/decisions/MAR_COGNITION_PROTOCOL_REVIEW_2026_09_17.md`. Keep the frozen ChatWeb -> MAR -> Worker authority topology. Treat Action Batch / Decision Episode / Observation Receipt as existing or derived protocol concepts, not new services. After Installation Security & Reproducibility, measure stage-level performance before authorizing cognition-efficiency or adaptive-context work.

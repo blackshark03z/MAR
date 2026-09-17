@@ -24,3 +24,5 @@ Use MAR normally on the next suitable real project. Do not open another architec
 - Keep historical/superseded BLOCKED records for audit; do not clean them merely to improve dashboard numbers.
 
 Owner real-project acceptance is still separate from engineering release qualification.
+## Cognition protocol review - 2026-09-17
+Accepted architecture guidance is recorded in `docs/decisions/MAR_COGNITION_PROTOCOL_REVIEW_2026_09_17.md`. Keep the frozen ChatWeb -> MAR -> Worker authority topology. Treat Action Batch / Decision Episode / Observation Receipt as existing or derived protocol concepts, not new services. After Installation Security & Reproducibility, measure stage-level performance before authorizing cognition-efficiency or adaptive-context work.
