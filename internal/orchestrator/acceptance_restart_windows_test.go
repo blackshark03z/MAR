@@ -127,11 +127,29 @@ func TestAcceptanceT9ArmedNamedJobRecoversPhysicalProofBeforeReplacement(t *test
 		_ = s.Close()
 		t.Fatal(err)
 	}
-	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource, domain.TaskWorkspaceReady} {
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource} {
 		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
 			_ = s.Close()
 			t.Fatal(err)
 		}
+	}
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		ID:           "ws-t9-kernel",
+		TaskID:       task.ID,
+		ProjectID:    contract.ProjectID,
+		Path:         t.TempDir(),
+		BaseRevision: contract.BaseRevision,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if _, _, err := s.BeginWorkspace(ctx, workspace); err != nil {
+		_ = s.Close()
+		t.Fatal(err)
+	}
+	if err := s.MarkWorkspaceReady(ctx, workspace.ID, task.ID, contract.BaseRevision, now); err != nil {
+		_ = s.Close()
+		t.Fatal(err)
 	}
 	attempt, err := svc.BeginAttempt(ctx, task.ID, "t9-kernel-worker", "t9-kernel-daemon", time.Minute)
 	if err != nil {
