@@ -102,8 +102,9 @@ type ownerProjectBrowseRequest struct {
 }
 
 type ownerProjectDirectoryView struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	GitRoot bool   `json:"git_root,omitempty"`
 }
 
 type ownerProjectBrowseView struct {
@@ -111,6 +112,7 @@ type ownerProjectBrowseView struct {
 	Parent      string                      `json:"parent,omitempty"`
 	Roots       []string                    `json:"roots,omitempty"`
 	Directories []ownerProjectDirectoryView `json:"directories,omitempty"`
+	GitRoot     bool                        `json:"git_root,omitempty"`
 }
 
 type ownerFeedbackRequest struct {
@@ -1239,6 +1241,9 @@ func (b *ownerUIBackend) browseProjectFolders(w http.ResponseWriter, r *http.Req
 	if parent != path {
 		view.Parent = parent
 	}
+	if _, reason := validateOwnerProjectRoot(r.Context(), path); reason == "" {
+		view.GitRoot = true
+	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		writeOwnerError(w, http.StatusBadRequest, fmt.Errorf("list workspace folders: %w", err))
@@ -1251,7 +1256,14 @@ func (b *ownerUIBackend) browseProjectFolders(w http.ResponseWriter, r *http.Req
 		if !entry.IsDir() {
 			continue
 		}
-		view.Directories = append(view.Directories, ownerProjectDirectoryView{Name: entry.Name(), Path: filepath.Join(path, entry.Name())})
+		child := filepath.Join(path, entry.Name())
+		directory := ownerProjectDirectoryView{Name: entry.Name(), Path: child}
+		if _, err := os.Stat(filepath.Join(child, ".git")); err == nil {
+			if _, reason := validateOwnerProjectRoot(r.Context(), child); reason == "" {
+				directory.GitRoot = true
+			}
+		}
+		view.Directories = append(view.Directories, directory)
 	}
 	writeOwnerJSON(w, http.StatusOK, view)
 }
@@ -1373,7 +1385,7 @@ func validateOwnerProjectRoot(ctx context.Context, root string) (string, string)
 	}
 	head, err := gitProjectHead(ctx, root)
 	if err != nil {
-		return "", err.Error()
+		return "", "Git repository does not have a readable HEAD commit yet. Create at least one commit or choose another repository."
 	}
 	return head, ""
 }

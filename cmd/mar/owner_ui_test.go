@@ -281,7 +281,7 @@ func TestOwnerUIStartsOnLiveOperations(t *testing.T) {
 }
 func TestOwnerUIReactWorkspaceAndTaskListInteractionContract(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"FolderPickerModal", "/api/projects/browse", "Chọn thư mục này", "overflow-x:hidden", "scrollbar-gutter:stable", "created?.project?.id", "taskTitle"} {
+	for _, marker := range []string{"FolderPickerModal", "/api/projects/browse", "Dùng repository này", "Chọn repository này", "overflow-x:hidden", "scrollbar-gutter:stable", "created?.project?.id", "taskTitle"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React workspace/task interaction contract missing %q", marker)
 		}
@@ -467,6 +467,54 @@ func TestOwnerUIProjectBrowserListsDirectoriesOnly(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "file.txt") {
 		t.Fatalf("folder browser leaked non-directory file entry: %s", rec.Body.String())
+	}
+}
+
+func TestOwnerUIProjectBrowserMarksImmediateGitRepository(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "repo-child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runOwnerGit(t, child, "init")
+	runOwnerGit(t, child, "config", "user.email", "mar-browse@example.invalid")
+	runOwnerGit(t, child, "config", "user.name", "MAR Browse Test")
+	if err := os.WriteFile(filepath.Join(child, "README.md"), []byte("repo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runOwnerGit(t, child, "add", "README.md")
+	runOwnerGit(t, child, "commit", "-m", "base")
+
+	backend := &ownerUIBackend{sessionToken: "test-owner-token"}
+	body, _ := json.Marshal(ownerProjectBrowseRequest{Path: root})
+	req := httptest.NewRequest(http.MethodPost, "/api/projects/browse", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("browse status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var view ownerProjectBrowseView
+	if err := json.Unmarshal(rec.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if view.GitRoot {
+		t.Fatal("non-repository parent was incorrectly marked as Git root")
+	}
+	if len(view.Directories) != 1 || !view.Directories[0].GitRoot || filepath.Clean(view.Directories[0].Path) != filepath.Clean(child) {
+		t.Fatalf("immediate Git repository was not identified: %+v", view)
+	}
+}
+
+func TestValidateOwnerProjectRootHidesRawGitHeadFailure(t *testing.T) {
+	root := t.TempDir()
+	runOwnerGit(t, root, "init")
+	_, detail := validateOwnerProjectRoot(context.Background(), root)
+	if !strings.Contains(detail, "HEAD commit") || strings.Contains(detail, "exit status") {
+		t.Fatalf("unfriendly HEAD validation detail: %q", detail)
 	}
 }
 
@@ -1402,7 +1450,9 @@ func runOwnerGit(t *testing.T, root string, args ...string) string {
 func TestOwnerUIHistoricalTasksAreCalmAndNonActionable(t *testing.T) {
 	path := filepath.Join("..", "..", "ui", "owner-console", "src", "App.tsx")
 	raw, err := os.ReadFile(path)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	text := string(raw)
 	for _, marker := range []string{
 		"useState('current')",
@@ -1414,6 +1464,8 @@ func TestOwnerUIHistoricalTasksAreCalmAndNonActionable(t *testing.T) {
 		"Task này thuộc revision cũ và được giữ lại để audit; không cần Owner xử lý.",
 		"{!historical&&<button className=\"danger-button\"",
 	} {
-		if !strings.Contains(text, marker) { t.Fatalf("historical task UX marker missing: %s", marker) }
+		if !strings.Contains(text, marker) {
+			t.Fatalf("historical task UX marker missing: %s", marker)
+		}
 	}
 }

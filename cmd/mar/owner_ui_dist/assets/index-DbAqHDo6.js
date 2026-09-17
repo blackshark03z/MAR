@@ -14041,6 +14041,7 @@ function FolderPickerModal({ open, onClose, onPick }) {
 		if (open) load("");
 	}, [open]);
 	if (!open) return null;
+	const repoChildren = (data.directories || []).filter((dir) => dir.git_root);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 		className: "modal-backdrop",
 		role: "presentation",
@@ -14124,12 +14125,12 @@ function FolderPickerModal({ open, onClose, onPick }) {
 						children: "Hủy"
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 						className: "primary-button",
-						disabled: !data.path,
+						disabled: !data.path || !data.git_root && repoChildren.length !== 1,
 						onClick: () => {
-							onPick(data.path);
+							onPick(data.git_root ? data.path : repoChildren[0].path);
 							onClose();
 						},
-						children: "Chọn thư mục này"
+						children: data.git_root ? "Chọn repository này" : "Dùng repository này"
 					})] })]
 				})
 			]
