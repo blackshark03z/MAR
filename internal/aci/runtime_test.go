@@ -249,6 +249,31 @@ func TestCommandCwdDotMeansWorkspaceRootAndEscapeStillFails(t *testing.T) {
 	}
 }
 
+func TestPythonCommandValidationIsBounded(t *testing.T) {
+	allowed := []Command{
+		{Name: "python.exe", Args: []string{"scripts/self_test.py"}},
+		{Name: "python", Args: []string{"-m", "unittest", "discover", "-v"}},
+		{Name: "python", Args: []string{"-m", "compileall", "-q", "."}},
+	}
+	for _, cmd := range allowed {
+		if err := validateCommand(cmd); err != nil {
+			t.Fatalf("allowed Python command was rejected: %+v err=%v", cmd, err)
+		}
+	}
+	rejected := []Command{
+		{Name: "python", Args: []string{"-c", "print('unsafe')"}},
+		{Name: "python", Args: []string{"-i"}},
+		{Name: "python", Args: []string{"-m", "pip", "install", "x"}},
+		{Name: "python", Args: []string{"-m", "http.server"}},
+		{Name: "python", Args: []string{`..\outside.py`}},
+	}
+	for _, cmd := range rejected {
+		if err := validateCommand(cmd); err == nil {
+			t.Fatalf("unsafe Python command was admitted: %+v", cmd)
+		}
+	}
+}
+
 func TestTrustedHostCommandExecutionIsDeniedByDefault(t *testing.T) {
 	executor := &fakeExecutor{level: IsolationTrustedHost}
 	r, _ := newTestRuntime(t, executor, false)

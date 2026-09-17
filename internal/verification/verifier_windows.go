@@ -104,6 +104,10 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if !sameVerificationPath(workspace.Path, req.Runtime.Root()) {
 		return domain.TaskResult{}, errors.New("verification runtime root does not match durable task workspace")
 	}
+	executionProfile, err := resolveExecutionProfile(profile, workspace.Path)
+	if err != nil {
+		return domain.TaskResult{}, err
+	}
 	if err := v.assertCandidateHead(ctx, req.TaskID, candidate.Revision, true); err != nil {
 		return domain.TaskResult{}, err
 	}
@@ -111,16 +115,16 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 		return domain.TaskResult{}, err
 	}
 
-	startEnvironmentJSON, startEnvironmentHash, err := v.environment(profile)
+	startEnvironmentJSON, startEnvironmentHash, err := v.environment(executionProfile)
 	if err != nil {
 		_ = v.store.TransitionTaskForAttempt(ctx, req.TaskID, req.AttemptID, req.RunEpoch, domain.TaskVerifying, domain.TaskBlocked, v.now().UTC())
 		return domain.TaskResult{}, fmt.Errorf("capture verification environment: %w", err)
 	}
 
-	commandEvidence := make([]domain.VerificationCommandEvidence, 0, len(profile.Commands))
-	commandOutputs := make([]string, 0, len(profile.Commands))
+	commandEvidence := make([]domain.VerificationCommandEvidence, 0, len(executionProfile.Commands))
+	commandOutputs := make([]string, 0, len(executionProfile.Commands))
 	allCommandsPassed := true
-	for _, command := range profile.Commands {
+	for _, command := range executionProfile.Commands {
 		if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
 			return domain.TaskResult{}, err
 		}
@@ -161,7 +165,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 		return domain.TaskResult{}, err
 	}
 
-	endEnvironmentJSON, endEnvironmentHash, envErr := v.environment(profile)
+	endEnvironmentJSON, endEnvironmentHash, envErr := v.environment(executionProfile)
 	environmentStable := envErr == nil && startEnvironmentHash == endEnvironmentHash
 	candidateStable := v.assertCandidateHead(ctx, req.TaskID, candidate.Revision, true) == nil
 
@@ -315,6 +319,29 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	return persisted, nil
 }
 
+func resolveExecutionProfile(profile Profile, root string) (Profile, error) {
+	if profile.ID != "python-standard" {
+		return profile, nil
+	}
+	if len(profile.Commands) == 0 {
+		return Profile{}, errors.New("python-standard profile has no interpreter command")
+	}
+	selfTestPath := filepath.Join(root, "scripts", "self_test.py")
+	info, err := os.Lstat(selfTestPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return profile, nil
+		}
+		return Profile{}, fmt.Errorf("inspect Python self-test entrypoint: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return Profile{}, errors.New("Python self-test entrypoint must be a regular non-symlink file")
+	}
+	selfTest := Command{Name: profile.Commands[0].Name, Args: []string{"scripts/self_test.py"}, Cwd: "."}
+	profile.Commands = append([]Command{selfTest}, profile.Commands...)
+	return profile, nil
+}
+
 // EvidenceFresh is the integration/reuse gate. Historical evidence remains
 // durable, but it is not eligible after candidate/profile/environment drift.
 func (v *Verifier) EvidenceFresh(ctx context.Context, evidenceID string) (bool, error) {
@@ -353,7 +380,11 @@ func (v *Verifier) EvidenceFresh(ctx context.Context, evidenceID string) (bool, 
 		}
 		return false, err
 	}
-	_, environmentHash, err := v.environment(profile)
+	executionProfile, err := resolveExecutionProfile(profile, workspace.Path)
+	if err != nil {
+		return false, err
+	}
+	_, environmentHash, err := v.environment(executionProfile)
 	if err != nil {
 		return false, err
 	}

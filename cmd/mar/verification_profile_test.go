@@ -48,10 +48,29 @@ func TestGoDocsVerificationProfileRejectsSourcePaths(t *testing.T) {
 	}
 }
 
-func TestBuiltinVerificationProfilesKeepFullAndDocsProfilesDistinct(t *testing.T) {
-	profiles := builtinVerificationProfiles(`C:\\toolchain\\go.exe`)
-	if len(profiles) != 2 || profiles[0].ID != "go-standard" || profiles[1].ID != "go-docs" {
-		t.Fatalf("unexpected built-in verification profiles: %+v", profiles)
+func TestPythonStandardVerificationProfileUsesBoundedStandardModules(t *testing.T) {
+	pythonExecutable := `C:\\Python\\python.exe`
+	profile := pythonStandardVerificationProfile(pythonExecutable)
+	if profile.ID != "python-standard" {
+		t.Fatalf("unexpected profile id %q", profile.ID)
+	}
+	want := [][]string{
+		{"-m", "unittest", "discover", "-v"},
+		{"-m", "compileall", "-q", "."},
+	}
+	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
+}
+
+func TestBuiltinVerificationProfilesIncludePythonOnlyWhenAvailable(t *testing.T) {
+	goExecutable := `C:\\toolchain\\go.exe`
+	pythonExecutable := `C:\\Python\\python.exe`
+	withoutPython := builtinVerificationProfiles(goExecutable, "")
+	if len(withoutPython) != 2 || withoutPython[0].ID != "go-standard" || withoutPython[1].ID != "go-docs" {
+		t.Fatalf("unexpected Go-only built-in verification profiles: %+v", withoutPython)
+	}
+	withPython := builtinVerificationProfiles(goExecutable, pythonExecutable)
+	if len(withPython) != 3 || withPython[2].ID != "python-standard" {
+		t.Fatalf("python-standard was not registered with an available interpreter: %+v", withPython)
 	}
 }
 

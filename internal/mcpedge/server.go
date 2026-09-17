@@ -38,12 +38,12 @@ type submitArgs struct {
 func validatePublicVerificationProfile(profile string) error {
 	profile = strings.TrimSpace(profile)
 	switch profile {
-	case "go-standard", "go-docs":
+	case "go-standard", "go-docs", "python-standard":
 		return nil
 	case "":
 		return errors.New("verification_profile is required")
 	default:
-		return fmt.Errorf("verification_profile %q is unsupported; must be go-standard or go-docs", profile)
+		return fmt.Errorf("verification_profile %q is unsupported; must be go-standard, go-docs, or python-standard", profile)
 	}
 }
 

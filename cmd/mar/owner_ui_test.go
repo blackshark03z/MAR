@@ -1003,6 +1003,21 @@ func TestOwnerUISessionTokenIsEmbeddedForSameOriginClient(t *testing.T) {
 	}
 }
 
+func TestValidateOwnerProjectRootAcceptsPythonGitRepositoryWithoutGoMod(t *testing.T) {
+	root := t.TempDir()
+	runOwnerGit(t, root, "init")
+	runOwnerGit(t, root, "config", "user.email", "mar-owner-python@example.invalid")
+	runOwnerGit(t, root, "config", "user.name", "MAR Owner Python Test")
+	if err := os.WriteFile(filepath.Join(root, "app.py"), []byte("print('ok')\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runOwnerGit(t, root, "add", "app.py")
+	runOwnerGit(t, root, "commit", "-m", "python base")
+	head, detail := validateOwnerProjectRoot(context.Background(), root)
+	if detail != "" || strings.TrimSpace(head) == "" {
+		t.Fatalf("Python Git repository was rejected: head=%q detail=%q", head, detail)
+	}
+}
 func TestOwnerUIAddProjectAndPolicyAreDurable(t *testing.T) {
 	root := t.TempDir()
 	runOwnerGit(t, root, "init")

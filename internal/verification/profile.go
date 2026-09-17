@@ -51,15 +51,25 @@ func (p Profile) Validate() error {
 	}
 	for _, command := range p.Commands {
 		name := strings.ToLower(filepath.Base(strings.TrimSpace(command.Name)))
-		if name != "go" && name != "go.exe" {
+		switch name {
+		case "go", "go.exe":
+			if len(command.Args) == 0 {
+				return errors.New("verification go command requires subcommand")
+			}
+			sub := strings.ToLower(command.Args[0])
+			if sub != "test" && sub != "vet" && sub != "build" {
+				return fmt.Errorf("verification go subcommand %q is not allowed", sub)
+			}
+		case "python", "python.exe":
+			if len(command.Args) < 2 || command.Args[0] != "-m" {
+				return errors.New("verification Python command must use an allowed standard module")
+			}
+			module := strings.ToLower(strings.TrimSpace(command.Args[1]))
+			if module != "unittest" && module != "compileall" {
+				return fmt.Errorf("verification Python module %q is not allowed", command.Args[1])
+			}
+		default:
 			return fmt.Errorf("verification command %q is not supported", command.Name)
-		}
-		if len(command.Args) == 0 {
-			return errors.New("verification go command requires subcommand")
-		}
-		sub := strings.ToLower(command.Args[0])
-		if sub != "test" && sub != "vet" && sub != "build" {
-			return fmt.Errorf("verification go subcommand %q is not allowed", sub)
 		}
 	}
 	return nil

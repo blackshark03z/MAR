@@ -300,6 +300,17 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	if err != nil {
 		return fmt.Errorf("resolve read-only Go module proxy seed: %w", err)
 	}
+	pythonExecutable := ""
+	sandboxReadPaths := []string{goRoot, goModuleProxyDir}
+	workerPathEntries := []string{goBin}
+	if candidate, lookupErr := exec.LookPath("python"); lookupErr == nil {
+		if absolute, absErr := filepath.Abs(candidate); absErr == nil {
+			pythonExecutable = filepath.Clean(absolute)
+			pythonRoot := filepath.Dir(pythonExecutable)
+			sandboxReadPaths = append(sandboxReadPaths, pythonRoot)
+			workerPathEntries = append(workerPathEntries, pythonRoot)
+		}
+	}
 	s, err := store.Open(opts.DBPath)
 	if err != nil {
 		return err
@@ -319,9 +330,9 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			ReasoningEffort:  opts.Reasoning,
 			BaseInstructions: defaultWorkerInstructions,
 		},
-		VerificationProfiles: builtinVerificationProfiles(goExecutable),
-		SandboxReadPaths:     []string{goRoot, goModuleProxyDir},
-		WorkerPathEntries:    []string{goBin},
+		VerificationProfiles: builtinVerificationProfiles(goExecutable, pythonExecutable),
+		SandboxReadPaths:     sandboxReadPaths,
+		WorkerPathEntries:    workerPathEntries,
 		GoModuleCache:        goModuleProxyDir,
 		LeaseDuration:        time.Minute,
 		WorkerStopTimeout:    10 * time.Second,
@@ -438,10 +449,24 @@ func prepareRuntimeDataRoot(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
 
-func builtinVerificationProfiles(goExecutable string) []verification.Profile {
-	return []verification.Profile{
+func builtinVerificationProfiles(goExecutable, pythonExecutable string) []verification.Profile {
+	profiles := []verification.Profile{
 		goStandardVerificationProfile(goExecutable),
 		goDocsVerificationProfile(goExecutable),
+	}
+	if strings.TrimSpace(pythonExecutable) != "" {
+		profiles = append(profiles, pythonStandardVerificationProfile(pythonExecutable))
+	}
+	return profiles
+}
+
+func pythonStandardVerificationProfile(pythonExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "python-standard",
+		Commands: []verification.Command{
+			{Name: pythonExecutable, Args: []string{"-m", "unittest", "discover", "-v"}, Cwd: "."},
+			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
+		},
 	}
 }
 

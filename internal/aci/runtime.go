@@ -522,9 +522,10 @@ func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
 	}
 	profileRoot := filepath.Join(r.root, ".mar", "runtime", "profile")
 	tempRoot := filepath.Join(r.root, ".mar", "runtime", "tmp")
+	pythonCache := filepath.Join(r.root, ".mar", "runtime", "python-cache")
 	appData := filepath.Join(profileRoot, "AppData", "Roaming")
 	localAppData := filepath.Join(profileRoot, "AppData", "Local")
-	for _, dir := range []string{profileRoot, tempRoot, appData, localAppData} {
+	for _, dir := range []string{profileRoot, tempRoot, pythonCache, appData, localAppData} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
 		}
@@ -550,6 +551,9 @@ func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_TERMINAL_PROMPT=0",
 		"GCM_INTERACTIVE=Never",
+		"PYTHONNOUSERSITE=1",
+		"PYTHONDONTWRITEBYTECODE=1",
+		"PYTHONPYCACHEPREFIX=" + pythonCache,
 	}, nil
 }
 
@@ -581,8 +585,41 @@ func validateCommand(cmd Command) error {
 				return fmt.Errorf("gofmt argument %q is not allowed", arg)
 			}
 		}
+	case "python", "python.exe":
+		return validatePythonCommand(cmd.Args)
 	default:
 		return fmt.Errorf("command %q is not allowed by coding ACI", cmd.Name)
+	}
+	return nil
+}
+
+func validatePythonCommand(args []string) error {
+	if len(args) == 0 {
+		return errors.New("python command requires a bounded script or module")
+	}
+	first := strings.TrimSpace(args[0])
+	if first == "" {
+		return errors.New("python command requires a bounded script or module")
+	}
+	if first == "-c" || first == "-i" || first == "-" {
+		return fmt.Errorf("python argument %q is not allowed by coding ACI", first)
+	}
+	if first == "-m" {
+		if len(args) < 2 {
+			return errors.New("python -m requires an allowed module")
+		}
+		module := strings.ToLower(strings.TrimSpace(args[1]))
+		if module != "unittest" && module != "compileall" {
+			return fmt.Errorf("python module %q is not allowed by coding ACI", args[1])
+		}
+		return nil
+	}
+	if strings.HasPrefix(first, "-") {
+		return fmt.Errorf("python argument %q is not allowed by coding ACI", first)
+	}
+	clean := filepath.Clean(first)
+	if filepath.IsAbs(first) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || !strings.EqualFold(filepath.Ext(clean), ".py") {
+		return fmt.Errorf("python script %q must be a workspace-relative .py file", first)
 	}
 	return nil
 }

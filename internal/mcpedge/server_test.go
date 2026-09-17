@@ -17,9 +17,9 @@ import (
 )
 
 type fakeBackend struct {
-	steerTask  string
-	steerKey   string
-	steer      domain.SteerPayload
+	steerTask   string
+	steerKey    string
+	steer       domain.SteerPayload
 	submitCalls int
 }
 
@@ -144,7 +144,7 @@ func TestSubmitRejectsUnsupportedVerificationProfileBeforeBackend(t *testing.T) 
 		t.Fatalf("unsupported verification profile reached backend submit: calls=%d", backend.submitCalls)
 	}
 	text, _ := json.Marshal(result.Content)
-	if !strings.Contains(string(text), "go-standard") || !strings.Contains(string(text), "go-docs") {
+	if !strings.Contains(string(text), "go-standard") || !strings.Contains(string(text), "go-docs") || !strings.Contains(string(text), "python-standard") {
 		t.Fatalf("validation error omitted supported profiles: %s", text)
 	}
 

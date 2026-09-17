@@ -1371,9 +1371,6 @@ func validateOwnerProjectRoot(ctx context.Context, root string) (string, string)
 	if err != nil || !strings.EqualFold(filepath.Clean(strings.TrimSpace(string(out))), filepath.Clean(root)) {
 		return "", "Project folder must be the root of a readable Git repository."
 	}
-	if info, err := os.Stat(filepath.Join(root, "go.mod")); err != nil || info.IsDir() {
-		return "", "MAR V1 currently supports Go module projects only; go.mod was not found at the project root."
-	}
 	head, err := gitProjectHead(ctx, root)
 	if err != nil {
 		return "", err.Error()
@@ -1672,8 +1669,8 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 	if req.VerificationProfile == "" {
 		req.VerificationProfile = "go-standard"
 	}
-	if !slices.Contains([]string{"go-standard", "go-docs"}, req.VerificationProfile) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("verification_profile must be go-standard or go-docs"))
+	if !slices.Contains([]string{"go-standard", "go-docs", "python-standard"}, req.VerificationProfile) {
+		writeOwnerError(w, http.StatusBadRequest, errors.New("verification_profile must be go-standard, go-docs, or python-standard"))
 		return
 	}
 	req.Priority = strings.ToUpper(strings.TrimSpace(req.Priority))

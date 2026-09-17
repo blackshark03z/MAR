@@ -101,7 +101,8 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 	if goalHash != task.ContractHash {
 		return errors.New("durable Goal Contract hash mismatch")
 	}
-	if _, ok := p.profiles.Get(task.Contract.VerificationProfile); !ok {
+	profile, ok := p.profiles.Get(task.Contract.VerificationProfile)
+	if !ok {
 		return fmt.Errorf("verification profile %q is not registered", task.Contract.VerificationProfile)
 	}
 	if err := validateSupportedV1Authority(task.Contract.Authority); err != nil {
@@ -135,12 +136,14 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 		return err
 	}
 	root = filepath.Clean(root)
-	goMod := filepath.Join(root, "go.mod")
-	if info, statErr := os.Stat(goMod); statErr != nil || info.IsDir() {
-		if statErr != nil {
-			return fmt.Errorf("project execution is unsupported by MAR V1: registered profile requires a Go module with go.mod: %w", statErr)
+	if verificationProfileRequiresGoModule(profile) {
+		goMod := filepath.Join(root, "go.mod")
+		if info, statErr := os.Stat(goMod); statErr != nil || info.IsDir() {
+			if statErr != nil {
+				return fmt.Errorf("project execution is unsupported by MAR V1: registered profile requires a Go module with go.mod: %w", statErr)
+			}
+			return errors.New("project execution is unsupported by MAR V1: go.mod is not a regular file")
 		}
-		return errors.New("project execution is unsupported by MAR V1: go.mod is not a regular file")
 	}
 	observedTop, err := p.git.Run(ctx, task.ID, root, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -157,6 +160,10 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 		return errors.New("base revision resolved to empty Git identity")
 	}
 	return nil
+}
+
+func verificationProfileRequiresGoModule(profile verification.Profile) bool {
+	return profile.ID != "python-standard"
 }
 
 func validateSupportedV1Authority(authority domain.Authority) error {
