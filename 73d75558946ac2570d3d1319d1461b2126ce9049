@@ -16,3 +16,5 @@ Owner real-use acceptance remains deferred; engineering verdict is release-quali
 Handoff current-truth branch: docs/requalification7-handoff-20260916 @ de3d5a631c1d3af69f13598acb46ce90f5536691 (docs-only; not runtime source).
 
 Independent audit reconciliation SoT: docs/audit-reconciliation-20260917 @ e74df26e371753ade3d49da4f9979784efd020b6 (docs-only; Installation Security Qualified = NOT QUALIFIED pending bounded remediation).
+
+Cognition protocol review SoT: docs/cognition-protocol-review-20260917 @ dcf91147c07129b745063e4f44f4a7957884167b (docs-only; runtime source unchanged).
