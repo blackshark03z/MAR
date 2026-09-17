@@ -4,17 +4,92 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"mar/internal/domain"
 )
 
+type ProjectCapability struct {
+	State                          string   `json:"state"`
+	Ecosystems                     []string `json:"ecosystems,omitempty"`
+	Languages                      []string `json:"languages,omitempty"`
+	EvidenceMarkers                []string `json:"evidence_markers,omitempty"`
+	SupportedVerificationProfiles  []string `json:"supported_verification_profiles,omitempty"`
+	RecommendedVerificationProfile string   `json:"recommended_verification_profile,omitempty"`
+}
+
 type ProjectContextItem struct {
-	ProjectID string               `json:"project_id"`
-	Head      string               `json:"head"`
-	Policy    domain.ProjectPolicy `json:"policy"`
+	ProjectID  string               `json:"project_id"`
+	Head       string               `json:"head"`
+	Policy     domain.ProjectPolicy `json:"policy"`
+	Capability ProjectCapability    `json:"capability"`
+}
+
+var pythonProjectMarkers = []string{
+	"pyproject.toml",
+	"setup.py",
+	"setup.cfg",
+	"requirements.txt",
+	"requirements-dev.txt",
+}
+
+func detectProjectCapability(root string) (ProjectCapability, error) {
+	hasGo, err := rootMarkerExists(root, "go.mod")
+	if err != nil {
+		return ProjectCapability{}, err
+	}
+
+	pythonMarkers := make([]string, 0, len(pythonProjectMarkers))
+	for _, marker := range pythonProjectMarkers {
+		present, markerErr := rootMarkerExists(root, marker)
+		if markerErr != nil {
+			return ProjectCapability{}, markerErr
+		}
+		if present {
+			pythonMarkers = append(pythonMarkers, marker)
+		}
+	}
+	hasPython := len(pythonMarkers) != 0
+
+	capability := ProjectCapability{State: "unknown"}
+	switch {
+	case hasGo && hasPython:
+		capability.State = "mixed"
+		capability.Ecosystems = []string{"go", "python"}
+		capability.Languages = []string{"go", "python"}
+		capability.EvidenceMarkers = append([]string{"go.mod"}, pythonMarkers...)
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "python-standard"}
+	case hasGo:
+		capability.State = "supported"
+		capability.Ecosystems = []string{"go"}
+		capability.Languages = []string{"go"}
+		capability.EvidenceMarkers = []string{"go.mod"}
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs"}
+		capability.RecommendedVerificationProfile = "go-standard"
+	case hasPython:
+		capability.State = "supported"
+		capability.Ecosystems = []string{"python"}
+		capability.Languages = []string{"python"}
+		capability.EvidenceMarkers = pythonMarkers
+		capability.SupportedVerificationProfiles = []string{"python-standard"}
+		capability.RecommendedVerificationProfile = "python-standard"
+	}
+	return capability, nil
+}
+
+func rootMarkerExists(root, marker string) (bool, error) {
+	info, err := os.Stat(filepath.Join(root, marker))
+	if err == nil {
+		return !info.IsDir(), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, fmt.Errorf("inspect project capability marker %q: %w", marker, err)
 }
 
 func (s *TaskService) ProjectContext(ctx context.Context, projectID string) ([]ProjectContextItem, error) {
@@ -40,7 +115,16 @@ func (s *TaskService) ProjectContext(ctx context.Context, projectID string) ([]P
 		if err != nil {
 			return nil, fmt.Errorf("read project policy for %q: %w", project.ID, err)
 		}
-		items = append(items, ProjectContextItem{ProjectID: project.ID, Head: strings.TrimSpace(string(out)), Policy: policy})
+		capability, err := detectProjectCapability(project.Root)
+		if err != nil {
+			return nil, fmt.Errorf("detect project capability for %q: %w", project.ID, err)
+		}
+		items = append(items, ProjectContextItem{
+			ProjectID:  project.ID,
+			Head:       strings.TrimSpace(string(out)),
+			Policy:     policy,
+			Capability: capability,
+		})
 	}
 	if projectID != "" && len(items) == 0 {
 		return nil, fmt.Errorf("unknown project %q", projectID)

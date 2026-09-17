@@ -65,7 +65,19 @@ func (f *fakeBackend) ProjectContext(_ context.Context, projectID string) ([]ser
 	if projectID == "" {
 		projectID = "mar"
 	}
-	return []service.ProjectContextItem{{ProjectID: projectID, Head: "abc123", Policy: domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: true, LocalGitWrite: true}}}, nil
+	return []service.ProjectContextItem{{
+		ProjectID: projectID,
+		Head:      "abc123",
+		Policy:    domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: true, LocalGitWrite: true},
+		Capability: service.ProjectCapability{
+			State:                          "supported",
+			Ecosystems:                     []string{"go"},
+			Languages:                      []string{"go"},
+			EvidenceMarkers:                []string{"go.mod"},
+			SupportedVerificationProfiles:  []string{"go-standard", "go-docs"},
+			RecommendedVerificationProfile: "go-standard",
+		},
+	}}, nil
 }
 
 type largeReadBackend struct{ fakeBackend }
@@ -254,8 +266,13 @@ func TestProjectContextLetsWebTechLeadResolveTechnicalGoalFieldsWithoutOwnerProm
 		t.Fatal(err)
 	}
 	text := string(raw)
-	if !strings.Contains(text, `"project_id":"mar"`) || !strings.Contains(text, `"head":"abc123"`) || !strings.Contains(text, `"local_file_write":true`) {
-		t.Fatalf("project_context omitted technical goal inputs: %s", text)
+	if !strings.Contains(text, `"project_id":"mar"`) ||
+		!strings.Contains(text, `"head":"abc123"`) ||
+		!strings.Contains(text, `"local_file_write":true`) ||
+		!strings.Contains(text, `"evidence_markers":["go.mod"]`) ||
+		!strings.Contains(text, `"supported_verification_profiles":["go-standard","go-docs"]`) ||
+		!strings.Contains(text, `"recommended_verification_profile":"go-standard"`) {
+		t.Fatalf("project_context omitted technical capability inputs: %s", text)
 	}
 }
 

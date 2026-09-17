@@ -94,7 +94,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding or mutation work. Resolve technical project fields with project operation=context first when needed."},
+	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding or mutation work. Resolve project fields with project operation=context first and use its capability/profile guidance instead of guessing verification_profile; submitted contracts still require one concrete supported profile."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args submitArgs) (*mcp.CallToolResult, map[string]any, error) {
 			if err := validatePublicVerificationProfile(args.Contract.VerificationProfile); err != nil {
 				return nil, nil, err
