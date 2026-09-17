@@ -14,3 +14,5 @@ Release .6 was a non-qualified runtime candidate and is superseded by .7; no .6 
 Owner real-use acceptance remains deferred; engineering verdict is release-qualified/runtime-activated, not Product Accepted.
 
 Handoff current-truth branch: docs/requalification7-handoff-20260916 @ de3d5a631c1d3af69f13598acb46ce90f5536691 (docs-only; not runtime source).
+
+Independent audit reconciliation SoT: docs/audit-reconciliation-20260917 @ e74df26e371753ade3d49da4f9979784efd020b6 (docs-only; Installation Security Qualified = NOT QUALIFIED pending bounded remediation).
