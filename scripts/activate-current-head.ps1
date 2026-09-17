@@ -9,7 +9,12 @@ Set-StrictMode -Version Latest
 
 function Get-MARRuntimeIdentity {
     try {
-        return Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/runtime' -TimeoutSec 2
+        $response = Invoke-RestMethod -Uri 'http://127.0.0.1:8787/api/runtime' -TimeoutSec 2
+        $nestedIdentity = Get-OptionalPropertyValue -InputObject $response -Name 'runtime_identity'
+        if ($null -ne $nestedIdentity) {
+            return $nestedIdentity
+        }
+        return $response
     }
     catch {
         return $null

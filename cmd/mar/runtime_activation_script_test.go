@@ -28,6 +28,8 @@ func TestActivateCurrentHeadScriptPreservesPromotionAndRollbackContract(t *testi
 		"trusted_for_release",
 		"Get-OptionalPropertyValue",
 		"PSObject.Properties[$Name]",
+		"runtime_identity",
+		"return $response",
 		"start-owner-console.ps1",
 		"Stop-MARListener",
 		"Restore-BackupFile",
