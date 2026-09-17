@@ -84,6 +84,8 @@ type daemonTaskService interface {
 	StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error)
 	RequirePhysicalRecovery(context.Context, string, string, int64) error
 	ConfirmAttemptProcessTermination(context.Context, processctl.TerminationProof, string) error
+	RecoverBlockedChoice(context.Context, string) error
+	ReconcileWorkspaceReady(context.Context, string) error
 	RecoverForReplacement(context.Context, string) error
 	ExhaustRetryBudget(context.Context, string) error
 }
@@ -317,11 +319,9 @@ func (d *Daemon) driveBlockedChoices(ctx context.Context) error {
 		if handled {
 			continue
 		}
-		// Generic blocked coding work still follows replacement-worker recovery.
-		// Recovering to WORKSPACE_READY updates task.UpdatedAt after this control,
-		// so the same blocked-choice command cannot trigger an unbounded replay if
-		// the replacement later blocks again.
-		if err := d.service.RecoverForReplacement(ctx, task.ID); err != nil {
+		// Resolve the owner choice against durable phase/workspace/attempt truth.
+		// A blocked_choice is never permission to skip lifecycle phases.
+		if err := d.service.RecoverBlockedChoice(ctx, task.ID); err != nil {
 			return err
 		}
 	}
@@ -395,6 +395,15 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 
 		launched := false
 		for i, task := range pending {
+			workspace, workspaceErr := d.store.GetWorkspaceByTask(ctx, task.ID)
+			if workspaceErr != nil || workspace.State != domain.WorkspaceReady {
+				if err := d.service.ReconcileWorkspaceReady(ctx, task.ID); err != nil {
+					return fmt.Errorf("reconcile WORKSPACE_READY task %s: %w", task.ID, err)
+				}
+				pending = append(pending[:i], pending[i+1:]...)
+				launched = true
+				break
+			}
 			claim := resourcegov.Claim{
 				ID:        "execution:" + task.ID,
 				ProjectID: task.Contract.ProjectID,
@@ -410,14 +419,6 @@ func (d *Daemon) launchReady(ctx context.Context) error {
 			}
 			if !decision.Allowed {
 				continue
-			}
-			workspace, workspaceErr := d.store.GetWorkspaceByTask(ctx, task.ID)
-			if workspaceErr != nil {
-				lease.Release()
-				d.report(workspaceErr)
-				pending = append(pending[:i], pending[i+1:]...)
-				launched = true
-				break
 			}
 			d.launch(ctx, task.ID, workspace, claim, lease)
 			pending = append(pending[:i], pending[i+1:]...)

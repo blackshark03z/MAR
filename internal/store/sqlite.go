@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 14
+const latestSchemaVersion = 15
 
 func SupportedSchemaVersion() int { return latestSchemaVersion }
 
@@ -411,6 +411,19 @@ CREATE TABLE observation_artifacts (
     UNIQUE(task_id, attempt_id, run_epoch, tool_call_id, kind)
 );
 CREATE INDEX idx_observation_artifacts_task_created ON observation_artifacts(task_id, created_at);
+`
+	case 15:
+		script = `
+CREATE TABLE task_blockers (
+    task_id TEXT PRIMARY KEY,
+    phase TEXT NOT NULL,
+    code TEXT NOT NULL,
+    detail TEXT NOT NULL,
+    recovery TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id)
+);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

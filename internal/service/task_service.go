@@ -180,14 +180,87 @@ func (s *TaskService) RequirePhysicalRecovery(ctx context.Context, taskID, attem
 	return s.store.RequirePhysicalRecovery(ctx, taskID, attemptID, epoch, s.now().UTC())
 }
 
+func (s *TaskService) RecoverBlockedChoice(ctx context.Context, taskID string) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.State != domain.TaskBlocked {
+		return store.ErrStateConflict
+	}
+	attempt, hasAttempt, err := s.store.CurrentAttemptByTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	workspace, workspaceErr := s.store.GetWorkspaceByTask(ctx, taskID)
+	if errors.Is(workspaceErr, store.ErrNotFound) {
+		if !hasAttempt && task.RunEpoch == 0 {
+			return s.store.RecoverBlockedWithoutWorkspaceToPreflight(ctx, taskID, s.now().UTC())
+		}
+		if hasAttempt && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+			return store.ErrPhysicalFenceRequired
+		}
+		return s.store.SetTaskBlocker(ctx, domain.TaskBlocker{TaskID: taskID, Phase: domain.BlockerPhaseInvariant, Code: "BLOCKED_WORKSPACE_MISSING", Detail: "Blocked task has execution history but no durable workspace; replacement cannot be proven safe.", Recovery: "Restore/reconcile the durable workspace identity before replacement execution."}, s.now().UTC())
+	}
+	if workspaceErr != nil {
+		return workspaceErr
+	}
+	if workspace.State != domain.WorkspaceReady {
+		return s.store.SetTaskBlocker(ctx, domain.TaskBlocker{TaskID: taskID, Phase: domain.BlockerPhaseWorkspace, Code: "BLOCKED_WORKSPACE_NOT_READY", Detail: fmt.Sprintf("Blocked task workspace is %s, not READY.", workspace.State), Recovery: "Reconcile the managed workspace before replacement execution."}, s.now().UTC())
+	}
+	if hasAttempt && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		return store.ErrPhysicalFenceRequired
+	}
+	if err := s.store.RecoverTaskToWorkspaceReady(ctx, taskID, domain.TaskBlocked, s.now().UTC()); err != nil {
+		return err
+	}
+	return s.store.ClearTaskBlocker(ctx, taskID)
+}
+
+func (s *TaskService) ReconcileWorkspaceReady(ctx context.Context, taskID string) error {
+	task, err := s.store.GetTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.State != domain.TaskWorkspaceReady {
+		return store.ErrStateConflict
+	}
+	attempt, hasAttempt, err := s.store.CurrentAttemptByTask(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	workspace, workspaceErr := s.store.GetWorkspaceByTask(ctx, taskID)
+	if workspaceErr == nil && workspace.State == domain.WorkspaceReady {
+		return nil
+	}
+	if errors.Is(workspaceErr, store.ErrNotFound) && !hasAttempt && task.RunEpoch == 0 {
+		return s.store.RecoverWorkspaceReadyWithoutWorkspaceToPreflight(ctx, taskID, s.now().UTC())
+	}
+	detail := "WORKSPACE_READY task has no durable workspace."
+	if workspaceErr == nil {
+		detail = fmt.Sprintf("WORKSPACE_READY task has workspace state %s instead of READY.", workspace.State)
+	} else if !errors.Is(workspaceErr, store.ErrNotFound) {
+		return workspaceErr
+	}
+	if hasAttempt && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		if err := s.store.RequirePhysicalRecovery(ctx, taskID, attempt.ID, attempt.RunEpoch, s.now().UTC()); err != nil {
+			return err
+		}
+		return s.store.SetTaskBlocker(ctx, domain.TaskBlocker{TaskID: taskID, Phase: domain.BlockerPhaseInvariant, Code: "WORKSPACE_READY_INVARIANT", Detail: detail, Recovery: "Confirm physical termination and reconcile workspace truth before replacement."}, s.now().UTC())
+	}
+	return s.store.BlockTask(ctx, taskID, domain.TaskWorkspaceReady, domain.TaskBlocker{TaskID: taskID, Phase: domain.BlockerPhaseInvariant, Code: "WORKSPACE_READY_INVARIANT", Detail: detail, Recovery: "Reconcile workspace truth before execution admission."}, s.now().UTC())
+}
+
 func (s *TaskService) RecoverForReplacement(ctx context.Context, taskID string) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	switch task.State {
-	case domain.TaskRunning, domain.TaskBlocked, domain.TaskRetryWait:
+	case domain.TaskRunning, domain.TaskRetryWait:
 		return s.store.RecoverTaskToWorkspaceReady(ctx, taskID, task.State, s.now().UTC())
+	case domain.TaskBlocked:
+		return s.RecoverBlockedChoice(ctx, taskID)
 	default:
 		return store.ErrStateConflict
 	}

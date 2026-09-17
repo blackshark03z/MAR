@@ -86,7 +86,17 @@ func (s *TaskService) StatusSnapshot(ctx context.Context, taskID string) (TaskSt
 		snapshot.Detail = "The active worker is waiting for bounded owner input."
 		snapshot.NextAction = "Use inspect to read the current prompt/context, then call input with the requested bounded answer."
 	case domain.TaskBlocked:
-		snapshot.NextAction = "Call inspect to review the blocker. If a bounded owner choice resolves it, send steer with kind=blocked_choice; otherwise resolve the external prerequisite before retrying."
+		if blocker, ok, err := s.store.CurrentTaskBlocker(ctx, taskID); err != nil {
+			return TaskStatusSnapshot{}, err
+		} else if ok {
+			snapshot.Detail = fmt.Sprintf("%s/%s: %s", blocker.Phase, blocker.Code, blocker.Detail)
+			if strings.TrimSpace(blocker.Recovery) != "" {
+				snapshot.NextAction = blocker.Recovery
+			}
+		}
+		if snapshot.NextAction == "" {
+			snapshot.NextAction = "Call inspect to review the blocker. If a bounded owner choice resolves it, send steer with kind=blocked_choice; otherwise resolve the external prerequisite before retrying."
+		}
 	case domain.TaskRetryWait:
 		snapshot.NextAction = "No user action is normally required; MAR will retry within its bounded retry policy after physical termination is confirmed."
 	case domain.TaskComplete:

@@ -87,8 +87,9 @@ func (p *Preflight) Drive(ctx context.Context, taskID string) error {
 		return store.ErrStateConflict
 	}
 	if err := p.validate(ctx, task); err != nil {
-		blockErr := p.store.OrchestratorTransition(ctx, task.ID, domain.TaskPreflight, domain.TaskBlocked, p.now().UTC())
-		return errors.Join(fmt.Errorf("preflight failed: %w", err), blockErr)
+		detail := fmt.Sprintf("preflight failed: %v", err)
+		blockErr := p.store.BlockTask(ctx, task.ID, domain.TaskPreflight, domain.TaskBlocker{Phase: domain.BlockerPhasePreflight, Code: "PREFLIGHT_FAILED", Detail: detail, Recovery: "Resolve the preflight prerequisite, then send a bounded blocked_choice to re-run preflight."}, p.now().UTC())
+		return errors.Join(errors.New(detail), blockErr)
 	}
 	return p.service.AdvancePreExecution(ctx, task.ID, domain.TaskWaitingResource)
 }

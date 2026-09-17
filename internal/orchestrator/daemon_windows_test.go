@@ -56,13 +56,15 @@ func (s *fakeDaemonStore) CurrentAttemptByTask(_ context.Context, taskID string)
 }
 
 type fakeDaemonService struct {
-	store         *fakeDaemonStore
-	cancel        bool
-	latestControl *domain.TaskControl
-	recoveryCalls int
-	confirmCalls  int
-	retryCalls    int
-	exhaustCalls  int
+	store              *fakeDaemonStore
+	cancel             bool
+	latestControl      *domain.TaskControl
+	recoveryCalls      int
+	confirmCalls       int
+	blockedChoiceCalls int
+	reconcileCalls     int
+	retryCalls         int
+	exhaustCalls       int
 }
 
 func (s *fakeDaemonService) StatusSnapshot(_ context.Context, taskID string) (service.TaskStatusSnapshot, error) {
@@ -105,6 +107,65 @@ func (s *fakeDaemonService) ConfirmAttemptProcessTermination(_ context.Context, 
 	attempt.TerminatedAt = &confirmedAt
 	attempt.TerminalStatus = terminalStatus
 	s.store.attempts[ref.TaskID] = attempt
+	return nil
+}
+
+func (s *fakeDaemonService) RecoverBlockedChoice(_ context.Context, taskID string) error {
+	s.blockedChoiceCalls++
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	task := s.store.tasks[taskID]
+	if task.State != domain.TaskBlocked {
+		return errors.New("blocked-choice recovery state mismatch")
+	}
+	attempt, hasAttempt := s.store.attempts[taskID]
+	workspace, hasWorkspace := s.store.workspace[taskID]
+	if !hasWorkspace {
+		if !hasAttempt && task.RunEpoch == 0 {
+			task.State = domain.TaskPreflight
+			task.UpdatedAt = time.Now().UTC()
+			s.store.tasks[taskID] = task
+			return nil
+		}
+		return errors.New("blocked task has no recoverable workspace")
+	}
+	if workspace.State != domain.WorkspaceReady {
+		task.UpdatedAt = time.Now().UTC()
+		s.store.tasks[taskID] = task
+		return nil
+	}
+	if hasAttempt && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+		return errors.New("blocked choice attempted before physical termination")
+	}
+	task.State = domain.TaskWorkspaceReady
+	task.UpdatedAt = time.Now().UTC()
+	s.store.tasks[taskID] = task
+	return nil
+}
+
+func (s *fakeDaemonService) ReconcileWorkspaceReady(_ context.Context, taskID string) error {
+	s.reconcileCalls++
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	task := s.store.tasks[taskID]
+	if task.State != domain.TaskWorkspaceReady {
+		return errors.New("workspace-ready reconciliation state mismatch")
+	}
+	if workspace, ok := s.store.workspace[taskID]; ok && workspace.State == domain.WorkspaceReady {
+		return nil
+	}
+	_, hasAttempt := s.store.attempts[taskID]
+	if task.RunEpoch == 0 && !hasAttempt {
+		if _, hasWorkspace := s.store.workspace[taskID]; !hasWorkspace {
+			task.State = domain.TaskPreflight
+			task.UpdatedAt = time.Now().UTC()
+			s.store.tasks[taskID] = task
+			return nil
+		}
+	}
+	task.State = domain.TaskBlocked
+	task.UpdatedAt = time.Now().UTC()
+	s.store.tasks[taskID] = task
 	return nil
 }
 
