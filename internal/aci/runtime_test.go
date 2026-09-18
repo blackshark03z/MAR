@@ -268,6 +268,67 @@ func TestCommandCwdDotMeansWorkspaceRootAndEscapeStillFails(t *testing.T) {
 	}
 }
 
+func TestSandboxPythonEnvironmentExposesOnlyTrustedGitDirectory(t *testing.T) {
+	root := t.TempDir()
+	pythonDir := t.TempDir()
+	gitDir := t.TempDir()
+	fakePython := filepath.Join(pythonDir, "python.exe")
+	fakeGit := filepath.Join(gitDir, "git.exe")
+	for _, path := range []string{fakePython, fakeGit} {
+		if err := os.WriteFile(path, []byte("not executed by fake executor"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hostOnly := filepath.Join(t.TempDir(), "host-only")
+	t.Setenv("PATH", hostOnly+string(os.PathListSeparator)+os.Getenv("PATH"))
+	executor := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{ExitCode: 0}}
+	r, err := New(Config{
+		Root:          root,
+		TaskID:        "task-python-trusted-git",
+		GitBroker:     &fakeGitBroker{},
+		GitExecutable: fakeGit,
+	}, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakePython, Args: []string{"-m", "unittest", "discover"}}); err != nil {
+		t.Fatal(err)
+	}
+	var pathValue string
+	for _, item := range executor.last.Env {
+		if strings.HasPrefix(strings.ToUpper(item), "PATH=") {
+			pathValue = item[len("PATH="):]
+			break
+		}
+	}
+	if pathValue == "" {
+		t.Fatal("sandboxed Python command did not receive PATH")
+	}
+	foundTrustedGit := false
+	foundHostOnly := false
+	for _, entry := range filepath.SplitList(pathValue) {
+		if strings.EqualFold(filepath.Clean(entry), filepath.Clean(filepath.Dir(fakeGit))) {
+			foundTrustedGit = true
+		}
+		if strings.EqualFold(filepath.Clean(entry), filepath.Clean(hostOnly)) {
+			foundHostOnly = true
+		}
+	}
+	if !foundTrustedGit {
+		t.Fatalf("trusted Git directory missing from Python child PATH: %q", pathValue)
+	}
+	if foundHostOnly {
+		t.Fatalf("arbitrary host PATH leaked into sandbox: %q", pathValue)
+	}
+	beforeCalls := executor.calls
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGit, Args: []string{"status"}}); err == nil || !strings.Contains(err.Error(), "typed git_status/git_diff tools") {
+		t.Fatalf("direct Git execution was not rejected: %v", err)
+	}
+	if executor.calls != beforeCalls {
+		t.Fatalf("direct Git denial reached executor: before=%d after=%d", beforeCalls, executor.calls)
+	}
+}
+
 func TestPythonCommandValidationIsBounded(t *testing.T) {
 	allowed := []Command{
 		{Name: "python.exe", Args: []string{"scripts/self_test.py"}},

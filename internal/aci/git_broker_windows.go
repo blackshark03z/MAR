@@ -29,6 +29,13 @@ func NewContainedGitBroker() (*ContainedGitBroker, error) {
 	return &ContainedGitBroker{gitPath: gitPath}, nil
 }
 
+func (b *ContainedGitBroker) ExecutablePath() string {
+	if b == nil {
+		return ""
+	}
+	return b.gitPath
+}
+
 func (b *ContainedGitBroker) Status(ctx context.Context, taskID, root string, maxOutputBytes int) (ExecResult, error) {
 	return b.run(ctx, taskID, root, maxOutputBytes, []string{
 		"status",

@@ -222,6 +222,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		Root:           start.WorkspacePath,
 		TaskID:         start.Task.ID,
 		GitBroker:      gitBroker,
+		GitExecutable:  gitBroker.ExecutablePath(),
 		GoModuleCache:  start.GoModuleCache,
 		GoBuildCache:   start.GoBuildCache,
 		CommandTimeout: start.CommandTimeout,

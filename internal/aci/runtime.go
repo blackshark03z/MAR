@@ -68,6 +68,7 @@ type Config struct {
 	CommandTimeout               time.Duration
 	AllowTrustedCommandExecution bool
 	GitBroker                    GitBroker
+	GitExecutable                string
 	GoModuleCache                string
 	GoBuildCache                 string
 }
@@ -78,6 +79,7 @@ type Runtime struct {
 	cfg           Config
 	executor      Executor
 	gitBroker     GitBroker
+	gitExecutable string
 	goModuleCache string
 	goBuildCache  string
 }
@@ -196,7 +198,26 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 		}
 		goBuildCache = filepath.Clean(cache)
 	}
-	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker, goModuleCache: goModuleCache, goBuildCache: goBuildCache}, nil
+	gitExecutable := strings.TrimSpace(cfg.GitExecutable)
+	if gitExecutable != "" {
+		gitExecutable, err = filepath.Abs(gitExecutable)
+		if err != nil {
+			return nil, fmt.Errorf("resolve trusted Git executable: %w", err)
+		}
+		gitExecutable, err = pathidentity.ResolveExisting(gitExecutable)
+		if err != nil {
+			return nil, fmt.Errorf("resolve trusted Git executable identity: %w", err)
+		}
+		info, err := os.Stat(gitExecutable)
+		if err != nil {
+			return nil, fmt.Errorf("stat trusted Git executable: %w", err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, errors.New("trusted Git executable must be a regular file")
+		}
+		gitExecutable = filepath.Clean(gitExecutable)
+	}
+	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker, gitExecutable: gitExecutable, goModuleCache: goModuleCache, goBuildCache: goBuildCache}, nil
 }
 
 func (r *Runtime) Root() string { return r.root }
@@ -565,11 +586,22 @@ func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
 			return nil, err
 		}
 	}
-	pathValue := strings.Join([]string{
-		filepath.Dir(commandPath),
-		filepath.Join(systemRoot, "System32"),
-		systemRoot,
-	}, string(os.PathListSeparator))
+	pathEntries := []string{filepath.Dir(commandPath)}
+	if r.gitExecutable != "" {
+		pathEntries = append(pathEntries, filepath.Dir(r.gitExecutable))
+	}
+	pathEntries = append(pathEntries, filepath.Join(systemRoot, "System32"), systemRoot)
+	seenPath := make(map[string]struct{}, len(pathEntries))
+	boundedPath := make([]string, 0, len(pathEntries))
+	for _, entry := range pathEntries {
+		key := strings.ToLower(filepath.Clean(entry))
+		if _, exists := seenPath[key]; exists {
+			continue
+		}
+		seenPath[key] = struct{}{}
+		boundedPath = append(boundedPath, entry)
+	}
+	pathValue := strings.Join(boundedPath, string(os.PathListSeparator))
 	return []string{
 		"SystemRoot=" + systemRoot,
 		"WINDIR=" + systemRoot,

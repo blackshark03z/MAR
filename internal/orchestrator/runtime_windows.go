@@ -206,7 +206,7 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		if err != nil {
 			return nil, err
 		}
-		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GoModuleCache: goModuleCache, GoBuildCache: goBuildCache, CommandTimeout: cfg.CommandTimeout}, executor)
+		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GitExecutable: gitBroker.ExecutablePath(), GoModuleCache: goModuleCache, GoBuildCache: goBuildCache, CommandTimeout: cfg.CommandTimeout}, executor)
 	}
 	taskRunner, err := NewTaskRunner(taskService, processRunner, verifier, integrationManager, runtimeFactory, TaskRunnerConfig{
 		WorkerID:              "mar-worker",
