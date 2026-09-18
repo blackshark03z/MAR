@@ -81,6 +81,21 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 				RecommendedVerificationProfile: "research-artifacts",
 			},
 		},
+		{
+			name: "markerless-artifact-python-self-test",
+			markers: map[string]string{
+				"README.md":            "# CADS-like artifact project\n",
+				"docs/research.md":     "# Research\n",
+				"scripts/self_test.py": "print('ok')\n",
+			},
+			want: ProjectCapability{
+				State:                         "mixed",
+				Ecosystems:                    []string{"artifact", "python"},
+				Languages:                     []string{"python"},
+				EvidenceMarkers:               []string{"scripts/self_test.py"},
+				SupportedVerificationProfiles: []string{"research-artifacts", "python-standard"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -112,7 +127,11 @@ func newProjectContextFixture(t *testing.T, projectID string, markers map[string
 	runProjectContextGit(t, root, "config", "user.email", "mar-context@example.invalid")
 	runProjectContextGit(t, root, "config", "user.name", "MAR Context Test")
 	for marker, content := range markers {
-		if err := os.WriteFile(filepath.Join(root, marker), []byte(content), 0o644); err != nil {
+		full := filepath.Join(root, marker)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

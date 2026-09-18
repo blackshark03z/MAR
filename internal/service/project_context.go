@@ -55,6 +55,12 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		}
 	}
 	hasPython := len(pythonMarkers) != 0
+	const pythonSelfTestMarker = "scripts/self_test.py"
+	hasPythonSelfTest, err := rootMarkerExists(root, pythonSelfTestMarker)
+	if err != nil {
+		return ProjectCapability{}, err
+	}
+	hasPythonCapability := hasPython || hasPythonSelfTest
 
 	capability := ProjectCapability{
 		State:                          "supported",
@@ -63,11 +69,14 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		RecommendedVerificationProfile: researchArtifactVerificationProfile,
 	}
 	switch {
-	case hasGo && hasPython:
+	case hasGo && hasPythonCapability:
 		capability.State = "mixed"
 		capability.Ecosystems = []string{"go", "python"}
 		capability.Languages = []string{"go", "python"}
 		capability.EvidenceMarkers = append([]string{"go.mod"}, pythonMarkers...)
+		if !hasPython && hasPythonSelfTest {
+			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonSelfTestMarker)
+		}
 		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release", "python-standard"}
 		capability.RecommendedVerificationProfile = ""
 	case hasGo:
@@ -82,6 +91,13 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		capability.EvidenceMarkers = pythonMarkers
 		capability.SupportedVerificationProfiles = []string{"python-standard"}
 		capability.RecommendedVerificationProfile = "python-standard"
+	case hasPythonSelfTest:
+		capability.State = "mixed"
+		capability.Ecosystems = []string{"artifact", "python"}
+		capability.Languages = []string{"python"}
+		capability.EvidenceMarkers = []string{pythonSelfTestMarker}
+		capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, "python-standard"}
+		capability.RecommendedVerificationProfile = ""
 	}
 	return capability, nil
 }
