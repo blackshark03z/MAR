@@ -370,6 +370,63 @@ func TestLPACCapabilityAllowsExplicitReadWithCmd(t *testing.T) {
 	}
 }
 
+func TestLPACWritePathsAllowExplicitExternalWriteWithoutUpgradingReadPaths(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	workspace := t.TempDir()
+	readRoot := t.TempDir()
+	writeRoot := t.TempDir()
+	readPath := filepath.Join(readRoot, "read-only.txt")
+	writePath := filepath.Join(writeRoot, "cache.txt")
+	if err := os.WriteFile(readPath, []byte("read-only"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		t.Fatal("SystemRoot is required")
+	}
+	cmd := filepath.Join(systemRoot, "System32", "cmd.exe")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := RunSandboxedCommand(ctx, SandboxCommandSpec{
+		TaskID:         "sandbox-lpac-explicit-write",
+		OperationID:    "write-cache",
+		WorkspaceRoot:  workspace,
+		ReadPaths:      []string{readRoot},
+		WritePaths:     []string{writeRoot},
+		Path:           cmd,
+		Args:           []string{"/d", "/c", "echo cache-data>\"" + writePath + "\""},
+		Dir:            workspace,
+		Env:            probeEnvironment("", "", "", "", "", ""),
+		MaxOutputBytes: 16 << 10,
+	})
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("explicit external WritePaths grant failed: err=%v exit=%d output=%s", err, result.ExitCode, result.Output)
+	}
+	if got, err := os.ReadFile(writePath); err != nil || !strings.Contains(string(got), "cache-data") {
+		t.Fatalf("explicit external write did not persist: got=%q err=%v", got, err)
+	}
+
+	result, err = RunSandboxedCommand(ctx, SandboxCommandSpec{
+		TaskID:         "sandbox-lpac-read-stays-readonly",
+		OperationID:    "deny-readpath-write",
+		WorkspaceRoot:  workspace,
+		ReadPaths:      []string{readRoot},
+		WritePaths:     []string{writeRoot},
+		Path:           cmd,
+		Args:           []string{"/d", "/c", "echo mutated>\"" + readPath + "\""},
+		Dir:            workspace,
+		Env:            probeEnvironment("", "", "", "", "", ""),
+		MaxOutputBytes: 16 << 10,
+	})
+	if err == nil && result.ExitCode == 0 {
+		t.Fatalf("read-only external grant unexpectedly allowed write: output=%s", result.Output)
+	}
+	if got, err := os.ReadFile(readPath); err != nil || string(got) != "read-only" {
+		t.Fatalf("read-only grant was mutated: got=%q err=%v", got, err)
+	}
+}
+
 func TestLPACOptsOutOfAllApplicationPackagesRead(t *testing.T) {
 	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()

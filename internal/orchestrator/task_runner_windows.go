@@ -55,6 +55,7 @@ type TaskRunnerConfig struct {
 	AgentConfig           agent.Config
 	SandboxReadPaths      []string
 	GoModuleCache         string
+	GoBuildCache          string
 	CommandTimeout        time.Duration
 	FinalizationTimeout   time.Duration
 	MemoryPressurePercent float64
@@ -175,6 +176,7 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 		AgentConfig:           boundedAgentConfig(r.cfg.AgentConfig, budget),
 		SandboxReadPaths:      append([]string{}, r.cfg.SandboxReadPaths...),
 		GoModuleCache:         r.cfg.GoModuleCache,
+		GoBuildCache:          r.cfg.GoBuildCache,
 		CommandTimeout:        r.cfg.CommandTimeout,
 		MemoryPressurePercent: r.cfg.MemoryPressurePercent,
 		Capacity:              capacity,

@@ -334,6 +334,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		SandboxReadPaths:     sandboxReadPaths,
 		WorkerPathEntries:    workerPathEntries,
 		GoModuleCache:        goModuleProxyDir,
+		GoBuildCache:         filepath.Join(dataRoot, "runtime", "go-build-cache"),
 		LeaseDuration:        time.Minute,
 		WorkerStopTimeout:    10 * time.Second,
 		ResourceGovernor: resourcegov.Config{

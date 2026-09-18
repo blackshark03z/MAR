@@ -36,6 +36,7 @@ type RuntimeConfig struct {
 	SandboxReadPaths     []string
 	WorkerPathEntries    []string
 	GoModuleCache        string
+	GoBuildCache         string
 	CommandTimeout       time.Duration
 	LeaseDuration        time.Duration
 	WorkerStopTimeout    time.Duration
@@ -91,6 +92,43 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 			return nil, errors.New("shared Go module cache requires an explicit sandbox read grant")
 		}
 	}
+
+	dataRootAbs, err := filepath.Abs(cfg.DataRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve MAR data root: %w", err)
+	}
+	expectedGoBuildCache := filepath.Join(dataRootAbs, "runtime", "go-build-cache")
+	goBuildCacheCandidate := strings.TrimSpace(cfg.GoBuildCache)
+	if goBuildCacheCandidate == "" {
+		goBuildCacheCandidate = expectedGoBuildCache
+	}
+	goBuildCacheAbs, err := filepath.Abs(goBuildCacheCandidate)
+	if err != nil {
+		return nil, fmt.Errorf("resolve shared Go build cache: %w", err)
+	}
+	if !strings.EqualFold(filepath.Clean(goBuildCacheAbs), filepath.Clean(expectedGoBuildCache)) {
+		return nil, errors.New("shared Go build cache must remain inside MAR data root")
+	}
+	runtimeCacheRoot := filepath.Dir(expectedGoBuildCache)
+	if err := os.MkdirAll(runtimeCacheRoot, 0o755); err != nil {
+		return nil, fmt.Errorf("create MAR runtime cache root: %w", err)
+	}
+	if info, err := os.Lstat(runtimeCacheRoot); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if err != nil {
+			return nil, fmt.Errorf("stat MAR runtime cache root: %w", err)
+		}
+		return nil, errors.New("MAR runtime cache root must be a real directory")
+	}
+	if err := os.MkdirAll(goBuildCacheAbs, 0o755); err != nil {
+		return nil, fmt.Errorf("create shared Go build cache: %w", err)
+	}
+	if info, err := os.Lstat(goBuildCacheAbs); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		if err != nil {
+			return nil, fmt.Errorf("stat shared Go build cache: %w", err)
+		}
+		return nil, errors.New("shared Go build cache must be a real directory")
+	}
+	goBuildCache := filepath.Clean(goBuildCacheAbs)
 
 	taskService := service.NewTaskService(s)
 	profiles, err := verification.NewRegistry(cfg.VerificationProfiles...)
@@ -160,7 +198,7 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	runtimeFactory := func(workspacePath, taskID string) (verification.CommandRuntime, error) {
-		executor, err := aci.NewWindowsSandboxExecutorWithLimits(workspacePath, processLimits, readPaths...)
+		executor, err := aci.NewWindowsSandboxExecutorWithLimitsAndWritePaths(workspacePath, processLimits, []string{goBuildCache}, readPaths...)
 		if err != nil {
 			return nil, err
 		}
@@ -168,7 +206,7 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		if err != nil {
 			return nil, err
 		}
-		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GoModuleCache: goModuleCache, CommandTimeout: cfg.CommandTimeout}, executor)
+		return aci.New(aci.Config{Root: workspacePath, TaskID: taskID, GitBroker: gitBroker, GoModuleCache: goModuleCache, GoBuildCache: goBuildCache, CommandTimeout: cfg.CommandTimeout}, executor)
 	}
 	taskRunner, err := NewTaskRunner(taskService, processRunner, verifier, integrationManager, runtimeFactory, TaskRunnerConfig{
 		WorkerID:              "mar-worker",
@@ -179,6 +217,7 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		AgentConfig:           cfg.AgentConfig,
 		SandboxReadPaths:      append([]string{}, readPaths...),
 		GoModuleCache:         goModuleCache,
+		GoBuildCache:          goBuildCache,
 		CommandTimeout:        cfg.CommandTimeout,
 		FinalizationTimeout:   cfg.WorkerStopTimeout,
 		MemoryPressurePercent: cfg.ResourceGovernor.MaxMemoryLoadPercent,

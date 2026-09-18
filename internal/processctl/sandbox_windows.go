@@ -35,6 +35,7 @@ type SandboxCommandSpec struct {
 	OperationID    string
 	WorkspaceRoot  string
 	ReadPaths      []string
+	WritePaths     []string
 	Path           string
 	Args           []string
 	Dir            string
@@ -220,6 +221,21 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 		if _, exists := grants[resolved]; !exists {
 			grants[resolved] = false
 		}
+	}
+	for _, writePath := range spec.WritePaths {
+		writePath = strings.TrimSpace(writePath)
+		if writePath == "" {
+			continue
+		}
+		abs, err := filepath.Abs(writePath)
+		if err != nil {
+			return SandboxCommandResult{ExitCode: -1}, err
+		}
+		resolved, err := filepath.EvalSymlinks(abs)
+		if err != nil {
+			return SandboxCommandResult{ExitCode: -1}, fmt.Errorf("resolve sandbox write path: %w", err)
+		}
+		grants[resolved] = true
 	}
 	paths := make([]string, 0, len(grants))
 	for path := range grants {

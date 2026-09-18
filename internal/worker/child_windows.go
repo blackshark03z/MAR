@@ -208,7 +208,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 			<-pressureDone
 		}()
 	}
-	executor, err := aci.NewWindowsSandboxExecutor(start.WorkspacePath, start.SandboxReadPaths...)
+	executor, err := aci.NewWindowsSandboxExecutorWithWritePaths(start.WorkspacePath, []string{start.GoBuildCache}, start.SandboxReadPaths...)
 	if err != nil {
 		_ = sendChildError(encoder, err)
 		return err
@@ -223,6 +223,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		TaskID:         start.Task.ID,
 		GitBroker:      gitBroker,
 		GoModuleCache:  start.GoModuleCache,
+		GoBuildCache:   start.GoBuildCache,
 		CommandTimeout: start.CommandTimeout,
 	}, executor)
 	if err != nil {

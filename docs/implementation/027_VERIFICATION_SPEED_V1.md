@@ -19,6 +19,22 @@ Source: https://go.dev/src/cmd/go/internal/test/test.go
 
 Speed V1 therefore removes `-count=1` from the daily gate instead of building a second cache system inside MAR.
 
+### Speed V1.1 benchmark correction — shared GOCACHE
+
+Live benchmarking after Speed V1 activation showed that enabling the Go cache flag path alone was insufficient:
+
+- pre-optimization full uncached baseline: about **223 s**;
+- first cache-enabled `go-standard` run on the same live HEAD: about **195.7 s**;
+- second same-HEAD `go-standard` run: about **207.3 s**.
+
+The expected warm-cache speedup did not appear because MAR still set a **task-local GOCACHE** under each disposable workspace (`workspace/.mar/go/build`). Workspace cleanup therefore discarded the build/test cache after every task.
+
+Speed V1.1 moves only `GOCACHE` to MAR-owned durable storage under the resolved DataRoot (`runtime/go-build-cache`). The Windows LPAC receives an explicit writable grant only for this cache directory. `GOMODCACHE` and `GOTMPDIR` remain task-local, the shared module proxy remains read-only, and offline `GOPROXY`, `GOSUMDB=off`, `GOENV=off`, and `GOTOOLCHAIN=local` invariants remain unchanged.
+
+The Go documentation states that the build cache is safe for concurrent Go command invocations and that cached build/test actions are keyed by the relevant build inputs. This makes a MAR-owned shared `GOCACHE` preferable to a custom cache protocol while preserving fail-closed filesystem isolation.
+
+Source: https://pkg.go.dev/cmd/go#hdr-Build_and_test_caching
+
 ### Affected work before full work
 
 Nx documents the same general optimization principle at project-graph scale: determine the minimum affected set from Git changes and dependency relationships, then run tasks only on that set. It also recommends pairing affected execution with caching.

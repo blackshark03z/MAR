@@ -69,6 +69,7 @@ type Config struct {
 	AllowTrustedCommandExecution bool
 	GitBroker                    GitBroker
 	GoModuleCache                string
+	GoBuildCache                 string
 }
 
 type Runtime struct {
@@ -78,6 +79,7 @@ type Runtime struct {
 	executor      Executor
 	gitBroker     GitBroker
 	goModuleCache string
+	goBuildCache  string
 }
 
 type ReadResult struct {
@@ -175,7 +177,26 @@ func New(cfg Config, executor Executor) (*Runtime, error) {
 		}
 		goModuleCache = filepath.Clean(cache)
 	}
-	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker, goModuleCache: goModuleCache}, nil
+	goBuildCache := ""
+	if strings.TrimSpace(cfg.GoBuildCache) != "" {
+		cache, err := filepath.Abs(cfg.GoBuildCache)
+		if err != nil {
+			return nil, fmt.Errorf("resolve shared Go build cache: %w", err)
+		}
+		cache, err = pathidentity.ResolveExisting(cache)
+		if err != nil {
+			return nil, fmt.Errorf("resolve shared Go build cache identity: %w", err)
+		}
+		info, err := os.Stat(cache)
+		if err != nil || !info.IsDir() {
+			if err != nil {
+				return nil, fmt.Errorf("stat shared Go build cache: %w", err)
+			}
+			return nil, errors.New("shared Go build cache is not a directory")
+		}
+		goBuildCache = filepath.Clean(cache)
+	}
+	return &Runtime{root: filepath.Clean(root), taskID: cfg.TaskID, cfg: cfg, executor: executor, gitBroker: cfg.GitBroker, goModuleCache: goModuleCache, goBuildCache: goBuildCache}, nil
 }
 
 func (r *Runtime) Root() string { return r.root }
@@ -442,7 +463,10 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	isGoCommand := strings.EqualFold(filepath.Base(path), "go.exe") || strings.EqualFold(filepath.Base(path), "go")
 	if isGoCommand {
 		cacheRoot := filepath.Join(r.root, ".mar", "go")
-		buildCache := filepath.Join(cacheRoot, "build")
+		buildCache := r.goBuildCache
+		if buildCache == "" {
+			buildCache = filepath.Join(cacheRoot, "build")
+		}
 		modCache := filepath.Join(cacheRoot, "mod")
 		tmpCache := filepath.Join(cacheRoot, "tmp")
 		for _, dir := range []string{buildCache, modCache, tmpCache} {

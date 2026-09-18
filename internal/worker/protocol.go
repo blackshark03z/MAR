@@ -53,6 +53,7 @@ type StartRequest struct {
 	AgentConfig           agent.Config            `json:"agent_config"`
 	SandboxReadPaths      []string                `json:"sandbox_read_paths,omitempty"`
 	GoModuleCache         string                  `json:"go_module_cache,omitempty"`
+	GoBuildCache          string                  `json:"go_build_cache,omitempty"`
 	CommandTimeout        time.Duration           `json:"command_timeout,omitempty"`
 	MemoryPressurePercent float64                 `json:"memory_pressure_percent,omitempty"`
 	Capacity              WaitCapacity            `json:"-"`
@@ -106,6 +107,9 @@ func (r StartRequest) Validate() error {
 		if !granted {
 			return errors.New("worker shared Go module cache must be inside an explicit sandbox read grant")
 		}
+	}
+	if strings.TrimSpace(r.GoBuildCache) != "" && !filepath.IsAbs(r.GoBuildCache) {
+		return errors.New("worker shared Go build cache must be an absolute path")
 	}
 	return r.Task.Contract.Validate()
 }

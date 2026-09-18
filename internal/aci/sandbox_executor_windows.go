@@ -15,17 +15,26 @@ import (
 // opts out of broad ALL APPLICATION PACKAGES grants; task-scoped file access is
 // supplied by a unique capability SID and network remains denied by default.
 type WindowsSandboxExecutor struct {
-	root      string
-	readPaths []string
-	limits    processctl.Limits
-	readyErr  error
+	root       string
+	readPaths  []string
+	writePaths []string
+	limits     processctl.Limits
+	readyErr   error
 }
 
 func NewWindowsSandboxExecutor(root string, readPaths ...string) (*WindowsSandboxExecutor, error) {
-	return NewWindowsSandboxExecutorWithLimits(root, processctl.Limits{}, readPaths...)
+	return NewWindowsSandboxExecutorWithLimitsAndWritePaths(root, processctl.Limits{}, nil, readPaths...)
+}
+
+func NewWindowsSandboxExecutorWithWritePaths(root string, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	return NewWindowsSandboxExecutorWithLimitsAndWritePaths(root, processctl.Limits{}, writePaths, readPaths...)
 }
 
 func NewWindowsSandboxExecutorWithLimits(root string, limits processctl.Limits, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	return NewWindowsSandboxExecutorWithLimitsAndWritePaths(root, limits, nil, readPaths...)
+}
+
+func NewWindowsSandboxExecutorWithLimitsAndWritePaths(root string, limits processctl.Limits, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
 	}
@@ -33,7 +42,12 @@ func NewWindowsSandboxExecutorWithLimits(root string, limits processctl.Limits, 
 	if err != nil {
 		return nil, err
 	}
-	executor := &WindowsSandboxExecutor{root: filepath.Clean(abs), readPaths: append([]string(nil), readPaths...), limits: limits}
+	executor := &WindowsSandboxExecutor{
+		root:       filepath.Clean(abs),
+		readPaths:  append([]string(nil), readPaths...),
+		writePaths: append([]string(nil), writePaths...),
+		limits:     limits,
+	}
 	executor.readyErr = processctl.CheckSandboxHostReady(context.Background(), executor.root)
 	return executor, nil
 }
@@ -59,6 +73,7 @@ func (e *WindowsSandboxExecutor) Run(ctx context.Context, taskID string, spec Ex
 		OperationID:    spec.OperationID,
 		WorkspaceRoot:  e.root,
 		ReadPaths:      append([]string(nil), e.readPaths...),
+		WritePaths:     append([]string(nil), e.writePaths...),
 		Path:           spec.Path,
 		Args:           spec.Args,
 		Dir:            spec.Dir,
