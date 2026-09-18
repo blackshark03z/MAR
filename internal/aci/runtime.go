@@ -479,7 +479,16 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	}
 	baseName := strings.ToLower(filepath.Base(path))
 	isPythonCommand := baseName == "python.exe" || baseName == "python"
-	isPortablePython := isPythonCommand && len(cmd.Args) == 1 && filepath.ToSlash(filepath.Clean(cmd.Args[0])) == "scripts/portable_self_test.py"
+	isPortablePython := isPythonCommand &&
+		len(cmd.Args) == 8 &&
+		cmd.Args[0] == "-m" &&
+		cmd.Args[1] == "unittest" &&
+		cmd.Args[2] == "discover" &&
+		cmd.Args[3] == "-s" &&
+		filepath.ToSlash(filepath.Clean(cmd.Args[4])) == "portable_tests" &&
+		cmd.Args[5] == "-p" &&
+		cmd.Args[6] == "test_*.py" &&
+		cmd.Args[7] == "-v"
 	includeGit := isPythonCommand && !isPortablePython
 	env, err := r.commandEnvironment(path, includeGit)
 	if err != nil {

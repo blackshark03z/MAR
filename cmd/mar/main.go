@@ -480,7 +480,7 @@ func pythonPortableVerificationProfile(pythonExecutable string) verification.Pro
 	return verification.Profile{
 		ID: "python-portable",
 		Commands: []verification.Command{
-			{Name: pythonExecutable, Args: []string{"scripts/portable_self_test.py"}, Cwd: "."},
+			{Name: pythonExecutable, Args: []string{"-m", "unittest", "discover", "-s", "portable_tests", "-p", "test_*.py", "-v"}, Cwd: "."},
 			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
 		},
 	}

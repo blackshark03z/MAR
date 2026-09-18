@@ -320,6 +320,24 @@ func TestSandboxPythonEnvironmentExposesOnlyTrustedGitDirectory(t *testing.T) {
 	if foundHostOnly {
 		t.Fatalf("arbitrary host PATH leaked into sandbox: %q", pathValue)
 	}
+
+	portableArgs := []string{"-m", "unittest", "discover", "-s", "portable_tests", "-p", "test_*.py", "-v"}
+	if _, err := r.RunCommand(context.Background(), Command{Name: fakePython, Args: portableArgs}); err != nil {
+		t.Fatal(err)
+	}
+	var portablePath string
+	for _, item := range executor.last.Env {
+		if strings.HasPrefix(strings.ToUpper(item), "PATH=") {
+			portablePath = item[len("PATH="):]
+			break
+		}
+	}
+	for _, entry := range filepath.SplitList(portablePath) {
+		if strings.EqualFold(filepath.Clean(entry), filepath.Clean(filepath.Dir(fakeGit))) {
+			t.Fatalf("python-portable unexpectedly received trusted Git directory: %q", portablePath)
+		}
+	}
+
 	beforeCalls := executor.calls
 	if _, err := r.RunCommand(context.Background(), Command{Name: fakeGit, Args: []string{"status"}}); err == nil || !strings.Contains(err.Error(), "typed git_status/git_diff tools") {
 		t.Fatalf("direct Git execution was not rejected: %v", err)
