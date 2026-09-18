@@ -380,12 +380,7 @@ func TestLPACWritePathsAllowExplicitExternalWriteWithoutUpgradingReadPaths(t *te
 	if err := os.WriteFile(readPath, []byte("read-only"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	systemRoot := os.Getenv("SystemRoot")
-	if systemRoot == "" {
-		t.Fatal("SystemRoot is required")
-	}
-	cmd := filepath.Join(systemRoot, "System32", "cmd.exe")
-
+	probe := copySandboxProbe(t, workspace)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	result, err := RunSandboxedCommand(ctx, SandboxCommandSpec{
@@ -394,33 +389,20 @@ func TestLPACWritePathsAllowExplicitExternalWriteWithoutUpgradingReadPaths(t *te
 		WorkspaceRoot:  workspace,
 		ReadPaths:      []string{readRoot},
 		WritePaths:     []string{writeRoot},
-		Path:           cmd,
-		Args:           []string{"/d", "/c", "echo cache-data>\"" + writePath + "\""},
+		Path:           probe,
+		Args:           []string{"-test.run=TestSandboxProbeHelper"},
 		Dir:            workspace,
-		Env:            probeEnvironment("", "", "", "", "", ""),
+		Env:            probeEnvironment("write-scope", "", writePath, readPath, "", ""),
 		MaxOutputBytes: 16 << 10,
 	})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("explicit external WritePaths grant failed: err=%v exit=%d output=%s", err, result.ExitCode, result.Output)
 	}
-	if got, err := os.ReadFile(writePath); err != nil || !strings.Contains(string(got), "cache-data") {
-		t.Fatalf("explicit external write did not persist: got=%q err=%v", got, err)
+	if !strings.Contains(result.Output, "SANDBOX_WRITE_SCOPE_OK") {
+		t.Fatalf("write-scope probe did not report success: %s", result.Output)
 	}
-
-	result, err = RunSandboxedCommand(ctx, SandboxCommandSpec{
-		TaskID:         "sandbox-lpac-read-stays-readonly",
-		OperationID:    "deny-readpath-write",
-		WorkspaceRoot:  workspace,
-		ReadPaths:      []string{readRoot},
-		WritePaths:     []string{writeRoot},
-		Path:           cmd,
-		Args:           []string{"/d", "/c", "echo mutated>\"" + readPath + "\""},
-		Dir:            workspace,
-		Env:            probeEnvironment("", "", "", "", "", ""),
-		MaxOutputBytes: 16 << 10,
-	})
-	if err == nil && result.ExitCode == 0 {
-		t.Fatalf("read-only external grant unexpectedly allowed write: output=%s", result.Output)
+	if got, err := os.ReadFile(writePath); err != nil || string(got) != "cache-data" {
+		t.Fatalf("explicit external write did not persist: got=%q err=%v", got, err)
 	}
 	if got, err := os.ReadFile(readPath); err != nil || string(got) != "read-only" {
 		t.Fatalf("read-only grant was mutated: got=%q err=%v", got, err)
@@ -750,6 +732,20 @@ func TestSandboxProbeHelper(t *testing.T) {
 			t.Fatal("explicit read-only scope unexpectedly allowed write")
 		}
 		fmt.Println("SANDBOX_READ_SCOPE_OK")
+	case "write-scope":
+		readPath := os.Getenv("MAR_PROBE_SECRET")
+		writePath := os.Getenv("MAR_PROBE_OUTSIDE")
+		b, err := os.ReadFile(readPath)
+		if err != nil || string(b) != "read-only" {
+			t.Fatalf("explicit read scope unavailable: %q %v", b, err)
+		}
+		if err := os.WriteFile(writePath, []byte("cache-data"), 0o644); err != nil {
+			t.Fatalf("explicit write scope unavailable: %v", err)
+		}
+		if err := os.WriteFile(readPath, []byte("mutated"), 0o644); err == nil {
+			t.Fatal("explicit read-only scope unexpectedly allowed write")
+		}
+		fmt.Println("SANDBOX_WRITE_SCOPE_OK")
 	case "shared-read-hold":
 		readPath := os.Getenv("MAR_PROBE_SECRET")
 		marker := os.Getenv("MAR_PROBE_INSIDE")

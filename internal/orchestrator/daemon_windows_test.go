@@ -476,7 +476,7 @@ func TestDaemonStartupConfirmsAvailableKernelRecoveryProofWithoutReplacement(t *
 
 func TestDaemonPeriodicRecoverySkipsAttemptOwnedByLiveDaemon(t *testing.T) {
 	task := domain.Task{ID: "task-live-recovery", State: domain.TaskRunning, RunEpoch: 2}
-	attempt := domain.ExecutionAttempt{ID: "attempt-live-recovery", TaskID: task.ID, RunEpoch: 2, AuthorityState: domain.AttemptActive}
+	attempt := domain.ExecutionAttempt{ID: "attempt-live-recovery", TaskID: task.ID, RunEpoch: 2, AuthorityState: domain.AttemptActive, LeaseDeadline: time.Now().UTC().Add(time.Minute)}
 	store := &fakeDaemonStore{
 		tasks:     map[string]domain.Task{task.ID: task},
 		workspace: map[string]domain.Workspace{},
