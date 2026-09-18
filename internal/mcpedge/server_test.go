@@ -80,6 +80,29 @@ func (f *fakeBackend) ProjectContext(_ context.Context, projectID string) ([]ser
 	}}, nil
 }
 
+type advertisedProfileBackend struct {
+	fakeBackend
+	profiles    []string
+	recommended string
+}
+
+func (b *advertisedProfileBackend) ProjectContext(_ context.Context, projectID string) ([]service.ProjectContextItem, error) {
+	if projectID == "" {
+		projectID = "mar"
+	}
+	return []service.ProjectContextItem{{
+		ProjectID: projectID,
+		Head:      "abc123",
+		Policy:    domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: true, LocalGitWrite: true},
+		Capability: service.ProjectCapability{
+			State:                          "supported",
+			Ecosystems:                     []string{"artifact"},
+			SupportedVerificationProfiles:  append([]string(nil), b.profiles...),
+			RecommendedVerificationProfile: b.recommended,
+		},
+	}}, nil
+}
+
 type largeReadBackend struct{ fakeBackend }
 
 type largeReceiptBackend struct{ fakeBackend }
@@ -165,8 +188,8 @@ func TestSubmitRejectsUnsupportedVerificationProfileBeforeBackend(t *testing.T) 
 		t.Fatalf("unsupported verification profile reached backend submit: calls=%d", backend.submitCalls)
 	}
 	text, _ := json.Marshal(result.Content)
-	if !strings.Contains(string(text), "go-standard") || !strings.Contains(string(text), "go-docs") || !strings.Contains(string(text), "python-standard") {
-		t.Fatalf("validation error omitted supported profiles: %s", text)
+	if !strings.Contains(string(text), "go-standard") || !strings.Contains(string(text), "go-docs") {
+		t.Fatalf("validation error omitted project-advertised supported profiles: %s", text)
 	}
 
 	valid, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
@@ -179,6 +202,34 @@ func TestSubmitRejectsUnsupportedVerificationProfileBeforeBackend(t *testing.T) 
 	}
 	if backend.submitCalls != 1 {
 		t.Fatalf("supported verification profile did not reach backend exactly once: calls=%d", backend.submitCalls)
+	}
+}
+
+func TestSubmitUsesProjectAdvertisedProfilesForMarkerlessAndGoRelease(t *testing.T) {
+	cases := []struct {
+		name     string
+		profile  string
+		profiles []string
+	}{
+		{name: "markerless-research", profile: "research-artifacts", profiles: []string{"research-artifacts"}},
+		{name: "go-release", profile: "go-release", profiles: []string{"go-standard", "go-docs", "go-release"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &advertisedProfileBackend{profiles: tc.profiles, recommended: tc.profile}
+			session := connectTestMCP(t, backend)
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "submit", Arguments: map[string]any{
+				"idempotency_key": "advertised-" + tc.name, "contract": map[string]any{
+					"goal": "bounded project-advertised profile", "acceptance": []string{"done"}, "boundaries": []string{"bounded"}, "non_goals": []string{"none"}, "project_id": "project", "base_revision": "abc", "verification_profile": tc.profile, "priority": "P2", "authority": map[string]any{"local_file_write": false, "local_git_write": false, "network_allowed": false, "remote_git_write": false, "deploy_allowed": false},
+				},
+			}})
+			if err != nil || result.IsError {
+				t.Fatalf("project-advertised profile %q was rejected: err=%v result=%+v", tc.profile, err, result)
+			}
+			if backend.submitCalls != 1 {
+				t.Fatalf("project-advertised profile %q did not reach backend exactly once: calls=%d", tc.profile, backend.submitCalls)
+			}
+		})
 	}
 }
 

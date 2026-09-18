@@ -13,6 +13,8 @@ import (
 	"mar/internal/domain"
 )
 
+const researchArtifactVerificationProfile = "research-artifacts"
+
 type ProjectCapability struct {
 	State                          string   `json:"state"`
 	Ecosystems                     []string `json:"ecosystems,omitempty"`
@@ -42,7 +44,6 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 	if err != nil {
 		return ProjectCapability{}, err
 	}
-
 	pythonMarkers := make([]string, 0, len(pythonProjectMarkers))
 	for _, marker := range pythonProjectMarkers {
 		present, markerErr := rootMarkerExists(root, marker)
@@ -55,7 +56,12 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 	}
 	hasPython := len(pythonMarkers) != 0
 
-	capability := ProjectCapability{State: "unknown"}
+	capability := ProjectCapability{
+		State:                          "supported",
+		Ecosystems:                     []string{"artifact"},
+		SupportedVerificationProfiles:  []string{researchArtifactVerificationProfile},
+		RecommendedVerificationProfile: researchArtifactVerificationProfile,
+	}
 	switch {
 	case hasGo && hasPython:
 		capability.State = "mixed"
@@ -63,15 +69,14 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		capability.Languages = []string{"go", "python"}
 		capability.EvidenceMarkers = append([]string{"go.mod"}, pythonMarkers...)
 		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release", "python-standard"}
+		capability.RecommendedVerificationProfile = ""
 	case hasGo:
-		capability.State = "supported"
 		capability.Ecosystems = []string{"go"}
 		capability.Languages = []string{"go"}
 		capability.EvidenceMarkers = []string{"go.mod"}
 		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release"}
 		capability.RecommendedVerificationProfile = "go-standard"
 	case hasPython:
-		capability.State = "supported"
 		capability.Ecosystems = []string{"python"}
 		capability.Languages = []string{"python"}
 		capability.EvidenceMarkers = pythonMarkers

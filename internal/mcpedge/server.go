@@ -35,16 +35,32 @@ type submitArgs struct {
 	Contract       domain.GoalContract `json:"contract" jsonschema:"immutable MAR Goal Contract"`
 }
 
-func validatePublicVerificationProfile(profile string) error {
-	profile = strings.TrimSpace(profile)
-	switch profile {
-	case "go-standard", "go-docs", "python-standard":
-		return nil
-	case "":
+func validatePublicVerificationProfile(ctx context.Context, backend Backend, contract domain.GoalContract) error {
+	profile := strings.TrimSpace(contract.VerificationProfile)
+	if profile == "" {
 		return errors.New("verification_profile is required")
-	default:
-		return fmt.Errorf("verification_profile %q is unsupported; must be go-standard, go-docs, or python-standard", profile)
 	}
+	projectID := strings.TrimSpace(contract.ProjectID)
+	if projectID == "" {
+		return errors.New("project_id is required")
+	}
+	items, err := backend.ProjectContext(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("resolve project verification capability: %w", err)
+	}
+	if len(items) != 1 {
+		return fmt.Errorf("project %q capability resolution returned %d matches", projectID, len(items))
+	}
+	supported := items[0].Capability.SupportedVerificationProfiles
+	for _, allowed := range supported {
+		if profile == strings.TrimSpace(allowed) {
+			return nil
+		}
+	}
+	if len(supported) == 0 {
+		return fmt.Errorf("project %q advertises no supported verification profiles", projectID)
+	}
+	return fmt.Errorf("verification_profile %q is unsupported for project %q; supported profiles: %s", profile, projectID, strings.Join(supported, ", "))
 }
 
 type brainTurnArgs struct {
@@ -97,7 +113,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 		})
 	mcp.AddTool(server, &mcp.Tool{Name: "submit", Description: "Submit one immutable MAR Goal Contract for coding or mutation work. Resolve project fields with project operation=context first and use its capability/profile guidance instead of guessing verification_profile; submitted contracts still require one concrete supported profile."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args submitArgs) (*mcp.CallToolResult, map[string]any, error) {
-			if err := validatePublicVerificationProfile(args.Contract.VerificationProfile); err != nil {
+			if err := validatePublicVerificationProfile(ctx, backend, args.Contract); err != nil {
 				return nil, nil, err
 			}
 			task, created, err := backend.Submit(ctx, args.IdempotencyKey, args.Contract)

@@ -164,7 +164,12 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 }
 
 func verificationProfileRequiresGoModule(profile verification.Profile) bool {
-	return profile.ID != "python-standard"
+	switch profile.ID {
+	case "go-standard", "go-docs", "go-release":
+		return true
+	default:
+		return false
+	}
 }
 
 func validateSupportedV1Authority(authority domain.Authority) error {

@@ -455,6 +455,7 @@ func builtinVerificationProfiles(goExecutable, pythonExecutable string) []verifi
 		goStandardVerificationProfile(goExecutable),
 		goDocsVerificationProfile(goExecutable),
 		goReleaseVerificationProfile(goExecutable),
+		verification.ResearchArtifactProfile(),
 	}
 	if strings.TrimSpace(pythonExecutable) != "" {
 		profiles = append(profiles, pythonStandardVerificationProfile(pythonExecutable))

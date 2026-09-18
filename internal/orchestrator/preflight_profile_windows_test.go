@@ -8,14 +8,18 @@ import (
 	"mar/internal/verification"
 )
 
-func TestPythonStandardPreflightDoesNotRequireGoModule(t *testing.T) {
-	if verificationProfileRequiresGoModule(verification.Profile{ID: "python-standard"}) {
-		t.Fatal("python-standard unexpectedly requires go.mod")
+func TestPreflightRequiresGoModuleOnlyForGoProfiles(t *testing.T) {
+	for _, profile := range []verification.Profile{
+		{ID: "python-standard"},
+		verification.ResearchArtifactProfile(),
+	} {
+		if verificationProfileRequiresGoModule(profile) {
+			t.Fatalf("%s unexpectedly requires go.mod", profile.ID)
+		}
 	}
-	if !verificationProfileRequiresGoModule(verification.Profile{ID: "go-standard"}) {
-		t.Fatal("go-standard must continue to require go.mod")
-	}
-	if !verificationProfileRequiresGoModule(verification.Profile{ID: "go-docs"}) {
-		t.Fatal("go-docs must continue to require go.mod")
+	for _, id := range []string{"go-standard", "go-docs", "go-release"} {
+		if !verificationProfileRequiresGoModule(verification.Profile{ID: id}) {
+			t.Fatalf("%s must continue to require go.mod", id)
+		}
 	}
 }

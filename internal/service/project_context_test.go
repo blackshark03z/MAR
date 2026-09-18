@@ -69,9 +69,17 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 			},
 		},
 		{
-			name:    "unknown",
-			markers: map[string]string{"README.md": "# unknown\n"},
-			want:    ProjectCapability{State: "unknown"},
+			name: "markerless",
+			markers: map[string]string{
+				"README.md":     "# markerless\n",
+				"research.json": "{}\n",
+			},
+			want: ProjectCapability{
+				State:                          "supported",
+				Ecosystems:                     []string{"artifact"},
+				SupportedVerificationProfiles:  []string{"research-artifacts"},
+				RecommendedVerificationProfile: "research-artifacts",
+			},
 		},
 	}
 	for _, tt := range tests {

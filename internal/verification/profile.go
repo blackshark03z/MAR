@@ -22,6 +22,7 @@ type ChangeScope string
 const (
 	ChangeScopeAny               ChangeScope = "any"
 	ChangeScopeDocumentationOnly ChangeScope = "documentation-only"
+	ChangeScopeResearchArtifacts ChangeScope = "research-artifacts"
 )
 
 type Profile struct {
@@ -42,11 +43,11 @@ func (p Profile) Validate() error {
 		return errors.New("verification profile id is required")
 	}
 	switch p.EffectiveChangeScope() {
-	case ChangeScopeAny, ChangeScopeDocumentationOnly:
+	case ChangeScopeAny, ChangeScopeDocumentationOnly, ChangeScopeResearchArtifacts:
 	default:
 		return fmt.Errorf("verification profile change scope %q is not supported", p.ChangeScope)
 	}
-	if len(p.Commands) == 0 {
+	if len(p.Commands) == 0 && p.EffectiveChangeScope() != ChangeScopeResearchArtifacts {
 		return errors.New("verification profile requires at least one command")
 	}
 	for _, command := range p.Commands {
@@ -130,12 +131,20 @@ func cloneProfile(profile Profile) Profile {
 }
 
 func (p Profile) ValidateChangedPaths(paths []string) error {
-	if p.EffectiveChangeScope() != ChangeScopeDocumentationOnly {
+	switch p.EffectiveChangeScope() {
+	case ChangeScopeAny:
 		return nil
-	}
-	for _, changed := range paths {
-		if !isDocumentationPath(changed) {
-			return fmt.Errorf("verification profile %q only admits documentation changes; observed %q", p.ID, changed)
+	case ChangeScopeDocumentationOnly:
+		for _, changed := range paths {
+			if !isDocumentationPath(changed) {
+				return fmt.Errorf("verification profile %q only admits documentation changes; observed %q", p.ID, changed)
+			}
+		}
+	case ChangeScopeResearchArtifacts:
+		for _, changed := range paths {
+			if !isResearchArtifactPath(changed) {
+				return fmt.Errorf("verification profile %q only admits non-executable research/artifact changes; observed %q", p.ID, changed)
+			}
 		}
 	}
 	return nil
@@ -150,6 +159,19 @@ func isDocumentationPath(changed string) bool {
 	}
 	switch strings.ToLower(filepath.Ext(clean)) {
 	case ".md", ".mdx", ".rst", ".adoc", ".asciidoc", ".txt":
+		return true
+	default:
+		return false
+	}
+}
+
+func isResearchArtifactPath(changed string) bool {
+	if isDocumentationPath(changed) {
+		return true
+	}
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(changed)))
+	switch strings.ToLower(filepath.Ext(clean)) {
+	case ".json", ".jsonl", ".yaml", ".yml", ".toml", ".csv", ".tsv":
 		return true
 	default:
 		return false
