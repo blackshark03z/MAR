@@ -1,5 +1,7 @@
 # Current SoT — 2026-09-19
 
+**Active bounded correction before V1.3:** `docs/implementation/028_CONNECTION_USABILITY_TRUTH.md`. This fixes connection truth only: route readiness must not be presented as ChatGPT/Claude client usability. Existing stable endpoint mechanisms remain unchanged; no task/kernel redesign and no resubmission of completed CADS work.
+
 Forward MAR architecture is now governed by:
 
 - `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`;

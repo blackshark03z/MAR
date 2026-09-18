@@ -51,6 +51,11 @@ type remoteConnectorState struct {
 	ActiveSessionsAvailable bool       `json:"active_sessions_available"`
 	ActiveSessionsReason    string     `json:"active_sessions_reason,omitempty"`
 	RouteReady              bool       `json:"route_ready"`
+	ConnectionStage         string     `json:"connection_stage,omitempty"`
+	ClientAttached          bool       `json:"client_attached"`
+	ToolsDiscovered         bool       `json:"tools_discovered"`
+	UsableFromClient        bool       `json:"usable_from_client"`
+	EndpointStable          bool       `json:"endpoint_stable"`
 	LastError               string     `json:"last_error,omitempty"`
 }
 
@@ -291,6 +296,8 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 		ID: profile.ID, PreferredMode: profile.PreferredMode, StableBaseURL: profile.StableBaseURL,
 		LocalTarget: m.localBaseURL, Initialized: telemetry.initialized, ToolsListed: telemetry.toolsListed,
 		Requests: telemetry.requests, LastError: telemetry.stableError, ActiveSessionsAvailable: sessionsAvailable,
+		ClientAttached: telemetry.initialized, ToolsDiscovered: telemetry.toolsListed,
+		EndpointStable: profile.PreferredMode == store.RemoteConnectorModeStable, ConnectionStage: "ROUTE_UNAVAILABLE",
 	}
 	switch {
 	case !telemetry.sessionTrackingSeen:
@@ -344,6 +351,15 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 			}
 			return state
 		}
+	}
+
+	state.ConnectionStage = "ROUTE_READY"
+	if telemetry.initialized {
+		state.ConnectionStage = "CLIENT_ATTACHED"
+	}
+	if telemetry.initialized && telemetry.toolsListed {
+		state.ConnectionStage = "USABLE"
+		state.UsableFromClient = true
 	}
 
 	if telemetry.initialized {

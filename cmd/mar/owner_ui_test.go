@@ -617,11 +617,11 @@ func newOwnerSubmitTestBackend(t *testing.T, markers map[string]string) (*ownerU
 
 func TestOwnerVerificationProfileSelectionUsesCapabilityContract(t *testing.T) {
 	tests := []struct {
-		name      string
-		requested string
+		name       string
+		requested  string
 		capability service.ProjectCapability
-		want      string
-		wantErr   bool
+		want       string
+		wantErr    bool
 	}{
 		{
 			name: "markerless recommended research-artifacts",
@@ -1328,6 +1328,16 @@ func ownerRuntimeConnectionContract(t *testing.T) string {
 	return rec.Body.String()
 }
 
+func TestOwnerUIRouteReadinessDoesNotImplyClientUsability(t *testing.T) {
+	manager := &remoteBridgeManager{quickBaseURL: "https://route.example.invalid", telemetry: map[string]*remoteConnectorTelemetry{store.RemoteConnectorChatGPTWeb: {}}}
+	manager.mu.Lock()
+	state := manager.connectorStateLocked(store.RemoteConnectorProfile{ID: store.RemoteConnectorChatGPTWeb, PreferredMode: store.RemoteConnectorModeTemporary}, manager.telemetry[store.RemoteConnectorChatGPTWeb])
+	manager.mu.Unlock()
+	if !state.RouteReady || state.ConnectionStage != "ROUTE_READY" || state.ClientAttached || state.ToolsDiscovered || state.UsableFromClient {
+		t.Fatalf("route readiness must remain distinct from attached/usable client truth: %+v", state)
+	}
+}
+
 func TestOwnerUIStatefulSessionTelemetryUsesObservedSessionIDs(t *testing.T) {
 	manager := &remoteBridgeManager{quickBaseURL: "https://route.example.invalid", telemetry: map[string]*remoteConnectorTelemetry{store.RemoteConnectorClaudeWeb: {}}}
 	now := time.Now().UTC()
@@ -1338,6 +1348,9 @@ func TestOwnerUIStatefulSessionTelemetryUsesObservedSessionIDs(t *testing.T) {
 	manager.mu.Unlock()
 	if !state.ActiveSessionsAvailable || state.ActiveSessions != 1 {
 		t.Fatalf("expected one authoritative active session, got %+v", state)
+	}
+	if state.ConnectionStage != "USABLE" || !state.ClientAttached || !state.ToolsDiscovered || !state.UsableFromClient {
+		t.Fatalf("initialize + tools/list must establish usable client truth: %+v", state)
 	}
 
 	manager.observe(store.RemoteConnectorClaudeWeb, mcpedge.RemoteHTTPEvent{At: now.Add(time.Second), HTTPMethod: http.MethodDelete, SessionID: "session-real-1"})
@@ -1503,7 +1516,7 @@ func TestOwnerUIOpenAITunnelIdentitySurvivesRestart(t *testing.T) {
 }
 func TestOwnerUIProviderOverviewDoesNotDoubleCountGPTFallback(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"primaryConnections", "openai-tunnel", "chatgpt-web", "routeReady(tunnel)", "routeReady(fallback)"} {
+	for _, marker := range []string{"primaryConnections", "openai-tunnel", "chatgpt-web", "connectionUsable(tunnel)", "connectionUsable(fallback)", "routeReady(fallback)"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("provider aggregation truth contract missing %q", marker)
 		}

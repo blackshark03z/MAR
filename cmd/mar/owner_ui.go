@@ -200,6 +200,11 @@ type ownerConnectionView struct {
 	LocalTarget             string     `json:"local_target,omitempty"`
 	TemporaryLink           bool       `json:"temporary_link,omitempty"`
 	RouteReady              bool       `json:"route_ready,omitempty"`
+	ConnectionStage         string     `json:"connection_stage,omitempty"`
+	ClientAttached          bool       `json:"client_attached,omitempty"`
+	ToolsDiscovered         bool       `json:"tools_discovered,omitempty"`
+	UsableFromClient        bool       `json:"usable_from_client,omitempty"`
+	EndpointStable          bool       `json:"endpoint_stable,omitempty"`
 	Initialized             bool       `json:"initialized,omitempty"`
 	ToolsListed             bool       `json:"tools_listed,omitempty"`
 	Requests                int64      `json:"requests,omitempty"`
@@ -1085,6 +1090,8 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			ConnectionURL: connector.PublicURL, StableBaseURL: connector.StableBaseURL, StableURL: connector.StableURL,
 			TemporaryURL: connector.TemporaryURL, PreferredMode: connector.PreferredMode, LocalTarget: connector.LocalTarget,
 			TemporaryLink: connector.PreferredMode == store.RemoteConnectorModeTemporary, RouteReady: connector.RouteReady,
+			ConnectionStage: connector.ConnectionStage, ClientAttached: connector.ClientAttached, ToolsDiscovered: connector.ToolsDiscovered,
+			UsableFromClient: connector.UsableFromClient, EndpointStable: connector.EndpointStable,
 			Initialized: connector.Initialized, ToolsListed: connector.ToolsListed, Requests: connector.Requests,
 			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
 			ActiveSessionsAvailable: connector.ActiveSessionsAvailable,

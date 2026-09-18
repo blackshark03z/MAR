@@ -1,5 +1,9 @@
 # MAR — Current Tech-Lead Handoff
 
+## Connection usability correction — 2026-09-19
+
+Owner real-use proved that a healthy public MCP route can exist while the current Web client has not initialized/discovered MAR. The bounded correction is `docs/implementation/028_CONNECTION_USABILITY_TRUTH.md`: Streamable HTTP connection truth is now derived as `ROUTE_READY -> CLIENT_ATTACHED -> USABLE`; route readiness alone is not client usability. OpenAI Secure MCP Tunnel remains the primary stable GPT path; temporary Server URL/Quick Tunnel remains fallback/debug. Canonical MCP tool names are unchanged and no new gateway tool is authorized by this slice.
+
 ## Forward architecture update — 2026-09-19
 
 The repository entered this SoT consolidation clean/aligned on `master` at `ef271ca967cbc66471f6796038f4ccfda53c6598`.
