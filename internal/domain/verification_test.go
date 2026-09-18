@@ -93,6 +93,43 @@ func TestVerificationEvidenceAllowsAcceptanceOnlyPass(t *testing.T) {
 	}
 }
 
+func TestTaskResultAllowsExplicitEmptyVerificationExecution(t *testing.T) {
+	result := TaskResult{
+		ID:                   "result-research",
+		TaskID:               "task-research",
+		Version:              1,
+		GoalHash:             "goal-hash",
+		BaseRevision:         "base",
+		FinalRevision:        "candidate",
+		ChangedAreas:         []string{"README.md"},
+		EvidenceID:           "evidence-research",
+		VerificationExecuted: []string{},
+		PassFailEvidence:     []string{"verification_evidence:evidence-research", "acceptance:1:PASS"},
+		UnresolvedRisks:      []string{},
+		IntegrationStatus:    "NOT_INTEGRATED",
+		WorkspaceDisposition: "RETAINED",
+		Verdict:              ResultVerified,
+		CreatedAt:            time.Now().UTC(),
+	}
+	var err error
+	result.IntegrityHash, err = result.IntegrityDigest()
+	if err != nil || !result.IntegrityValid() {
+		t.Fatalf("explicit empty verification execution was rejected: err=%v result=%+v", err, result)
+	}
+
+	implicit := result
+	implicit.VerificationExecuted = nil
+	if err := implicit.ValidateIdentity(); err == nil {
+		t.Fatal("nil verification execution state was accepted")
+	}
+
+	missingEvidence := result
+	missingEvidence.PassFailEvidence = nil
+	if err := missingEvidence.ValidateIdentity(); err == nil {
+		t.Fatal("empty pass/fail evidence was accepted")
+	}
+}
+
 func TestTaskResultIntegrityBindsExplicitRiskAndResultIdentity(t *testing.T) {
 	result := TaskResult{
 		ID:                   "result-1",

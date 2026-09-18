@@ -145,6 +145,9 @@ func TestVerifierResearchArtifactsZeroCommandPersistsVerifiedEvidence(t *testing
 	if result.Verdict != domain.ResultVerified || !result.IntegrityValid() {
 		t.Fatalf("research-artifacts zero-command result was not VERIFIED: %+v", result)
 	}
+	if len(result.VerificationExecuted) != 0 {
+		t.Fatalf("research-artifacts recorded unexpected verification commands: %+v", result.VerificationExecuted)
+	}
 	if len(runtime.calls) != 0 {
 		t.Fatalf("research-artifacts unexpectedly executed commands: %+v", runtime.calls)
 	}

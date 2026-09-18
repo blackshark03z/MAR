@@ -246,8 +246,8 @@ func (r TaskResult) ValidateIdentity() error {
 	if r.ChangedAreas == nil || r.UnresolvedRisks == nil {
 		return errors.New("task result changed_areas and unresolved_risks must be explicit arrays")
 	}
-	if len(r.VerificationExecuted) == 0 || len(r.PassFailEvidence) == 0 {
-		return errors.New("task result requires verification and pass/fail evidence")
+	if r.VerificationExecuted == nil || len(r.PassFailEvidence) == 0 {
+		return errors.New("task result requires explicit verification execution state and pass/fail evidence")
 	}
 	if r.ResourceSummary.AgentTurns < 0 || r.ResourceSummary.AgentToolCalls < 0 || r.ResourceSummary.ModelInputTokens < 0 || r.ResourceSummary.ModelOutputTokens < 0 || r.ResourceSummary.ModelTotalTokens < 0 {
 		return errors.New("task result resource summary cannot be negative")
