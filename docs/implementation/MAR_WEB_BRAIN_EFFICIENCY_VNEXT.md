@@ -71,7 +71,7 @@ WEB CHAT
    v
 MAR SESSION BOUNDARY
    |
-   +-- Task Capsule / delta context
+   +-- DecisionProjection / delta context
    +-- Project Intelligence
    +-- deterministic compound operations
    +-- workspace / sandbox / authority
@@ -84,22 +84,18 @@ LOCAL REPOSITORY
 
 ## Stable pre-release priorities
 
-### P0-A — Compact Task Capsule
+### P0-A — Compact outer Web-brain relay — `SLICE_A_IMPLEMENTED`
 
-Add a compact deterministic state projection suitable for Web-brain turns.
+Source review after the initial VNext plan confirmed that MAR already has the bounded context mechanisms this item was trying to create:
 
-Include:
-- task goal/acceptance summary;
-- base revision/current candidate;
-- lifecycle state;
-- material decisions/checkpoint;
-- changed paths/areas;
-- focused validation status;
-- unresolved blockers/failures;
-- recent relevant source references;
-- references to raw command/tool outputs instead of repeated payloads.
+- Project Brain V1 already performs deterministic focused repository retrieval;
+- DecisionProjection already rebuilds bounded current task/candidate/checkpoint/evidence context from durable truth instead of replaying an append-only transcript.
 
-Raw evidence remains durable and expandable.
+Therefore MAR does **not** add a second Task Capsule subsystem.
+
+Slice A instead removes avoidable duplication at the outer MCP/Web boundary. `brain_turn` now supports an additive `response_mode=structured` mode. The authoritative `available + WebTurn` payload, including the exact TurnRequest, remains unchanged in `StructuredContent`; only the compatibility `TextContent` copy is reduced to a bounded identity receipt. Omitting `response_mode` keeps the previous `compat` behavior exactly for cached/older clients.
+
+A large-fixture regression requires structured mode to preserve semantic StructuredContent equality while reducing the serialized application-level CallToolResult to at most 60% of compatibility mode. No authority, task identity, DecisionProjection, Project Brain, verification, integration or recovery semantics change.
 
 ### P0-B — Delta/event-oriented brain context
 
@@ -217,16 +213,20 @@ Before this optimization line is Stable:
 
 ## Slice plan
 
-### Slice A — now
+### Slice A — implemented
 
-Implement **Compact Task Capsule + raw-result references/delta-ready projection** without changing task authority, verification profiles or integration semantics.
+`SLICE_A_IMPLEMENTED`
 
-Acceptance:
-- capsule is deterministic from existing durable state;
-- raw outputs/evidence remain retrievable;
-- capsule omits repeated large raw payloads;
-- existing MCP/tool behavior remains backward compatible;
-- telemetry records capsule/raw sizes when practical.
+Implement the **modern structured `brain_turn` response mode** on top of the existing DecisionProjection/Project Brain architecture.
+
+Acceptance achieved by design/regression:
+- default `compat` remains backward compatible and preserves the old dual full TextContent + StructuredContent response;
+- opt-in `structured` preserves the exact authoritative StructuredContent payload required for Web cognition;
+- structured mode replaces only the duplicated full TextContent copy with a bounded identity receipt;
+- a large-fixture regression enforces semantic payload equality and a serialized application-result size of no more than 60% of compat;
+- no new database authority, internal model, Project Brain, task authority, verification or integration policy is introduced.
+
+This slice addresses the proven outer-relay amplification from R-020 without reopening the already-bounded inner DecisionProjection.
 
 ### Slice B
 

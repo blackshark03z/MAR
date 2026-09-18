@@ -47,8 +47,9 @@ func validatePublicVerificationProfile(profile string) error {
 	}
 }
 
-type taskArgs struct {
-	TaskID string `json:"task_id" jsonschema:"MAR durable task id"`
+type brainTurnArgs struct {
+	TaskID       string `json:"task_id" jsonschema:"MAR durable task id"`
+	ResponseMode string `json:"response_mode,omitempty" jsonschema:"compat (default) or structured"`
 }
 
 type projectArgs struct {
@@ -121,13 +122,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	addRawTaskReadTool(server, "brain_turn", "Read the pending durable GPT Web brain turn for one task.", func(ctx context.Context, taskID string) (any, error) {
-		turn, available, err := backend.PendingWebTurn(ctx, taskID)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"available": available, "turn": turn}, nil
-	})
+	addBrainTurnTool(server, backend)
 	mcp.AddTool(server, &mcp.Tool{Name: "brain_respond", Description: "Return one response for the exact pending GPT Web brain turn; coding tools execute later inside the worker sandbox."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args brainRespondArgs) (*mcp.CallToolResult, map[string]any, error) {
 			turn, created, err := backend.RespondWebTurn(ctx, args.TaskID, args.TurnID, model.Message{Role: model.RoleAssistant, Content: args.Content, ToolCalls: args.ToolCalls}, args.FinishReason)
@@ -302,17 +297,26 @@ func compactWebTurnReceipt(turn domain.WebTurn) map[string]any {
 	}
 }
 
-func addRawTaskReadTool(server *mcp.Server, name, description string, read func(context.Context, string) (any, error)) {
+func addBrainTurnTool(server *mcp.Server, backend Backend) {
 	inputSchema := map[string]any{
-		"type": "object", "properties": map[string]any{"task_id": map[string]any{"type": "string"}},
-		"required": []string{"task_id"}, "additionalProperties": false,
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{"type": "string"},
+			"response_mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"compat", "structured"},
+				"description": "compat (default) repeats the full JSON in TextContent and StructuredContent; structured keeps the exact JSON only in StructuredContent and emits a compact text receipt",
+			},
+		},
+		"required":             []string{"task_id"},
+		"additionalProperties": false,
 	}
-	server.AddTool(&mcp.Tool{Name: name, Description: description, InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
+	server.AddTool(&mcp.Tool{Name: "brain_turn", Description: "Read the pending durable GPT Web brain turn for one task. response_mode may be compat (default) or structured.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if req == nil || req.Params == nil {
 				return rawToolError(errors.New("tool request parameters are required")), nil
 			}
-			var args taskArgs
+			var args brainTurnArgs
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return rawToolError(fmt.Errorf("decode tool arguments: %w", err)), nil
 			}
@@ -320,15 +324,41 @@ func addRawTaskReadTool(server *mcp.Server, name, description string, read func(
 			if args.TaskID == "" {
 				return rawToolError(errors.New("task_id is required")), nil
 			}
-			value, err := read(ctx, args.TaskID)
+			mode := strings.ToLower(strings.TrimSpace(args.ResponseMode))
+			if mode == "" {
+				mode = "compat"
+			}
+			if mode != "compat" && mode != "structured" {
+				return rawToolError(fmt.Errorf("brain_turn response_mode %q is unsupported; must be compat or structured", args.ResponseMode)), nil
+			}
+			turn, available, err := backend.PendingWebTurn(ctx, args.TaskID)
 			if err != nil {
 				return rawToolError(err), nil
 			}
+			value := map[string]any{"available": available, "turn": turn}
 			payload, err := json.Marshal(value)
 			if err != nil {
-				return nil, fmt.Errorf("marshal %s tool result: %w", name, err)
+				return nil, fmt.Errorf("marshal brain_turn tool result: %w", err)
 			}
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(payload)}}, StructuredContent: json.RawMessage(payload)}, nil
+			if mode == "structured" {
+				turnID := "-"
+				attemptID := "-"
+				runEpoch := int64(0)
+				if available {
+					turnID = turn.ID
+					attemptID = turn.AttemptID
+					runEpoch = turn.RunEpoch
+				}
+				receipt := fmt.Sprintf("brain_turn structured payload is authoritative; task_id=%s turn_id=%s attempt_id=%s run_epoch=%d", args.TaskID, turnID, attemptID, runEpoch)
+				return &mcp.CallToolResult{
+					Content:           []mcp.Content{&mcp.TextContent{Text: receipt}},
+					StructuredContent: json.RawMessage(payload),
+				}, nil
+			}
+			return &mcp.CallToolResult{
+				Content:           []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+				StructuredContent: json.RawMessage(payload),
+			}, nil
 		})
 }
 

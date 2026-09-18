@@ -264,6 +264,19 @@ Any future optimization must preserve:
 - no dependence on implicit Web conversation memory for Goal/authority truth;
 - no hidden client state promoted into execution authority.
 
+## Slice A implementation result — structured response mode
+
+MAR VNext Slice A implements the lowest-risk R-020 experiment as an additive `brain_turn` transport option:
+
+- omitted `response_mode` remains `compat` and preserves the previous full TextContent + StructuredContent representation for cached/older clients;
+- `response_mode=structured` keeps the exact authoritative `available + WebTurn` payload in StructuredContent, including the complete bounded TurnRequest and durable identity metadata;
+- structured mode replaces only the duplicated full TextContent JSON with a compact receipt containing task/turn/attempt/run-epoch identity;
+- `brain_respond`, stale-turn rejection, request/response integrity and durable WebTurn semantics are unchanged.
+
+A large-fixture regression compares the two modes against the same WebTurn. It requires StructuredContent semantic equality and requires the serialized structured-mode CallToolResult to be no more than 60% of compatibility mode. This targets the previously reconstructed ~2.15x application-level amplification without claiming anything about hidden Web-client/model transcript retention.
+
+This implementation also confirms that DecisionProjection is already MAR's bounded inner task/context projection; no second Task Capsule or parallel Project Brain subsystem is required for Slice A.
+
 ## Phase-0 decision
 
 Treat external Web cognition context as a **P0 cross-boundary hypothesis**.

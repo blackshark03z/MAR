@@ -92,6 +92,15 @@ func (b *largeReceiptBackend) StatusSnapshot(_ context.Context, taskID string) (
 	return service.TaskStatusSnapshot{Task: domain.Task{ID: taskID, State: domain.TaskInputRequired, RunEpoch: 4, Contract: domain.GoalContract{Goal: strings.Repeat("status-secret-marker-", 8<<10), ProjectID: "mar"}}, BrainTurnAvailable: true, Detail: "waiting", NextAction: "brain_turn"}, nil
 }
 
+func (b *largeReceiptBackend) PendingWebTurn(_ context.Context, taskID string) (domain.WebTurn, bool, error) {
+	request := json.RawMessage(`{"messages":[{"role":"user","content":"` + strings.Repeat("brain-turn-request-marker-", 8<<10) + `"}],"tools":[]}`)
+	return domain.WebTurn{
+		ID: "turn-current", TaskID: taskID, AttemptID: "attempt-current", RunEpoch: 4,
+		RequestID: "request-current", Request: request, RequestHash: "request-hash", IntegrityHash: "integrity-hash",
+		CreatedAt: time.Unix(2, 0).UTC(),
+	}, true, nil
+}
+
 func (b *largeReceiptBackend) RespondWebTurn(_ context.Context, taskID, turnID string, _ model.Message, _ string) (domain.WebTurn, bool, error) {
 	now := time.Unix(2, 0).UTC()
 	return domain.WebTurn{ID: turnID, TaskID: taskID, AttemptID: "attempt-current", RunEpoch: 4, RequestID: "request-current", Request: json.RawMessage(`{"secret":"` + strings.Repeat("brain-secret-marker-", 8<<10) + `"}`), ResponseHash: "response-hash", RespondedAt: &now}, true, nil
@@ -230,6 +239,64 @@ func TestSubmitStatusAndBrainRespondUseCompactNoEchoReceipts(t *testing.T) {
 	brainRaw, _ := json.Marshal(brainResult.StructuredContent)
 	if strings.Contains(string(brainRaw), "brain-secret-marker-") || len(brainRaw) > 4096 {
 		t.Fatalf("brain_respond receipt echoed request: len=%d", len(brainRaw))
+	}
+}
+
+func TestBrainTurnStructuredModePreservesStructuredPayloadAndCutsDuplicateText(t *testing.T) {
+	session := connectTestMCP(t, &largeReceiptBackend{})
+
+	compat, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{
+		"task_id": "task-large-receipt",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	structured, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{
+		"task_id": "task-large-receipt", "response_mode": "structured",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if compat.IsError || structured.IsError {
+		t.Fatalf("brain_turn mode call failed: compat=%+v structured=%+v", compat, structured)
+	}
+
+	compatStructured, err := json.Marshal(compat.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	structuredStructured, err := json.Marshal(structured.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(compatStructured) != string(structuredStructured) {
+		t.Fatal("structured response mode changed the authoritative brain_turn payload")
+	}
+	if !strings.Contains(string(structuredStructured), "brain-turn-request-marker-") {
+		t.Fatal("structured response mode lost the exact TurnRequest content")
+	}
+
+	structuredText, err := json.Marshal(structured.Content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(structuredText), "brain-turn-request-marker-") {
+		t.Fatal("structured response mode duplicated TurnRequest content into TextContent")
+	}
+	if !strings.Contains(string(structuredText), "turn-current") || !strings.Contains(string(structuredText), "attempt-current") {
+		t.Fatalf("structured response mode omitted stable turn identity from compact receipt: %s", structuredText)
+	}
+
+	compatSerialized, err := json.Marshal(compat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	structuredSerialized, err := json.Marshal(structured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(structuredSerialized)*100 > len(compatSerialized)*60 {
+		t.Fatalf("structured response mode did not materially reduce application payload: structured=%d compat=%d ratio=%.3f", len(structuredSerialized), len(compatSerialized), float64(len(structuredSerialized))/float64(len(compatSerialized)))
 	}
 }
 
