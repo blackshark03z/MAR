@@ -62,8 +62,13 @@ func (p Profile) Validate() error {
 				return fmt.Errorf("verification go subcommand %q is not allowed", sub)
 			}
 		case "python", "python.exe":
+			if strings.TrimSpace(p.ID) == "python-portable" &&
+				len(command.Args) == 1 &&
+				filepath.ToSlash(filepath.Clean(command.Args[0])) == "scripts/portable_self_test.py" {
+				continue
+			}
 			if len(command.Args) < 2 || command.Args[0] != "-m" {
-				return errors.New("verification Python command must use an allowed standard module")
+				return errors.New("verification Python command must use an allowed standard module or the bounded scripts/portable_self_test.py entrypoint")
 			}
 			module := strings.ToLower(strings.TrimSpace(command.Args[1]))
 			if module != "unittest" && module != "compileall" {

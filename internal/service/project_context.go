@@ -13,7 +13,10 @@ import (
 	"mar/internal/domain"
 )
 
-const researchArtifactVerificationProfile = "research-artifacts"
+const (
+	researchArtifactVerificationProfile = "research-artifacts"
+	pythonPortableVerificationProfile   = "python-portable"
+)
 
 type ProjectCapability struct {
 	State                          string   `json:"state"`
@@ -55,12 +58,19 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		}
 	}
 	hasPython := len(pythonMarkers) != 0
-	const pythonSelfTestMarker = "scripts/self_test.py"
+	const (
+		pythonSelfTestMarker     = "scripts/self_test.py"
+		pythonPortableTestMarker = "scripts/portable_self_test.py"
+	)
 	hasPythonSelfTest, err := rootMarkerExists(root, pythonSelfTestMarker)
 	if err != nil {
 		return ProjectCapability{}, err
 	}
-	hasPythonCapability := hasPython || hasPythonSelfTest
+	hasPythonPortableTest, err := rootMarkerExists(root, pythonPortableTestMarker)
+	if err != nil {
+		return ProjectCapability{}, err
+	}
+	hasPythonCapability := hasPython || hasPythonSelfTest || hasPythonPortableTest
 
 	capability := ProjectCapability{
 		State:                          "supported",
@@ -77,7 +87,14 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		if !hasPython && hasPythonSelfTest {
 			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonSelfTestMarker)
 		}
-		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release", "python-standard"}
+		if hasPythonPortableTest {
+			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
+		}
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release"}
+		if hasPythonPortableTest {
+			capability.SupportedVerificationProfiles = append(capability.SupportedVerificationProfiles, pythonPortableVerificationProfile)
+		}
+		capability.SupportedVerificationProfiles = append(capability.SupportedVerificationProfiles, "python-standard")
 		capability.RecommendedVerificationProfile = ""
 	case hasGo:
 		capability.Ecosystems = []string{"go"}
@@ -88,16 +105,30 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 	case hasPython:
 		capability.Ecosystems = []string{"python"}
 		capability.Languages = []string{"python"}
-		capability.EvidenceMarkers = pythonMarkers
-		capability.SupportedVerificationProfiles = []string{"python-standard"}
-		capability.RecommendedVerificationProfile = "python-standard"
-	case hasPythonSelfTest:
+		capability.EvidenceMarkers = append([]string(nil), pythonMarkers...)
+		if hasPythonPortableTest {
+			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
+			capability.SupportedVerificationProfiles = []string{pythonPortableVerificationProfile, "python-standard"}
+			capability.RecommendedVerificationProfile = pythonPortableVerificationProfile
+		} else {
+			capability.SupportedVerificationProfiles = []string{"python-standard"}
+			capability.RecommendedVerificationProfile = "python-standard"
+		}
+	case hasPythonSelfTest || hasPythonPortableTest:
 		capability.State = "mixed"
 		capability.Ecosystems = []string{"artifact", "python"}
 		capability.Languages = []string{"python"}
-		capability.EvidenceMarkers = []string{pythonSelfTestMarker}
-		capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, "python-standard"}
-		capability.RecommendedVerificationProfile = ""
+		if hasPythonSelfTest {
+			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonSelfTestMarker)
+		}
+		if hasPythonPortableTest {
+			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
+			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, pythonPortableVerificationProfile, "python-standard"}
+			capability.RecommendedVerificationProfile = pythonPortableVerificationProfile
+		} else {
+			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, "python-standard"}
+			capability.RecommendedVerificationProfile = ""
+		}
 	}
 	return capability, nil
 }

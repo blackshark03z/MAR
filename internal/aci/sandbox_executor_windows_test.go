@@ -112,7 +112,7 @@ func TestSandboxCommandEnvironmentDoesNotInheritAmbientSecrets(t *testing.T) {
 	}
 	t.Setenv("MAR_AMBIENT_SECRET", "must-not-cross-boundary")
 	commandPath := filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe")
-	env, err := runtime.commandEnvironment(commandPath)
+	env, err := runtime.commandEnvironment(commandPath, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -477,7 +477,11 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	if err != nil {
 		return ExecResult{}, fmt.Errorf("resolve command %q: %w", cmd.Name, err)
 	}
-	env, err := r.commandEnvironment(path)
+	baseName := strings.ToLower(filepath.Base(path))
+	isPythonCommand := baseName == "python.exe" || baseName == "python"
+	isPortablePython := isPythonCommand && len(cmd.Args) == 1 && filepath.ToSlash(filepath.Clean(cmd.Args[0])) == "scripts/portable_self_test.py"
+	includeGit := isPythonCommand && !isPortablePython
+	env, err := r.commandEnvironment(path, includeGit)
 	if err != nil {
 		return ExecResult{}, err
 	}
@@ -560,7 +564,7 @@ func (r *Runtime) ensureGoTelemetryOff() error {
 	return nil
 }
 
-func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
+func (r *Runtime) commandEnvironment(commandPath string, includeGit bool) ([]string, error) {
 	requiresSanitized := r.executor != nil && r.executor.IsolationLevel() == IsolationEnforcedSandbox
 	if policy, ok := r.executor.(sandboxEnvironmentPolicy); ok && policy.RequiresSanitizedEnvironment() {
 		requiresSanitized = true
@@ -587,7 +591,7 @@ func (r *Runtime) commandEnvironment(commandPath string) ([]string, error) {
 		}
 	}
 	pathEntries := []string{filepath.Dir(commandPath)}
-	if r.gitExecutable != "" {
+	if includeGit && r.gitExecutable != "" {
 		pathEntries = append(pathEntries, filepath.Dir(r.gitExecutable))
 	}
 	pathEntries = append(pathEntries, filepath.Join(systemRoot, "System32"), systemRoot)

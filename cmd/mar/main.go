@@ -458,7 +458,10 @@ func builtinVerificationProfiles(goExecutable, pythonExecutable string) []verifi
 		verification.ResearchArtifactProfile(),
 	}
 	if strings.TrimSpace(pythonExecutable) != "" {
-		profiles = append(profiles, pythonStandardVerificationProfile(pythonExecutable))
+		profiles = append(profiles,
+			pythonStandardVerificationProfile(pythonExecutable),
+			pythonPortableVerificationProfile(pythonExecutable),
+		)
 	}
 	return profiles
 }
@@ -468,6 +471,16 @@ func pythonStandardVerificationProfile(pythonExecutable string) verification.Pro
 		ID: "python-standard",
 		Commands: []verification.Command{
 			{Name: pythonExecutable, Args: []string{"-m", "unittest", "discover", "-v"}, Cwd: "."},
+			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
+		},
+	}
+}
+
+func pythonPortableVerificationProfile(pythonExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "python-portable",
+		Commands: []verification.Command{
+			{Name: pythonExecutable, Args: []string{"scripts/portable_self_test.py"}, Cwd: "."},
 			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
 		},
 	}

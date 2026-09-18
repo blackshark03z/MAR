@@ -114,8 +114,8 @@ func TestBuiltinVerificationProfilesIncludeReleaseResearchAndPythonOnlyWhenAvail
 		t.Fatalf("unexpected Go/research built-in verification profiles: %+v", withoutPython)
 	}
 	withPython := builtinVerificationProfiles(goExecutable, pythonExecutable)
-	if len(withPython) != 5 || withPython[4].ID != "python-standard" {
-		t.Fatalf("python-standard was not registered with an available interpreter: %+v", withPython)
+	if len(withPython) != 6 || withPython[4].ID != "python-standard" || withPython[5].ID != "python-portable" {
+		t.Fatalf("Python verification profiles were not registered with an available interpreter: %+v", withPython)
 	}
 }
 

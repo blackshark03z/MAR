@@ -49,6 +49,15 @@ func RequireLoopbackTCP(t testing.TB) {
 // execute these tests when the tool is installed.
 func RequireExecutable(t testing.TB, name string) string {
 	t.Helper()
+	if name == "git" {
+		inside, err := InAppContainer()
+		if err != nil {
+			t.Fatalf("query Git verification capability: %v", err)
+		}
+		if inside {
+			t.Skip("host Git/MSYS fixtures require execution outside an AppContainer; sandbox Git remains broker-only")
+		}
+	}
 	path, err := exec.LookPath(name)
 	if err != nil {
 		t.Skipf("%s is unavailable in this verification environment: %v", name, err)
