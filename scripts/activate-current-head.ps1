@@ -202,6 +202,19 @@ try {
     & $launcher -RepoRoot $RepoRoot
     $identity = Wait-MARRuntime -ExpectedRevision $head -RequireTrusted $true
 
+    try {
+        $retentionOutput = & $stableExe retention-prune -data-root $dataRoot -keep-activation 5
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "MAR retention cleanup failed with exit code $LASTEXITCODE."
+        }
+        elseif ($retentionOutput) {
+            Write-Host "Retention: $($retentionOutput -join '')"
+        }
+    }
+    catch {
+        Write-Warning "MAR retention cleanup failed after successful activation: $($_.Exception.Message)"
+    }
+
     Write-Host "MAR ACTIVATION PASS"
     Write-Host "HEAD: $head"
     Write-Host "Release: $ReleaseVersion"

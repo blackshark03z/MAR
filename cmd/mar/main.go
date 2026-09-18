@@ -41,6 +41,9 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "retention-prune":
+		return runRetentionPrune(args[1:])
+
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ContinueOnError)
 		dbPath := fs.String("db", defaultDB, "SQLite database path")

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestActivateCurrentHeadScriptPreservesPromotionAndRollbackContract(t *testing.T) {
+func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract(t *testing.T) {
 	path := filepath.Join("..", "..", "scripts", "activate-current-head.ps1")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -33,6 +33,9 @@ func TestActivateCurrentHeadScriptPreservesPromotionAndRollbackContract(t *testi
 		"start-owner-console.ps1",
 		"Stop-MARListener",
 		"Restore-BackupFile",
+		"retention-prune",
+		"-keep-activation 5",
+		`Write-Warning "MAR retention cleanup failed`,
 		"Activation failed; previous runtime state was restored",
 	}
 	for _, needle := range required {
@@ -40,6 +43,17 @@ func TestActivateCurrentHeadScriptPreservesPromotionAndRollbackContract(t *testi
 			t.Fatalf("activation script missing %q", needle)
 		}
 	}
+
+	trusted := strings.Index(text, `$identity = Wait-MARRuntime -ExpectedRevision $head -RequireTrusted $true`)
+	retention := strings.Index(text, `$stableExe retention-prune`)
+	pass := strings.Index(text, `Write-Host "MAR ACTIVATION PASS"`)
+	if trusted < 0 || retention < 0 || pass < 0 {
+		t.Fatalf("activation ordering anchors missing: trusted=%d retention=%d pass=%d", trusted, retention, pass)
+	}
+	if !(trusted < retention && retention < pass) {
+		t.Fatalf("retention must run only after trusted activation and before PASS output: trusted=%d retention=%d pass=%d", trusted, retention, pass)
+	}
+
 	if strings.Contains(text, "Invoke-WebRequest -Uri 'http") && !strings.Contains(text, "127.0.0.1:8787") {
 		t.Fatal("activation script must not introduce non-loopback HTTP access")
 	}
