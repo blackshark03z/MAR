@@ -1,8 +1,8 @@
 # MAR
 
-MAR is a single-owner, single-machine, MCP-native autonomous coding runtime.
+MAR is a single-owner, single-machine **durable local execution kernel for external cognition**. MCP is a primary control/cognition adapter, not the durable task authority.
 
-The V1 architecture is frozen. Canonical architecture documents live under `docs/architecture/MAR_V1_Architecture_FROZEN/`.
+The accepted V1 safety architecture remains frozen under `docs/architecture/MAR_V1_Architecture_FROZEN/`. Forward architecture evolution is governed by `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md` and `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`. The next bounded development line is `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.
 
 ## V1 execution goal
 
@@ -10,9 +10,9 @@ The V1 architecture is frozen. Canonical architecture documents live under `docs
 
 The intended owner experience is:
 
-`Owner -> Tech Lead Web -> CADS framing -> MAR MCP -> Worker(s) -> verified/integrated result -> Owner feedback`
+`Owner -> CADS/Tech Lead -> External Cognition -> MAR -> verified/integrated result -> Owner feedback`
 
-The owner may be non-technical. Normal flow should not require the owner to author Goal Contract fields, Git/base revisions, verification profiles, run epochs, or engineering oracles. The Tech Lead Web owns requirement framing and uses CADS; MAR owns durable execution, sandboxing, resource control, criterion-bound evidence, recovery and integration authority. A provider-backed autonomous brain remains optional for unattended execution.
+Current Web clients such as ChatGPT/Claude are external-cognition adapters, not MAR task authority. Future provider-managed agent sessions may use the same boundary. The owner may be non-technical. Normal flow should not require the owner to author Goal Contract fields, Git/base revisions, verification profiles, run epochs, or engineering oracles. CADS/Tech Lead owns requirement framing and acceptance policy; external cognition owns reasoning; MAR owns durable execution, sandboxing, resource control, criterion-bound evidence, recovery and integration authority.
 
 ## First self-hosting run
 
@@ -128,6 +128,6 @@ The frozen V1 retrieval gate is MRR >= 0.950 and Recall@3 = 1.000 on `TestContex
 
 ## Development rule
 
-Architecture is closed. Implementation may only reopen architecture when benchmark, recovery, or owner real-use evidence proves a frozen invariant insufficient.
+The earned V1 safety kernel remains closed unless benchmark, recovery, deployment or owner real-use evidence proves a frozen invariant insufficient. Future evolution must also obey the Architecture Constitution's measured-benefit / complexity gate; do not interpret stronger models or newer agent frameworks as automatic reasons to add MAR subsystems.
 
-See `docs/architecture/MAR_V1_Architecture_FROZEN/00_ARCHITECTURE_FREEZE_RECORD.md`, `10_IMPLEMENTATION_ENTRY_CONTRACT.md`, and `docs/implementation/017_PROJECT_BRAIN_V1.md` before changing runtime design.
+Before changing runtime design, read `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`, `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`, the relevant frozen V1 invariant/ADR, and the current bounded release roadmap. Current next line: `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.

@@ -1,5 +1,21 @@
 # MAR — Current Tech-Lead Handoff
 
+## Forward architecture update — 2026-09-19
+
+The repository entered this SoT consolidation clean/aligned on `master` at `ef271ca967cbc66471f6796038f4ccfda53c6598`.
+
+Canonical forward architecture is now:
+
+- `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`;
+- `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`;
+- `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.
+
+Long-term product position: **MAR = Durable Local Execution Kernel for External Cognition**. CADS defines how work is framed/judged; external cognition owns reasoning; MAR owns durable execution truth, authority, verification, integration, recovery and evidence. The accepted V1/V1.2 safety mechanisms remain frozen/earned; the new Constitution governs future evolution and resolves older provider-specific **Web Brain** terminology.
+
+The next bounded line is **MAR V1.3 — Performance & Simplicity**. Priority is delta/event context, then telemetry-proven compound deterministic operations/observation barriers, then fast repair feedback while final authoritative verification remains unchanged. Incremental Project Intelligence, caching and protocol/provider expansion are conditional on measured need. No V2 rewrite is authorized by this handoff.
+
+Older release/handoff material below remains historical evidence for the release/checkpoint it describes and must not be read as the current forward-architecture authority.
+
 **Architecture:** FROZEN
 
 **Branch:** `master`

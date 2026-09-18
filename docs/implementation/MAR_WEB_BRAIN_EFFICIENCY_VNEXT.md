@@ -1,7 +1,9 @@
 # MAR Web-Brain Efficiency VNext
 
 **Date:** 2026-09-18  
-**Status:** ARCHITECTURE / IMPLEMENTATION SOURCE OF TRUTH
+**Status:** HISTORICAL IMPLEMENTATION INPUT / SLICE-A EVIDENCE
+
+> Forward architecture authority moved on 2026-09-19 to `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`, `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`, and `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`. In this file, **Web Brain** describes the current/historical Web adapter; it is no longer the long-term cognition boundary term. Slice A implementation/evidence below remains valid unless superseded by later measured evidence.
 
 ## Product definition
 

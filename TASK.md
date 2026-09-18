@@ -1,4 +1,16 @@
-# Goal
+# Current SoT — 2026-09-19
+
+Forward MAR architecture is now governed by:
+
+- `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`;
+- `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`;
+- `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.
+
+Current direction: **MAR = Durable Local Execution Kernel for External Cognition**. Do not open a MAR V2 rewrite or add internal planner/multi-agent/memory infrastructure by default. The next bounded development line is MAR V1.3 Performance & Simplicity: delta/event cognition context -> telemetry-proven compound deterministic operations -> fast repair feedback with unchanged final authoritative verification -> conditional incremental Project Intelligence/cache work.
+
+The older V1 product goal/history below is retained as historical context and accepted-product intent. It does **not** override the 2026-09-19 architecture constitution or create implementation authority for a new V1.3 slice. A new implementation slice must still be opened as a bounded Goal with acceptance evidence.
+
+# Historical V1 Goal
 
 Close MAR V1 product usability after the Astra audit without reopening the frozen runtime architecture. The owner is non-IT and works primarily through a Tech Lead Web conversation. CADS helps the Tech Lead frame requirements, Critical User Journey, engineering concerns, acceptance criteria and verification oracles. MAR executes the accepted bounded work and preserves durable task/evidence/integration truth. The Owner Console is the local setup, connection, project, permission, continuity, usage/health and feedback surface; it is not the primary place where the owner authors engineering contracts.
 
