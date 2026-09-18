@@ -183,7 +183,9 @@ $metadata = [ordered]@{
     previous_running = $priorWasRunning
     previous_identity = $priorIdentity
 }
-$metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $backupRoot 'activation.json') -Encoding UTF8
+$activationJson = $metadata | ConvertTo-Json -Depth 8
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText((Join-Path $backupRoot 'activation.json'), $activationJson, $utf8NoBom)
 
 try {
     if ($priorWasRunning) {

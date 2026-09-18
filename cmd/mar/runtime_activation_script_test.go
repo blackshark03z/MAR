@@ -35,6 +35,8 @@ func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract
 		"Restore-BackupFile",
 		"retention-prune",
 		"-keep-activation 5",
+		"UTF8Encoding($false)",
+		"WriteAllText",
 		`Write-Warning "MAR retention cleanup failed`,
 		"Activation failed; previous runtime state was restored",
 	}
@@ -42,6 +44,10 @@ func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract
 		if !strings.Contains(text, needle) {
 			t.Fatalf("activation script missing %q", needle)
 		}
+	}
+
+	if strings.Contains(text, `Set-Content -LiteralPath (Join-Path $backupRoot 'activation.json') -Encoding UTF8`) {
+		t.Fatal("activation metadata must not use Windows PowerShell UTF8 Set-Content because it writes a BOM")
 	}
 
 	trusted := strings.Index(text, `$identity = Wait-MARRuntime -ExpectedRevision $head -RequireTrusted $true`)

@@ -1,6 +1,7 @@
 package retention
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -150,6 +151,7 @@ func readActivationMetadata(path string) (time.Time, bool, error) {
 	if err != nil {
 		return time.Time{}, false, err
 	}
+	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 	var meta activationMetadata
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		return time.Time{}, false, nil
