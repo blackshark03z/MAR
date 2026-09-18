@@ -479,16 +479,7 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 	}
 	baseName := strings.ToLower(filepath.Base(path))
 	isPythonCommand := baseName == "python.exe" || baseName == "python"
-	isPortablePython := isPythonCommand &&
-		len(cmd.Args) == 8 &&
-		cmd.Args[0] == "-m" &&
-		cmd.Args[1] == "unittest" &&
-		cmd.Args[2] == "discover" &&
-		cmd.Args[3] == "-s" &&
-		filepath.ToSlash(filepath.Clean(cmd.Args[4])) == "portable_tests" &&
-		cmd.Args[5] == "-p" &&
-		cmd.Args[6] == "test_*.py" &&
-		cmd.Args[7] == "-v"
+	isPortablePython := isPythonCommand && isBoundedChangedPythonTestCommand(cmd.Args)
 	includeGit := isPythonCommand && !isPortablePython
 	env, err := r.commandEnvironment(path, includeGit)
 	if err != nil {
@@ -635,6 +626,29 @@ func (r *Runtime) commandEnvironment(commandPath string, includeGit bool) ([]str
 		"PYTHONDONTWRITEBYTECODE=1",
 		"PYTHONPYCACHEPREFIX=" + pythonCache,
 	}, nil
+}
+
+func isBoundedChangedPythonTestCommand(args []string) bool {
+	if len(args) != 8 ||
+		args[0] != "-m" ||
+		args[1] != "unittest" ||
+		args[2] != "discover" ||
+		args[3] != "-s" ||
+		args[5] != "-p" ||
+		args[7] != "-v" {
+		return false
+	}
+	root := filepath.ToSlash(filepath.Clean(strings.TrimSpace(args[4])))
+	if root != "tests" && !strings.HasPrefix(root, "tests/") {
+		return false
+	}
+	pattern := strings.TrimSpace(args[6])
+	if strings.ContainsAny(pattern, "/\\*?[]") ||
+		!strings.HasPrefix(pattern, "test_") ||
+		!strings.HasSuffix(pattern, ".py") {
+		return false
+	}
+	return true
 }
 
 func validateCommand(cmd Command) error {

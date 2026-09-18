@@ -478,9 +478,9 @@ func pythonStandardVerificationProfile(pythonExecutable string) verification.Pro
 
 func pythonPortableVerificationProfile(pythonExecutable string) verification.Profile {
 	return verification.Profile{
-		ID: "python-portable",
+		ID:           "python-portable",
+		ChangedTests: verification.ChangedTestPolicyPython,
 		Commands: []verification.Command{
-			{Name: pythonExecutable, Args: []string{"-m", "unittest", "discover", "-s", "portable_tests", "-p", "test_*.py", "-v"}, Cwd: "."},
 			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
 		},
 	}

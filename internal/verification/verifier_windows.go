@@ -86,10 +86,6 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if !ok {
 		return domain.TaskResult{}, fmt.Errorf("verification profile %q is not registered", task.Contract.VerificationProfile)
 	}
-	profileHash, err := profile.Hash()
-	if err != nil {
-		return domain.TaskResult{}, err
-	}
 
 	candidate, err := v.sealer.Seal(ctx, req.TaskID, req.AttemptID, req.RunEpoch)
 	if err != nil {
@@ -105,7 +101,11 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if !sameVerificationPath(workspace.Path, req.Runtime.Root()) {
 		return domain.TaskResult{}, errors.New("verification runtime root does not match durable task workspace")
 	}
-	executionProfile, err := resolveExecutionProfile(profile, workspace.Path)
+	executionProfile, err := resolveExecutionProfile(profile, workspace.Path, candidate.ChangedPaths)
+	if err != nil {
+		return domain.TaskResult{}, err
+	}
+	profileHash, err := executionProfile.Hash()
 	if err != nil {
 		return domain.TaskResult{}, err
 	}
@@ -330,7 +330,12 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	return persisted, nil
 }
 
-func resolveExecutionProfile(profile Profile, root string) (Profile, error) {
+func resolveExecutionProfile(profile Profile, root string, changedPaths []string) (Profile, error) {
+	resolved, err := profile.ResolveChangedTests(changedPaths)
+	if err != nil {
+		return Profile{}, fmt.Errorf("resolve changed-test verification plan: %w", err)
+	}
+	profile = resolved
 	if profile.ID != "python-standard" {
 		return profile, nil
 	}
@@ -374,10 +379,6 @@ func (v *Verifier) EvidenceFresh(ctx context.Context, evidenceID string) (bool, 
 	if !ok {
 		return false, nil
 	}
-	profileHash, err := profile.Hash()
-	if err != nil || profileHash != evidence.ProfileHash {
-		return false, err
-	}
 	workspace, err := v.store.GetWorkspaceByTask(ctx, evidence.TaskID)
 	if err != nil {
 		return false, err
@@ -391,8 +392,26 @@ func (v *Verifier) EvidenceFresh(ctx context.Context, evidenceID string) (bool, 
 		}
 		return false, err
 	}
-	executionProfile, err := resolveExecutionProfile(profile, workspace.Path)
+	changedPaths, err := v.sealer.gitPaths(
+		ctx,
+		evidence.TaskID,
+		workspace.Path,
+		"diff",
+		"--name-only",
+		"-z",
+		task.Contract.BaseRevision,
+		evidence.CandidateRevision,
+		"--",
+	)
 	if err != nil {
+		return false, fmt.Errorf("reconstruct verification changed paths: %w", err)
+	}
+	executionProfile, err := resolveExecutionProfile(profile, workspace.Path, changedPaths)
+	if err != nil {
+		return false, err
+	}
+	profileHash, err := executionProfile.Hash()
+	if err != nil || profileHash != evidence.ProfileHash {
 		return false, err
 	}
 	_, environmentHash, err := v.environment(executionProfile)

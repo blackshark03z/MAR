@@ -102,16 +102,12 @@ func TestPythonStandardVerificationProfileUsesBoundedStandardModules(t *testing.
 	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
 }
 
-func TestPythonPortableVerificationProfileUsesBoundedPortableSubset(t *testing.T) {
+func TestPythonPortableVerificationProfileUsesChangedTestPolicy(t *testing.T) {
 	pythonExecutable := `C:\\Python\\python.exe`
 	profile := pythonPortableVerificationProfile(pythonExecutable)
-	if profile.ID != "python-portable" {
-		t.Fatalf("unexpected profile id %q", profile.ID)
-	}
-	want := [][]string{
-		{"-m", "unittest", "discover", "-s", "portable_tests", "-p", "test_*.py", "-v"},
-		{"-m", "compileall", "-q", "."},
-	}
+	if profile.ID != "python-portable" { t.Fatalf("unexpected profile id %q", profile.ID) }
+	if profile.ChangedTests != verification.ChangedTestPolicyPython { t.Fatalf("python-portable must derive tests from candidate changes: %+v", profile) }
+	want := [][]string{{"-m", "compileall", "-q", "."}}
 	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
 }
 

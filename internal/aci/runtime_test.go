@@ -321,7 +321,7 @@ func TestSandboxPythonEnvironmentExposesOnlyTrustedGitDirectory(t *testing.T) {
 		t.Fatalf("arbitrary host PATH leaked into sandbox: %q", pathValue)
 	}
 
-	portableArgs := []string{"-m", "unittest", "discover", "-s", "portable_tests", "-p", "test_*.py", "-v"}
+	portableArgs := []string{"-m", "unittest", "discover", "-s", "tests/sub", "-p", "test_feature.py", "-v"}
 	if _, err := r.RunCommand(context.Background(), Command{Name: fakePython, Args: portableArgs}); err != nil {
 		t.Fatal(err)
 	}
