@@ -296,12 +296,12 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	}
 	goRoot := filepath.Dir(filepath.Dir(goExecutable))
 	goBin := filepath.Dir(goExecutable)
-	goModuleProxyDir, err := resolveGoModuleProxyDir(goExecutable, dataRoot)
+	goModuleCacheDir, err := resolveGoModuleCacheDir(goExecutable, dataRoot)
 	if err != nil {
-		return fmt.Errorf("resolve read-only Go module proxy seed: %w", err)
+		return fmt.Errorf("resolve read-only Go module cache seed: %w", err)
 	}
 	pythonExecutable := ""
-	sandboxReadPaths := []string{goRoot, goModuleProxyDir}
+	sandboxReadPaths := []string{goRoot, goModuleCacheDir}
 	workerPathEntries := []string{goBin}
 	if candidate, lookupErr := exec.LookPath("python"); lookupErr == nil {
 		if absolute, absErr := filepath.Abs(candidate); absErr == nil {
@@ -333,7 +333,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		VerificationProfiles: builtinVerificationProfiles(goExecutable, pythonExecutable),
 		SandboxReadPaths:     sandboxReadPaths,
 		WorkerPathEntries:    workerPathEntries,
-		GoModuleCache:        goModuleProxyDir,
+		GoModuleCache:        goModuleCacheDir,
 		GoBuildCache:         filepath.Join(dataRoot, "runtime", "go-build-cache"),
 		LeaseDuration:        time.Minute,
 		WorkerStopTimeout:    10 * time.Second,
@@ -504,15 +504,14 @@ func goReleaseVerificationProfile(goExecutable string) verification.Profile {
 	}
 }
 
-func resolveGoModuleProxyDir(goExecutable, dataRoot string) (string, error) {
+func resolveGoModuleCacheDir(goExecutable, dataRoot string) (string, error) {
 	cmd := exec.Command(goExecutable, "env", "GOMODCACHE")
 	out, err := cmd.Output()
 	if err == nil {
 		root := strings.TrimSpace(string(out))
 		if root != "" {
-			download := filepath.Join(root, "cache", "download")
-			if info, statErr := os.Stat(download); statErr == nil && info.IsDir() {
-				abs, absErr := filepath.Abs(download)
+			if info, statErr := os.Stat(root); statErr == nil && info.IsDir() {
+				abs, absErr := filepath.Abs(root)
 				if absErr != nil {
 					return "", absErr
 				}
@@ -521,10 +520,10 @@ func resolveGoModuleProxyDir(goExecutable, dataRoot string) (string, error) {
 		}
 	}
 	// Offline verification cannot manufacture dependencies that are absent from
-	// every local cache. Keep an empty MAR-owned proxy directory as a bounded,
+	// every local cache. Keep an empty MAR-owned module-cache root as a bounded,
 	// read-only fallback; Go then fails explicitly if a required module is not
 	// preseeded instead of gaining network or shared-cache write authority.
-	fallback := filepath.Join(dataRoot, "runtime", "gomodproxy")
+	fallback := filepath.Join(dataRoot, "runtime", "gomodcache")
 	if err := os.MkdirAll(fallback, 0o755); err != nil {
 		return "", err
 	}

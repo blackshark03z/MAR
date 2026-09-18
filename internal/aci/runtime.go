@@ -468,16 +468,27 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 			buildCache = filepath.Join(cacheRoot, "build")
 		}
 		modCache := filepath.Join(cacheRoot, "mod")
+		if r.goModuleCache != "" {
+			modCache = r.goModuleCache
+		}
 		tmpCache := filepath.Join(cacheRoot, "tmp")
-		for _, dir := range []string{buildCache, modCache, tmpCache} {
+		dirs := []string{buildCache, tmpCache}
+		if r.goModuleCache == "" {
+			dirs = append(dirs, modCache)
+		}
+		for _, dir := range dirs {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return ExecResult{}, err
 			}
 		}
 		goProxy := "off"
 		if r.goModuleCache != "" {
-			proxyURL := url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(r.goModuleCache)}
-			goProxy = proxyURL.String()
+			// Offline GOPROXY is derived only from the shared module cache/download tree.
+			download := filepath.Join(r.goModuleCache, "cache", "download")
+			if info, statErr := os.Stat(download); statErr == nil && info.IsDir() {
+				proxyURL := url.URL{Scheme: "file", Path: "/" + filepath.ToSlash(download)}
+				goProxy = proxyURL.String()
+			}
 		}
 		env = append(env,
 			"GOCACHE="+buildCache,

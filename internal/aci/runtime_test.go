@@ -118,10 +118,13 @@ func TestSearchResultsAreBounded(t *testing.T) {
 	}
 }
 
-func TestSharedGoBuildCacheIsReusableWhileTaskModuleAndTmpCachesStayLocal(t *testing.T) {
+func TestSharedGoModuleCacheAndBuildCacheAreReusableWhileTmpStaysTaskLocal(t *testing.T) {
 	root := t.TempDir()
-	sharedModuleProxy := t.TempDir()
+	sharedModuleCache := t.TempDir()
 	sharedBuildCache := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(sharedModuleCache, "cache", "download"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	fakeGo := filepath.Join(t.TempDir(), "go.exe")
 	if err := os.WriteFile(fakeGo, []byte("not executed by fake executor"), 0o755); err != nil {
 		t.Fatal(err)
@@ -129,9 +132,9 @@ func TestSharedGoBuildCacheIsReusableWhileTaskModuleAndTmpCachesStayLocal(t *tes
 	executor := &fakeExecutor{level: IsolationEnforcedSandbox, resp: ExecResult{ExitCode: 0}}
 	r, err := New(Config{
 		Root:          root,
-		TaskID:        "task-shared-gocache",
+		TaskID:        "task-shared-gomodcache",
 		GitBroker:     &fakeGitBroker{},
-		GoModuleCache: sharedModuleProxy,
+		GoModuleCache: sharedModuleCache,
 		GoBuildCache:  sharedBuildCache,
 	}, executor)
 	if err != nil {
@@ -141,9 +144,9 @@ func TestSharedGoBuildCacheIsReusableWhileTaskModuleAndTmpCachesStayLocal(t *tes
 		t.Fatal(err)
 	}
 	wantBuild := "GOCACHE=" + filepath.Clean(sharedBuildCache)
-	wantMod := "GOMODCACHE=" + filepath.Join(root, ".mar", "go", "mod")
+	wantMod := "GOMODCACHE=" + filepath.Clean(sharedModuleCache)
 	wantTmp := "GOTMPDIR=" + filepath.Join(root, ".mar", "go", "tmp")
-	wantProxy := "GOPROXY=file:///" + filepath.ToSlash(filepath.Clean(sharedModuleProxy))
+	wantProxy := "GOPROXY=file:///" + filepath.ToSlash(filepath.Join(filepath.Clean(sharedModuleCache), "cache", "download"))
 	foundBuild, foundMod, foundTmp, foundProxy := false, false, false, false
 	for _, item := range executor.last.Env {
 		if strings.EqualFold(item, wantBuild) {
@@ -162,10 +165,11 @@ func TestSharedGoBuildCacheIsReusableWhileTaskModuleAndTmpCachesStayLocal(t *tes
 	if !foundBuild || !foundMod || !foundTmp || !foundProxy {
 		t.Fatalf("Go cache isolation was not propagated: build=%v mod=%v tmp=%v proxy=%v env=%v", foundBuild, foundMod, foundTmp, foundProxy, executor.last.Env)
 	}
-	for _, rel := range []string{filepath.Join(".mar", "go", "mod"), filepath.Join(".mar", "go", "tmp")} {
-		if info, err := os.Stat(filepath.Join(root, rel)); err != nil || !info.IsDir() {
-			t.Fatalf("task-local writable Go cache was not created for %s: %v", rel, err)
-		}
+	if info, err := os.Stat(filepath.Join(root, ".mar", "go", "tmp")); err != nil || !info.IsDir() {
+		t.Fatalf("task-local Go temp cache was not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".mar", "go", "mod")); !os.IsNotExist(err) {
+		t.Fatalf("task-local module cache should not be created when shared GOMODCACHE is configured: err=%v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".mar", "go", "build")); !os.IsNotExist(err) {
 		t.Fatalf("task-local build cache should not be created when shared GOCACHE is configured: err=%v", err)

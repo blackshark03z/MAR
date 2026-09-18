@@ -35,6 +35,18 @@ The Go documentation states that the build cache is safe for concurrent Go comma
 
 Source: https://pkg.go.dev/cmd/go#hdr-Build_and_test_caching
 
+### Speed V1.2 benchmark correction — shared read-only GOMODCACHE
+
+After Speed V1.1 activation, a same-HEAD warm `go-standard` run still took about **204.3 s** end to end. The first verification command (`go test`) alone remained about **162 s**. Focused package tests inside the worker were only a few seconds, so test logic itself was not the dominant cost.
+
+The remaining bottleneck was repeated dependency materialization: every disposable task workspace still used a fresh task-local `GOMODCACHE`, forcing Go to reconstruct module contents from the offline file proxy on every task.
+
+Speed V1.2 therefore reuses the preseeded host `GOMODCACHE` as a **read-only sandbox grant**. The Go documentation explicitly states that the module cache may be shared by multiple projects and safely accessed by multiple Go command instances at the same time. Module source directories are read-only by default to prevent accidental mutation, and the main module's `go.sum` continues to validate cached module content.
+
+`GOPROXY` remains offline and is derived only from `<GOMODCACHE>/cache/download` when present. `GOSUMDB=off`, `GOENV=off`, and `GOTOOLCHAIN=local` remain unchanged. `GOTMPDIR` stays task-local, while the shared `GOCACHE` from Speed V1.1 remains the sole external writable cache grant.
+
+Source: https://go.dev/ref/mod#module-cache
+
 ### Affected work before full work
 
 Nx documents the same general optimization principle at project-graph scale: determine the minimum affected set from Git changes and dependency relationships, then run tasks only on that set. It also recommends pairing affected execution with caching.
