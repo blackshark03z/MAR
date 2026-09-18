@@ -28,7 +28,7 @@ func TestProjectContextReturnsCurrentHeadPolicyAndGoCapabilityForGoalCompilation
 		Ecosystems:                     []string{"go"},
 		Languages:                      []string{"go"},
 		EvidenceMarkers:                []string{"go.mod"},
-		SupportedVerificationProfiles:  []string{"go-standard", "go-docs"},
+		SupportedVerificationProfiles:  []string{"go-standard", "go-docs", "go-release"},
 		RecommendedVerificationProfile: "go-standard",
 	}
 	if !reflect.DeepEqual(items[0].Capability, want) {
@@ -65,7 +65,7 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 				Ecosystems:                    []string{"go", "python"},
 				Languages:                     []string{"go", "python"},
 				EvidenceMarkers:               []string{"go.mod", "pyproject.toml"},
-				SupportedVerificationProfiles: []string{"go-standard", "go-docs", "python-standard"},
+				SupportedVerificationProfiles: []string{"go-standard", "go-docs", "go-release", "python-standard"},
 			},
 		},
 		{

@@ -62,13 +62,13 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		capability.Ecosystems = []string{"go", "python"}
 		capability.Languages = []string{"go", "python"}
 		capability.EvidenceMarkers = append([]string{"go.mod"}, pythonMarkers...)
-		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "python-standard"}
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release", "python-standard"}
 	case hasGo:
 		capability.State = "supported"
 		capability.Ecosystems = []string{"go"}
 		capability.Languages = []string{"go"}
 		capability.EvidenceMarkers = []string{"go.mod"}
-		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs"}
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release"}
 		capability.RecommendedVerificationProfile = "go-standard"
 	case hasPython:
 		capability.State = "supported"

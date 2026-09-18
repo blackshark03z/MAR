@@ -7,21 +7,27 @@ import (
 	"mar/internal/verification"
 )
 
-func TestGoStandardVerificationProfileUsesSequentialPackageBuilds(t *testing.T) {
+func TestGoStandardVerificationProfileUsesCacheFriendlyFullGate(t *testing.T) {
 	goExecutable := `C:\\toolchain\\go.exe`
 	profile := goStandardVerificationProfile(goExecutable)
 	if profile.ID != "go-standard" {
 		t.Fatalf("unexpected profile id %q", profile.ID)
 	}
 	want := [][]string{
-		{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."},
+		{"test", "-p", "1", "-timeout", "180s", "./..."},
 		{"vet", "-p", "1", "./..."},
 		{"build", "-p", "1", "./..."},
 	}
 	assertVerificationCommands(t, profile.ID, profile.Commands, goExecutable, want)
+	if slices.Contains(profile.Commands[0].Args, "-count=1") {
+		t.Fatal("go-standard must not disable Go test caching")
+	}
+	if slices.Contains(profile.Commands[0].Args, "-v") {
+		t.Fatal("go-standard should avoid verbose success output in the daily gate")
+	}
 }
 
-func TestGoDocsVerificationProfileCompilesTestsWithoutRunningHostSensitiveSuite(t *testing.T) {
+func TestGoDocsVerificationProfileUsesMinimalCachedCompileGate(t *testing.T) {
 	goExecutable := `C:\\toolchain\\go.exe`
 	profile := goDocsVerificationProfile(goExecutable)
 	if profile.ID != "go-docs" {
@@ -31,7 +37,22 @@ func TestGoDocsVerificationProfileCompilesTestsWithoutRunningHostSensitiveSuite(
 		t.Fatalf("go-docs must enforce documentation-only change admission: %+v", profile)
 	}
 	want := [][]string{
-		{"test", "-p", "1", "-count=1", "-run", "^$", "-timeout", "180s", "./..."},
+		{"test", "-p", "1", "-run", "^$", "-timeout", "180s", "./..."},
+	}
+	assertVerificationCommands(t, profile.ID, profile.Commands, goExecutable, want)
+	if slices.Contains(profile.Commands[0].Args, "-count=1") {
+		t.Fatal("go-docs must keep the compile/discovery gate cache-friendly")
+	}
+}
+
+func TestGoReleaseVerificationProfilePreservesUncachedCanonicalGate(t *testing.T) {
+	goExecutable := `C:\\toolchain\\go.exe`
+	profile := goReleaseVerificationProfile(goExecutable)
+	if profile.ID != "go-release" {
+		t.Fatalf("unexpected profile id %q", profile.ID)
+	}
+	want := [][]string{
+		{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."},
 		{"vet", "-p", "1", "./..."},
 		{"build", "-p", "1", "./..."},
 	}
@@ -61,15 +82,15 @@ func TestPythonStandardVerificationProfileUsesBoundedStandardModules(t *testing.
 	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
 }
 
-func TestBuiltinVerificationProfilesIncludePythonOnlyWhenAvailable(t *testing.T) {
+func TestBuiltinVerificationProfilesIncludeReleaseAndPythonOnlyWhenAvailable(t *testing.T) {
 	goExecutable := `C:\\toolchain\\go.exe`
 	pythonExecutable := `C:\\Python\\python.exe`
 	withoutPython := builtinVerificationProfiles(goExecutable, "")
-	if len(withoutPython) != 2 || withoutPython[0].ID != "go-standard" || withoutPython[1].ID != "go-docs" {
+	if len(withoutPython) != 3 || withoutPython[0].ID != "go-standard" || withoutPython[1].ID != "go-docs" || withoutPython[2].ID != "go-release" {
 		t.Fatalf("unexpected Go-only built-in verification profiles: %+v", withoutPython)
 	}
 	withPython := builtinVerificationProfiles(goExecutable, pythonExecutable)
-	if len(withPython) != 3 || withPython[2].ID != "python-standard" {
+	if len(withPython) != 4 || withPython[3].ID != "python-standard" {
 		t.Fatalf("python-standard was not registered with an available interpreter: %+v", withPython)
 	}
 }

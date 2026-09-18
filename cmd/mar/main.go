@@ -453,6 +453,7 @@ func builtinVerificationProfiles(goExecutable, pythonExecutable string) []verifi
 	profiles := []verification.Profile{
 		goStandardVerificationProfile(goExecutable),
 		goDocsVerificationProfile(goExecutable),
+		goReleaseVerificationProfile(goExecutable),
 	}
 	if strings.TrimSpace(pythonExecutable) != "" {
 		profiles = append(profiles, pythonStandardVerificationProfile(pythonExecutable))
@@ -474,7 +475,7 @@ func goStandardVerificationProfile(goExecutable string) verification.Profile {
 	return verification.Profile{
 		ID: "go-standard",
 		Commands: []verification.Command{
-			{Name: goExecutable, Args: []string{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"test", "-p", "1", "-timeout", "180s", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
 		},
@@ -486,7 +487,16 @@ func goDocsVerificationProfile(goExecutable string) verification.Profile {
 		ID:          "go-docs",
 		ChangeScope: verification.ChangeScopeDocumentationOnly,
 		Commands: []verification.Command{
-			{Name: goExecutable, Args: []string{"test", "-p", "1", "-count=1", "-run", "^$", "-timeout", "180s", "./..."}, Cwd: "."},
+			{Name: goExecutable, Args: []string{"test", "-p", "1", "-run", "^$", "-timeout", "180s", "./..."}, Cwd: "."},
+		},
+	}
+}
+
+func goReleaseVerificationProfile(goExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "go-release",
+		Commands: []verification.Command{
+			{Name: goExecutable, Args: []string{"test", "-v", "-p", "1", "-count=1", "-timeout", "180s", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"vet", "-p", "1", "./..."}, Cwd: "."},
 			{Name: goExecutable, Args: []string{"build", "-p", "1", "./..."}, Cwd: "."},
 		},
