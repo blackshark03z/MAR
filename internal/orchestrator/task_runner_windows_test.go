@@ -68,6 +68,14 @@ func (s *fakeTaskService) BeginAttempt(_ context.Context, taskID, workerID, supe
 	return s.attempt, nil
 }
 
+func (s *fakeTaskService) HeartbeatAttempt(_ context.Context, _ string, _ string, _ int64, lease time.Duration) error {
+	s.events = append(s.events, "heartbeat")
+	now := time.Now().UTC()
+	s.attempt.HeartbeatAt = now
+	s.attempt.LeaseDeadline = now.Add(lease)
+	return nil
+}
+
 func (s *fakeTaskService) TransitionForAttempt(ctx context.Context, _ string, _ string, _ int64, to domain.TaskState) error {
 	if s.rejectCancelledContext && ctx.Err() != nil {
 		return errors.New("cancelled context reached durable transition")

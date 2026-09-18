@@ -180,6 +180,13 @@ func (s *TaskService) RequirePhysicalRecovery(ctx context.Context, taskID, attem
 	return s.store.RequirePhysicalRecovery(ctx, taskID, attemptID, epoch, s.now().UTC())
 }
 
+func (s *TaskService) RequireExpiredPhysicalRecovery(ctx context.Context, taskID, attemptID string, epoch int64) (bool, error) {
+	if strings.TrimSpace(taskID) == "" || strings.TrimSpace(attemptID) == "" || epoch <= 0 {
+		return false, errors.New("task id, attempt id and positive epoch are required")
+	}
+	return s.store.RequireExpiredPhysicalRecovery(ctx, taskID, attemptID, epoch, s.now().UTC())
+}
+
 func (s *TaskService) RecoverBlockedChoice(ctx context.Context, taskID string) error {
 	task, err := s.store.GetTask(ctx, taskID)
 	if err != nil {

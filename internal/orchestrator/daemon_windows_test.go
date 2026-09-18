@@ -90,6 +90,28 @@ func (s *fakeDaemonService) RequirePhysicalRecovery(_ context.Context, taskID, a
 	return nil
 }
 
+func (s *fakeDaemonService) RequireExpiredPhysicalRecovery(_ context.Context, taskID, attemptID string, epoch int64) (bool, error) {
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+	attempt := s.store.attempts[taskID]
+	if attempt.ID != attemptID || attempt.RunEpoch != epoch {
+		return false, errors.New("recovery identity mismatch")
+	}
+	if attempt.AuthorityState == domain.AttemptPhysicallyTerminated {
+		return false, nil
+	}
+	if attempt.AuthorityState == domain.AttemptActive && attempt.LeaseDeadline.After(time.Now().UTC()) {
+		return false, nil
+	}
+	s.recoveryCalls++
+	task := s.store.tasks[taskID]
+	task.State = domain.TaskBlocked
+	s.store.tasks[taskID] = task
+	attempt.AuthorityState = domain.AttemptLogicallyFenced
+	s.store.attempts[taskID] = attempt
+	return true, nil
+}
+
 func (s *fakeDaemonService) ConfirmAttemptProcessTermination(_ context.Context, proof processctl.TerminationProof, terminalStatus string) error {
 	s.confirmCalls++
 	if !proof.Valid() {

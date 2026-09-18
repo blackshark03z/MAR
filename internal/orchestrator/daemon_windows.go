@@ -83,6 +83,7 @@ type integrationRecoverer interface {
 type daemonTaskService interface {
 	StatusSnapshot(context.Context, string) (service.TaskStatusSnapshot, error)
 	RequirePhysicalRecovery(context.Context, string, string, int64) error
+	RequireExpiredPhysicalRecovery(context.Context, string, string, int64) (bool, error)
 	ConfirmAttemptProcessTermination(context.Context, processctl.TerminationProof, string) error
 	RecoverBlockedChoice(context.Context, string) error
 	ReconcileWorkspaceReady(context.Context, string) error
@@ -532,12 +533,6 @@ func (d *Daemon) reconcileUnprovenAttempts(ctx context.Context) error {
 			return err
 		}
 		for _, task := range tasks {
-			// Periodic recovery must never fence an attempt that is still owned by
-			// this live daemon. Startup reconciliation runs before active executions
-			// exist, so stale attempts from a prior process are still recovered.
-			if d.isActive(task.ID) {
-				continue
-			}
 			if _, duplicate := seen[task.ID]; duplicate {
 				continue
 			}
@@ -549,7 +544,16 @@ func (d *Daemon) reconcileUnprovenAttempts(ctx context.Context) error {
 			if !ok || attempt.AuthorityState == domain.AttemptPhysicallyTerminated {
 				continue
 			}
-			if err := d.service.RequirePhysicalRecovery(ctx, task.ID, attempt.ID, attempt.RunEpoch); err != nil {
+			if d.isActive(task.ID) {
+				expired, err := d.service.RequireExpiredPhysicalRecovery(ctx, task.ID, attempt.ID, attempt.RunEpoch)
+				if err != nil {
+					return err
+				}
+				if !expired {
+					continue
+				}
+				d.cancelActive(task.ID)
+			} else if err := d.service.RequirePhysicalRecovery(ctx, task.ID, attempt.ID, attempt.RunEpoch); err != nil {
 				return err
 			}
 			recoverer, supported := d.runner.(physicalRecoveryRunner)
@@ -690,6 +694,15 @@ func (d *Daemon) resumeExecutionCapacity(ctx context.Context, taskID string) err
 			return ctx.Err()
 		case <-ticker.C:
 		}
+	}
+}
+
+func (d *Daemon) cancelActive(taskID string) {
+	d.mu.Lock()
+	active := d.active[taskID]
+	d.mu.Unlock()
+	if active != nil && active.cancel != nil {
+		active.cancel()
 	}
 }
 

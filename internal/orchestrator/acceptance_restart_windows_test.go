@@ -218,3 +218,118 @@ func TestAcceptanceT9ArmedNamedJobRecoversPhysicalProofBeforeReplacement(t *test
 		t.Fatalf("replacement admission after proof mismatch: task=%+v err=%v", gotTask, err)
 	}
 }
+
+func TestAcceptanceT9StaleVerifyingLeaseFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "mar.db")
+	s, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	svc := service.NewTaskService(s)
+	projectRoot := t.TempDir()
+	if _, _, err := svc.RegisterProject(ctx, "t9-stale-verifying", projectRoot); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "stale VERIFYING lease must fail closed",
+		Acceptance:          []string{"stale verification cannot hang indefinitely"},
+		ProjectID:           "t9-stale-verifying",
+		BaseRevision:        "base-stale-verifying",
+		Authority:           domain.Authority{LocalFileWrite: true, LocalGitWrite: true},
+		VerificationProfile: "t9-profile",
+		Priority:            "P0",
+	}
+	task, _, err := svc.Submit(ctx, "t9-stale-verifying-submit", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource} {
+		if err := svc.AdvancePreExecution(ctx, task.ID, state); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	workspace := domain.Workspace{
+		ID:           "ws-t9-stale-verifying",
+		TaskID:       task.ID,
+		ProjectID:    contract.ProjectID,
+		Path:         t.TempDir(),
+		BaseRevision: contract.BaseRevision,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if _, _, err := s.BeginWorkspace(ctx, workspace); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkWorkspaceReady(ctx, workspace.ID, task.ID, contract.BaseRevision, now); err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "t9-worker", "t9-daemon", 20*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskVerifying); err != nil {
+		t.Fatal(err)
+	}
+	// Verification progress renews the attempt beyond the original worker lease.
+	if err := svc.HeartbeatAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, 150*time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(40 * time.Millisecond)
+
+	runner := &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}
+	daemon, err := NewDaemon(s, svc, fakePreflightDriver{}, &fakeSchedulerDriver{}, runner, &fakeIntegrationRecoverer{}, healthyDaemonGovernor(t), DaemonConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	activeCtx, cancel := context.WithCancel(context.Background())
+	daemon.active[task.ID] = &activeExecution{cancel: cancel}
+	defer daemon.removeActive(task.ID)
+
+	if err := daemon.reconcileUnprovenAttempts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-activeCtx.Done():
+		t.Fatal("healthy VERIFYING heartbeat lease was fenced before expiry")
+	default:
+	}
+	healthyTask, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if healthyTask.State != domain.TaskVerifying {
+		t.Fatalf("healthy verification state = %s, want VERIFYING", healthyTask.State)
+	}
+
+	// Once the renewed verification lease itself expires, recovery must fail closed.
+	time.Sleep(140 * time.Millisecond)
+	if err := daemon.reconcileUnprovenAttempts(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-activeCtx.Done():
+	default:
+		t.Fatal("stale VERIFYING lease did not cancel active execution")
+	}
+	gotTask, err := svc.Status(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotAttempt, ok, err := s.CurrentAttemptByTask(ctx, task.ID)
+	if err != nil || !ok {
+		t.Fatalf("stale verifying attempt missing: ok=%v err=%v", ok, err)
+	}
+	if gotTask.State != domain.TaskBlocked {
+		t.Fatalf("stale VERIFYING task state = %s, want BLOCKED", gotTask.State)
+	}
+	if gotAttempt.AuthorityState != domain.AttemptLogicallyFenced {
+		t.Fatalf("stale VERIFYING attempt authority = %s, want logically fenced before any PHYSICALLY_TERMINATED claim", gotAttempt.AuthorityState)
+	}
+	if result, available, err := svc.Result(ctx, task.ID); err != nil || available {
+		t.Fatalf("stale verification recovery fabricated result: available=%v result=%+v err=%v", available, result, err)
+	}
+}
+

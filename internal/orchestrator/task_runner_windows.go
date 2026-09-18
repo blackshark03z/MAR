@@ -25,6 +25,7 @@ type taskService interface {
 	TaskConvergenceBudget(context.Context, string) (service.TaskConvergenceBudget, error)
 	BlockForConvergenceBudget(context.Context, string) error
 	BeginAttempt(context.Context, string, string, string, time.Duration) (domain.ExecutionAttempt, error)
+	HeartbeatAttempt(context.Context, string, string, int64, time.Duration) error
 	TransitionForAttempt(context.Context, string, string, int64, domain.TaskState) error
 	LogicalFenceAttempt(context.Context, string, string, int64) error
 	ConfirmAttemptProcessTermination(context.Context, processctl.TerminationProof, string) error
@@ -238,11 +239,18 @@ func (r *TaskRunner) verifyAndIntegrate(ctx context.Context, outcome RunOutcome,
 		confirmErr := r.service.ConfirmAttemptProcessTermination(finalCtx, proof, "verification-runtime-init-failed")
 		return outcome, errors.Join(fmt.Errorf("create verification runtime: %w", err), blockErr, confirmErr)
 	}
+	verificationLease := r.cfg.LeaseDuration
+	if bounded := r.cfg.CommandTimeout + r.cfg.FinalizationTimeout; bounded > verificationLease {
+		verificationLease = bounded
+	}
 	verified, verifyErr := r.verifier.Verify(ctx, verification.VerifyRequest{
 		TaskID:    attempt.TaskID,
 		AttemptID: attempt.ID,
 		RunEpoch:  attempt.RunEpoch,
 		Runtime:   runtime,
+		Heartbeat: func(heartbeatCtx context.Context) error {
+			return r.service.HeartbeatAttempt(heartbeatCtx, attempt.TaskID, attempt.ID, attempt.RunEpoch, verificationLease)
+		},
 		ResourceSummary: domain.ResourceSummary{
 			AgentTurns:        outcome.Agent.Turns,
 			AgentToolCalls:    outcome.Agent.ToolCalls,

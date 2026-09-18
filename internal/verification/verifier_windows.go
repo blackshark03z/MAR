@@ -38,6 +38,7 @@ type VerifyRequest struct {
 	RunEpoch        int64
 	Runtime         CommandRuntime
 	ResourceSummary domain.ResourceSummary
+	Heartbeat       func(context.Context) error
 }
 
 type environmentSnapshotFunc func(Profile) (json.RawMessage, string, error)
@@ -114,6 +115,11 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	if err := v.store.TransitionTaskForAttempt(ctx, req.TaskID, req.AttemptID, req.RunEpoch, domain.TaskRunning, domain.TaskVerifying, v.now().UTC()); err != nil {
 		return domain.TaskResult{}, err
 	}
+	if req.Heartbeat != nil {
+		if err := req.Heartbeat(ctx); err != nil {
+			return domain.TaskResult{}, fmt.Errorf("verification heartbeat: %w", err)
+		}
+	}
 
 	startEnvironmentJSON, startEnvironmentHash, err := v.environment(executionProfile)
 	if err != nil {
@@ -127,6 +133,11 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	for _, command := range executionProfile.Commands {
 		if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
 			return domain.TaskResult{}, err
+		}
+		if req.Heartbeat != nil {
+			if err := req.Heartbeat(ctx); err != nil {
+				return domain.TaskResult{}, fmt.Errorf("verification heartbeat: %w", err)
+			}
 		}
 		started := v.now()
 		result, runErr := req.Runtime.RunCommand(ctx, aci.Command{Name: command.Name, Args: append([]string(nil), command.Args...), Cwd: command.Cwd})
