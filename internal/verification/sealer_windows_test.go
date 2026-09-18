@@ -37,6 +37,19 @@ func newSealerHarness(t *testing.T, localGitWrite bool) sealerHarness {
 }
 
 func newSealerHarnessWithAcceptanceChecks(t *testing.T, localGitWrite, withAcceptanceChecks bool) sealerHarness {
+	var checks []domain.AcceptanceCheck
+	if withAcceptanceChecks {
+		checks = []domain.AcceptanceCheck{{
+			CriterionIndex: 1,
+			Scenario:       "run the selected verification profile against the sealed candidate",
+			Oracle:         "output_contains:ok test",
+			CommandIndexes: []int{1},
+		}}
+	}
+	return newSealerHarnessForProfile(t, localGitWrite, "test", checks)
+}
+
+func newSealerHarnessForProfile(t *testing.T, localGitWrite bool, profileID string, checks []domain.AcceptanceCheck) sealerHarness {
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -63,21 +76,14 @@ func newSealerHarnessWithAcceptanceChecks(t *testing.T, localGitWrite, withAccep
 	contract := domain.GoalContract{
 		Goal:                "seal candidate",
 		Acceptance:          []string{"candidate is revision-bound"},
+		AcceptanceChecks:    append([]domain.AcceptanceCheck(nil), checks...),
 		ProjectID:           "seal-project",
 		BaseRevision:        base,
 		Authority:           domain.Authority{LocalFileWrite: true, LocalGitWrite: localGitWrite},
-		VerificationProfile: "test",
+		VerificationProfile: profileID,
 		Priority:            "P2",
 	}
-	if withAcceptanceChecks {
-		contract.AcceptanceChecks = []domain.AcceptanceCheck{{
-			CriterionIndex: 1,
-			Scenario:       "run the selected verification profile against the sealed candidate",
-			Oracle:         "output_contains:ok test",
-			CommandIndexes: []int{1},
-		}}
-	}
-	task, _, err := svc.Submit(ctx, fmt.Sprintf("seal-task-%s-%t", base[:8], withAcceptanceChecks), contract)
+	task, _, err := svc.Submit(ctx, fmt.Sprintf("seal-task-%s-%s-%d", base[:8], profileID, len(checks)), contract)
 	if err != nil {
 		t.Fatal(err)
 	}

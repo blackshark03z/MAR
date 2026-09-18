@@ -94,8 +94,8 @@ func (e VerificationEvidence) ValidateIdentity() error {
 	if !strings.EqualFold(e.EnvironmentHash, hex.EncodeToString(environmentDigest[:])) {
 		return errors.New("verification environment hash does not match environment_json")
 	}
-	if len(e.Commands) == 0 || len(e.Acceptance) == 0 {
-		return errors.New("verification evidence requires commands and acceptance evaluation")
+	if len(e.Acceptance) == 0 {
+		return errors.New("verification evidence requires acceptance evaluation")
 	}
 	allCommandsPassed := true
 	allAcceptancePassed := true

@@ -55,6 +55,44 @@ func TestVerificationEvidenceIntegrityBindsIdentityEnvironmentAndVerdict(t *test
 	}
 }
 
+func TestVerificationEvidenceAllowsAcceptanceOnlyPass(t *testing.T) {
+	environment := json.RawMessage(`{"schema":1,"tools":[]}`)
+	environmentDigest := sha256.Sum256(environment)
+	evidence := VerificationEvidence{
+		ID:                "evidence-research",
+		TaskID:            "task-research",
+		AttemptID:         "attempt-research",
+		RunEpoch:          1,
+		GoalHash:          "goal-hash",
+		BaseRevision:      "base",
+		CandidateRevision: "candidate",
+		ProfileID:         "research-artifacts",
+		ProfileHash:       "profile-hash",
+		EnvironmentJSON:   environment,
+		EnvironmentHash:   hex.EncodeToString(environmentDigest[:]),
+		Commands:          []VerificationCommandEvidence{},
+		Acceptance: []AcceptanceEvidence{{
+			Criterion:    "artifact fact is present",
+			Passed:       true,
+			Status:       AcceptancePass,
+			Scenario:     "inspect the sealed artifact",
+			Oracle:       "file_contains:README.md:qualified",
+			Observation:  "README.md contains required literal",
+			EvidenceRefs: []string{"file:README.md:qualified"},
+		}},
+		Verdict:   VerificationPass,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := evidence.ValidateIdentity(); err != nil {
+		t.Fatalf("acceptance-only verification evidence was rejected: %v", err)
+	}
+	missingAcceptance := evidence
+	missingAcceptance.Acceptance = nil
+	if err := missingAcceptance.ValidateIdentity(); err == nil {
+		t.Fatal("verification evidence without acceptance evaluation was accepted")
+	}
+}
+
 func TestTaskResultIntegrityBindsExplicitRiskAndResultIdentity(t *testing.T) {
 	result := TaskResult{
 		ID:                   "result-1",

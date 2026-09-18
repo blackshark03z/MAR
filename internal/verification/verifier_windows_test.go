@@ -123,6 +123,72 @@ func TestVerifierPassPersistsRevisionBoundEvidenceAndVerifiedState(t *testing.T)
 	}
 }
 
+func TestVerifierResearchArtifactsZeroCommandPersistsVerifiedEvidence(t *testing.T) {
+	check := domain.AcceptanceCheck{
+		CriterionIndex: 1,
+		Scenario:       "inspect the sealed research-artifacts candidate",
+		Oracle:         "file_contains:README.md:qualified",
+	}
+	h := newSealerHarnessForProfile(t, true, ResearchArtifactProfileID, []domain.AcceptanceCheck{check})
+	if err := os.WriteFile(filepath.Join(h.root, "README.md"), []byte("qualified\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	verifier := verifierForHarness(t, h, ResearchArtifactProfile())
+	runtime := &fakeVerificationRuntime{root: h.root}
+
+	result, err := verifier.Verify(context.Background(), VerifyRequest{
+		TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Verdict != domain.ResultVerified || !result.IntegrityValid() {
+		t.Fatalf("research-artifacts zero-command result was not VERIFIED: %+v", result)
+	}
+	if len(runtime.calls) != 0 {
+		t.Fatalf("research-artifacts unexpectedly executed commands: %+v", runtime.calls)
+	}
+	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.ProfileID != ResearchArtifactProfileID || len(evidence.Commands) != 0 || evidence.Verdict != domain.VerificationPass || !evidence.IntegrityValid() {
+		t.Fatalf("unexpected research-artifacts evidence: %+v", evidence)
+	}
+	if len(evidence.Acceptance) != 1 || evidence.Acceptance[0].EffectiveStatus() != domain.AcceptancePass {
+		t.Fatalf("research-artifacts acceptance evidence missing: %+v", evidence.Acceptance)
+	}
+	persisted, ok, err := h.store.LatestTaskResult(context.Background(), h.task.ID)
+	if err != nil || !ok || persisted.ID != result.ID || !persisted.IntegrityValid() {
+		t.Fatalf("research-artifacts TaskResult was not durable: ok=%v result=%+v err=%v", ok, persisted, err)
+	}
+}
+
+func TestVerifierResearchArtifactsRejectsSourceCandidateBeforeCommands(t *testing.T) {
+	check := domain.AcceptanceCheck{
+		CriterionIndex: 1,
+		Scenario:       "inspect the sealed research-artifacts candidate",
+		Oracle:         "file_contains:README.md:qualified",
+	}
+	h := newSealerHarnessForProfile(t, true, ResearchArtifactProfileID, []domain.AcceptanceCheck{check})
+	prepareVerifierCandidate(t, h)
+	verifier := verifierForHarness(t, h, ResearchArtifactProfile())
+	runtime := &fakeVerificationRuntime{root: h.root}
+
+	_, err := verifier.Verify(context.Background(), VerifyRequest{
+		TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime,
+	})
+	if err == nil || !strings.Contains(err.Error(), "only admits non-executable research/artifact changes") {
+		t.Fatalf("research-artifacts source candidate was not rejected fail-closed: %v", err)
+	}
+	if len(runtime.calls) != 0 {
+		t.Fatalf("rejected research-artifacts candidate reached command execution: %+v", runtime.calls)
+	}
+	if _, ok, loadErr := h.store.LatestTaskResult(context.Background(), h.task.ID); loadErr != nil || ok {
+		t.Fatalf("rejected research-artifacts candidate published a result: ok=%v err=%v", ok, loadErr)
+	}
+}
+
 func TestVerifierDocumentationOnlyProfileRejectsSourceCandidateBeforeCommands(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
