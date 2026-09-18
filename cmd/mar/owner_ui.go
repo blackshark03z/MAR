@@ -1665,6 +1665,34 @@ func gitProjectHead(ctx context.Context, root string) (string, error) {
 	return head, nil
 }
 
+func selectOwnerVerificationProfile(projectID, requested string, capability service.ProjectCapability) (string, error) {
+	profile := strings.TrimSpace(requested)
+	if profile == "" {
+		profile = strings.TrimSpace(capability.RecommendedVerificationProfile)
+		if profile == "" {
+			return "", fmt.Errorf("verification_profile is required for project %q; supported profiles: %s", projectID, strings.Join(capability.SupportedVerificationProfiles, ", "))
+		}
+	}
+	if !slices.Contains(capability.SupportedVerificationProfiles, profile) {
+		return "", fmt.Errorf("verification_profile %q is unsupported for project %q; supported profiles: %s", profile, projectID, strings.Join(capability.SupportedVerificationProfiles, ", "))
+	}
+	return profile, nil
+}
+
+func resolveOwnerVerificationProfile(ctx context.Context, svc *service.TaskService, projectID, requested string) (string, error) {
+	if svc == nil {
+		return "", errors.New("project capability service is unavailable")
+	}
+	items, err := svc.ProjectContext(ctx, strings.TrimSpace(projectID))
+	if err != nil {
+		return "", fmt.Errorf("resolve project verification capability: %w", err)
+	}
+	if len(items) != 1 {
+		return "", fmt.Errorf("project %q capability resolution returned %d matches", projectID, len(items))
+	}
+	return selectOwnerVerificationProfile(projectID, requested, items[0].Capability)
+}
+
 func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 	var req ownerSubmitRequest
 	if err := decodeOwnerJSON(r, &req); err != nil {
@@ -1678,13 +1706,6 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 	req.Boundaries = trimOwnerStrings(req.Boundaries)
 	req.NonGoals = trimOwnerStrings(req.NonGoals)
 	req.VerificationProfile = strings.TrimSpace(req.VerificationProfile)
-	if req.VerificationProfile == "" {
-		req.VerificationProfile = "go-standard"
-	}
-	if !slices.Contains([]string{"go-standard", "go-docs", "python-standard"}, req.VerificationProfile) {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("verification_profile must be go-standard, go-docs, or python-standard"))
-		return
-	}
 	req.Priority = strings.ToUpper(strings.TrimSpace(req.Priority))
 	if req.Priority == "" {
 		req.Priority = "P2"
@@ -1697,6 +1718,12 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 		writeOwnerError(w, http.StatusBadRequest, errors.New("network authority is not supported by MAR V1 runtime"))
 		return
 	}
+	profile, err := resolveOwnerVerificationProfile(r.Context(), b.svc, req.ProjectID, req.VerificationProfile)
+	if err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	req.VerificationProfile = profile
 	if req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey); req.IdempotencyKey == "" {
 		req.IdempotencyKey = newOwnerUIID("owner-ui")
 	}

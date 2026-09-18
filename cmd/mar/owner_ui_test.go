@@ -581,9 +581,104 @@ func TestOwnerUIProjectsExposeRegisteredProjectAndCurrentHead(t *testing.T) {
 	}
 }
 
-func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
+func newOwnerSubmitTestBackend(t *testing.T, markers map[string]string) (*ownerUIBackend, *fakeOwnerMCP) {
+	t.Helper()
+	root := t.TempDir()
+	runOwnerGit(t, root, "init")
+	runOwnerGit(t, root, "config", "user.email", "mar-owner-submit@example.invalid")
+	runOwnerGit(t, root, "config", "user.name", "MAR Owner Submit Test")
+	if _, ok := markers["README.md"]; !ok {
+		markers["README.md"] = "owner submit fixture\n"
+	}
+	for path, content := range markers {
+		full := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runOwnerGit(t, root, "add", ".")
+	runOwnerGit(t, root, "commit", "-m", "base")
+
+	db, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := service.NewTaskService(db)
+	if _, _, err := svc.RegisterProject(context.Background(), "mar", root); err != nil {
+		t.Fatal(err)
+	}
 	fake := &fakeOwnerMCP{}
-	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
+	return &ownerUIBackend{db: db, svc: svc, session: fake, sessionToken: "test-owner-token"}, fake
+}
+
+func TestOwnerVerificationProfileSelectionUsesCapabilityContract(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested string
+		capability service.ProjectCapability
+		want      string
+		wantErr   bool
+	}{
+		{
+			name: "markerless recommended research-artifacts",
+			capability: service.ProjectCapability{
+				SupportedVerificationProfiles:  []string{"research-artifacts"},
+				RecommendedVerificationProfile: "research-artifacts",
+			},
+			want: "research-artifacts",
+		},
+		{
+			name:      "explicit go-release",
+			requested: "go-release",
+			capability: service.ProjectCapability{
+				SupportedVerificationProfiles:  []string{"go-standard", "go-docs", "go-release"},
+				RecommendedVerificationProfile: "go-standard",
+			},
+			want: "go-release",
+		},
+		{
+			name:      "unadvertised profile",
+			requested: "skip-tests",
+			capability: service.ProjectCapability{
+				SupportedVerificationProfiles:  []string{"go-standard", "go-docs", "go-release"},
+				RecommendedVerificationProfile: "go-standard",
+			},
+			wantErr: true,
+		},
+		{
+			name: "mixed project requires explicit profile",
+			capability: service.ProjectCapability{
+				State:                          "mixed",
+				SupportedVerificationProfiles:  []string{"go-standard", "python-standard"},
+				RecommendedVerificationProfile: "",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := selectOwnerVerificationProfile("mar", tc.requested, tc.capability)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got profile %q", got)
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("profile=%q err=%v want=%q", got, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
+	backend, fake := newOwnerSubmitTestBackend(t, map[string]string{
+		"go.mod": "module example.com/owner-submit\n\ngo 1.27\n",
+	})
 	body := []byte(`{
 		"project_id":"mar",
 		"base_revision":"abc123",
@@ -622,6 +717,46 @@ func TestOwnerUISubmitUsesBoundedMCPControlPlane(t *testing.T) {
 	}
 }
 
+func TestOwnerUISubmitDefaultsMarkerlessProjectToResearchArtifacts(t *testing.T) {
+	backend, fake := newOwnerSubmitTestBackend(t, map[string]string{})
+	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"research","acceptance":["done"],"priority":"P2"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	contract := fake.args["contract"].(domain.GoalContract)
+	if contract.VerificationProfile != "research-artifacts" {
+		t.Fatalf("expected research-artifacts recommendation, got %+v", contract)
+	}
+}
+
+func TestOwnerUISubmitAcceptsAdvertisedGoRelease(t *testing.T) {
+	backend, fake := newOwnerSubmitTestBackend(t, map[string]string{
+		"go.mod": "module example.com/owner-release\n\ngo 1.27\n",
+	})
+	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"release","acceptance":["done"],"verification_profile":"go-release","priority":"P2"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Origin", "http://127.0.0.1:8787")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ownerSessionHeader, "test-owner-token")
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	contract := fake.args["contract"].(domain.GoalContract)
+	if contract.VerificationProfile != "go-release" {
+		t.Fatalf("expected go-release, got %+v", contract)
+	}
+}
+
 func TestOwnerUISubmitRejectsUnsupportedNetworkAuthorityBeforeMCP(t *testing.T) {
 	fake := &fakeOwnerMCP{}
 	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
@@ -642,8 +777,9 @@ func TestOwnerUISubmitRejectsUnsupportedNetworkAuthorityBeforeMCP(t *testing.T) 
 }
 
 func TestOwnerUISubmitRejectsUnknownVerificationProfileBeforeMCP(t *testing.T) {
-	fake := &fakeOwnerMCP{}
-	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
+	backend, fake := newOwnerSubmitTestBackend(t, map[string]string{
+		"go.mod": "module example.com/owner-invalid\n\ngo 1.27\n",
+	})
 	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"skip-tests","priority":"P2"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
 	req.Host = "127.0.0.1:8787"
