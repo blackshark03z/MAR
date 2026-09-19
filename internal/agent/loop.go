@@ -789,7 +789,7 @@ func (l *Loop) checkAttempt(ctx context.Context, req RunRequest) (Status, string
 
 func mutationProducingTool(name string) bool {
 	switch name {
-	case "write_file", "replace_exact", "run_command":
+	case "write_file", "replace_exact", "replace_many_exact", "run_command":
 		return true
 	default:
 		return false
@@ -813,7 +813,7 @@ func pinToolDefinitions(defs []model.ToolDefinition, authority domain.Authority)
 		switch name {
 		case "read_file", "search_text", "git_status", "git_diff":
 			include = true
-		case "write_file", "replace_exact", "run_command":
+		case "write_file", "replace_exact", "replace_many_exact", "run_command":
 			include = authority.LocalFileWrite
 		default:
 			return nil, nil, fmt.Errorf("unclassified coding tool %q would require explicit authority classification", name)

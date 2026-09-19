@@ -16,6 +16,7 @@ func (r *Runtime) ToolDefinitions() []model.ToolDefinition {
 		{Name: "search_text", Description: "Search workspace text with bounded results.", Parameters: schema(`{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1}},"required":["query"],"additionalProperties":false}`), Strict: true},
 		{Name: "write_file", Description: "Create or replace a workspace file using an ABSENT or exact SHA-256 precondition.", Parameters: schema(`{"type":"object","properties":{"path":{"type":"string"},"expected_sha256":{"type":"string"},"content":{"type":"string"}},"required":["path","expected_sha256","content"],"additionalProperties":false}`), Strict: true},
 		{Name: "replace_exact", Description: "Apply an exact search/replace patch bound to the current file SHA-256.", Parameters: schema(`{"type":"object","properties":{"path":{"type":"string"},"expected_sha256":{"type":"string"},"search":{"type":"string"},"replacement":{"type":"string"},"expected_count":{"type":"integer","minimum":1}},"required":["path","expected_sha256","search","replacement","expected_count"],"additionalProperties":false}`), Strict: true},
+		{Name: "replace_many_exact", Description: "Apply a bounded ordered batch of exact replacements to one hash-bound file with one final atomic write.", Parameters: schema(`{"type":"object","properties":{"path":{"type":"string"},"expected_sha256":{"type":"string"},"replacements":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"object","properties":{"search":{"type":"string"},"replacement":{"type":"string"},"expected_count":{"type":"integer","minimum":1}},"required":["search","replacement","expected_count"],"additionalProperties":false}}},"required":["path","expected_sha256","replacements"],"additionalProperties":false}`), Strict: true},
 		{Name: "git_status", Description: "Return bounded Git status for the task workspace.", Parameters: schema(`{"type":"object","properties":{},"additionalProperties":false}`), Strict: true},
 		{Name: "git_diff", Description: "Return bounded Git diff, optionally limited to workspace-relative paths.", Parameters: schema(`{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`), Strict: true},
 		{Name: "run_command", Description: "Run an allow-listed coding verification command inside the configured executor boundary.", Parameters: schema(`{"type":"object","properties":{"name":{"type":"string"},"args":{"type":"array","items":{"type":"string"}},"cwd":{"type":"string"}},"required":["name"],"additionalProperties":false}`), Strict: true},
@@ -68,6 +69,17 @@ func (r *Runtime) ExecuteTool(ctx context.Context, call model.ToolCall) (string,
 			return "", err
 		}
 		result, err := r.ReplaceExact(args.Path, args.ExpectedSHA256, args.Search, args.Replacement, args.ExpectedCount)
+		return encodeResult(result, err)
+	case "replace_many_exact":
+		var args struct {
+			Path           string             `json:"path"`
+			ExpectedSHA256 string             `json:"expected_sha256"`
+			Replacements   []ExactReplacement `json:"replacements"`
+		}
+		if err := decodeArgs(call.Arguments, &args); err != nil {
+			return "", err
+		}
+		result, err := r.ReplaceManyExact(args.Path, args.ExpectedSHA256, args.Replacements)
 		return encodeResult(result, err)
 	case "git_status":
 		var args struct{}

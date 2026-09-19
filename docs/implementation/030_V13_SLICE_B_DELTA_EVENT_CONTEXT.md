@@ -1,8 +1,9 @@
-# MAR V1.3 Slice B  Delta/Event-Oriented Cognition Context
+# MAR V1.3 Slice B — Delta/Event-Oriented Cognition Context
 
 Date: 2026-09-19
-Status: IMPLEMENTED CANDIDATE  FOCUSED GATES PASS
+Status: VERIFIED + INTEGRATED + ACTIVATED
 Base revision: ba0b2dc9972984e9c9ce23b4ea164e60c02507dc
+Integrated / activated revision: 2ce7ccec63996c9872406352428fb075b371143c
 
 ## Purpose
 
@@ -14,7 +15,7 @@ The first Slice B task stopped correctly on the task-wide active-execution guard
 
 Recovery input was frozen at D:\MAR\.mar\recovery-input\mar-v13-slice-b-recovery.json with SHA256 533d60c94ac64767664568870170308e0d87965f07af67d6e7e538e31828c112 and reapplied onto the same clean base.
 
-Finalization source bundle SHA256: c9d6f31061b90620dc2ca9bbf0e8e1ac586e961c732c3b23cf0d97197f0c8172. Subsequent recovery work remained subject to the same task-wide budget discipline. Exhausted tasks are provenance only; final authority comes from the finalization task and MAR verification.
+Finalization source bundle SHA256: c9d6f31061b90620dc2ca9bbf0e8e1ac586e961c732c3b23cf0d97197f0c8172. Subsequent recovery work remained subject to the same task-wide budget discipline. Exhausted tasks are provenance only; final authority comes from the successful finalization task and MAR verification.
 
 ## Design
 
@@ -52,10 +53,26 @@ The code keeps delta only when it is smaller than full, providing an in-code com
 
 ## Focused validation
 
-- go fmt ./internal/service ./internal/mcpedge  PASS
-- go test -v ./internal/service ./internal/mcpedge -run TestCognition|TestBrainTurn -count=1  PASS
+- go fmt ./internal/service ./internal/mcpedge — PASS
+- go test -v ./internal/service ./internal/mcpedge -run TestCognition|TestBrainTurn -count=1 — PASS
 
 Observed passing tests: TestCognitionDeltaRecoveryFromCurrentState; TestCognitionDeltaReducesProjectionCost; TestCognitionEventKindsAreBounded; TestBrainTurnStructuredModePreservesStructuredPayloadAndCutsDuplicateText; TestBrainTurnDeltaModeIsOptInAndPreservesDefaultPayload.
+
+## Authoritative closeout
+
+MAR finalization v2 produced exact revision 2ce7ccec63996c9872406352428fb075b371143c.
+
+- authoritative go test -p 1 -timeout 180s ./... — PASS
+- authoritative go vet -p 1 ./... — PASS
+- authoritative go build -p 1 ./... — PASS
+- acceptance: 5/5 PASS
+- result verdict: VERIFIED
+- integration_status: INTEGRATED
+- unresolved risks: 0
+- workspace disposition: REMOVED
+- origin/master: 2ce7ccec63996c9872406352428fb075b371143c
+- activated runtime source_revision: 2ce7ccec63996c9872406352428fb075b371143c
+- live runtime: HEALTHY, ALIGNED, trusted_for_release=true
 
 ## Complexity
 
@@ -63,6 +80,6 @@ Slice B adds one derived service view plus additive optional arguments on the ex
 
 ## Verdict
 
-Slice B verdict: PASS for bounded implementation and focused acceptance.
+Slice B verdict: PASS.
 
-This is not a release-qualified claim by itself. The exact candidate must still pass authoritative MAR go-standard verification and serialized integration.
+Slice B is release-qualified for its bounded scope because the exact integrated candidate passed authoritative MAR verification, serialized integration, remote convergence, and exact-runtime activation proof.
