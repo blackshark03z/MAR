@@ -1,8 +1,9 @@
 # MAR V1.3 Slice C — Compound Deterministic Operations
 
 Date: 2026-09-19
-Status: IMPLEMENTED CANDIDATE — FOCUSED GATES PASS
+Status: VERIFIED + INTEGRATED
 Base revision: 2ce7ccec63996c9872406352428fb075b371143c
+Qualified revision: 7c7ba3c992dafcfec3a542cb1c3b53ada1770106
 
 ## Purpose
 
@@ -124,6 +125,22 @@ Covered behavior includes:
 - backward-compatible `replace_exact` naming;
 - byte-identical final output against three primitive calls.
 
+## Authoritative qualification closeout
+
+The exact existing Slice C revision was qualified through MAR as a read-only/no-op candidate at `7c7ba3c992dafcfec3a542cb1c3b53ada1770106`.
+
+- authoritative `go-standard` test/vet/build: PASS
+- acceptance: 6/6 PASS
+- verification: VERIFIED
+- integration: INTEGRATED
+- candidate revision equals base revision: YES (verified no-op)
+- unresolved risks: 0
+- workspace: REMOVED
+
+No Go/product/runtime code changed during qualification closeout.
+
+The later host activation of the same qualified revision succeeded with `MAR ACTIVATION PASS`, `ALIGNED`, and `trusted_for_release=true`; that runtime promotion evidence is separate from the qualification task itself.
+
 ## Complexity delta
 
 Added:
@@ -149,6 +166,6 @@ Not added:
 
 ## Verdict
 
-Slice C verdict: PASS for the bounded implementation candidate and focused acceptance.
+Slice C verdict: VERIFIED + INTEGRATED
 
-This is not yet a release-qualified claim. The exact candidate must still pass authoritative `go-standard` verification and MAR serialized integration before Slice C is COMPLETE.
+The bounded Slice C implementation passed authoritative `go-standard` verification and MAR serialized integration at qualified revision `7c7ba3c992dafcfec3a542cb1c3b53ada1770106`. The qualification candidate equaled its base revision, so this was a verified no-op qualification of already-existing source reality. Runtime activation was proven separately on the same revision.

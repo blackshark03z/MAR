@@ -8,7 +8,7 @@ Forward MAR architecture is now governed by:
 - `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`;
 - `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.
 
-Current direction: **MAR = Durable Local Execution Kernel for External Cognition**. Do not open a MAR V2 rewrite or add internal planner/multi-agent/memory infrastructure by default. The next bounded development line is MAR V1.3 Performance & Simplicity: delta/event cognition context -> telemetry-proven compound deterministic operations -> fast repair feedback with unchanged final authoritative verification -> conditional incremental Project Intelligence/cache work.
+Current direction: **MAR = Durable Local Execution Kernel for External Cognition**. Do not open a MAR V2 rewrite or add internal planner/multi-agent/memory infrastructure by default. Slice B (delta/event cognition context) is complete for its bounded scope. Slice C (telemetry-proven compound deterministic operations) is VERIFIED + INTEGRATED and complete for its bounded scope. The next bounded implementation slice is **Slice D — fast repair feedback with unchanged final authoritative verification**. Conditional incremental Project Intelligence/cache work remains later and is not opened by this closeout.
 
 The older V1 product goal/history below is retained as historical context and accepted-product intent. It does **not** override the 2026-09-19 architecture constitution or create implementation authority for a new V1.3 slice. A new implementation slice must still be opened as a bounded Goal with acceptance evidence.
 
