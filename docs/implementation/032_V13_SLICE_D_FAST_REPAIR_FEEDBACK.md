@@ -1,8 +1,9 @@
 # MAR V1.3 Slice D — Fast Repair Feedback
 
-Status: IMPLEMENTED CANDIDATE — FOCUSED GATES PASS
+Status: VERIFIED + INTEGRATED
 Date: 2026-09-19
 Base revision: 787169a7a5c3f579efd069a62149e5c99813904b
+Qualified revision: 8a80955ebfaa8d79ee45c9792c58a9a94838549e
 Roadmap parent: `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`
 Architecture parent: `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`
 
@@ -101,7 +102,20 @@ The test suite covers:
 - first-failed-command selection;
 - existing TaskRunner/retry/recovery behavior.
 
-Authoritative `go-standard` qualification has not yet been claimed in this document. That is performed after candidate finalization by MAR.
+Authoritative qualification: PASS
+
+Authoritative `go-standard` qualification for exact revision `8a80955ebfaa8d79ee45c9792c58a9a94838549e` completed through MAR:
+
+- `go test -p 1 -timeout 180s ./...` — PASS;
+- `go vet -p 1 ./...` — PASS;
+- `go build -p 1 ./...` — PASS;
+- acceptance: 7/7 PASS;
+- verdict: VERIFIED;
+- integration: INTEGRATED;
+- unresolved risks: 0;
+- workspace: REMOVED.
+
+This authoritative qualification is distinct from the earlier focused Slice D benchmark evidence: the focused evidence justified the optimization design, while final qualification established exact candidate correctness and integration eligibility.
 
 ## 8. Complexity delta
 
@@ -132,4 +146,4 @@ This recovery task reapplies the established minimal diff to canonical base `787
 
 Slice D verdict: PASS
 
-This verdict means the bounded implementation candidate and focused acceptance evidence pass. It does not predeclare authoritative qualification. Slice D becomes release-qualified only if MAR's final `go-standard` verification and serialized integration succeed for this exact candidate revision.
+This bounded verdict records that the focused Slice D implementation and benchmark evidence passed before final qualification. Authoritative qualification subsequently passed for exact revision `8a80955ebfaa8d79ee45c9792c58a9a94838549e`, and MAR integrated that revision with zero unresolved risks. Slice D is therefore complete for its bounded scope.
