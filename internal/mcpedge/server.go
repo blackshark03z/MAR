@@ -63,9 +63,15 @@ func validatePublicVerificationProfile(ctx context.Context, backend Backend, con
 	return fmt.Errorf("verification_profile %q is unsupported for project %q; supported profiles: %s", profile, projectID, strings.Join(supported, ", "))
 }
 
+type cognitionDeltaBackend interface {
+	CognitionDelta(context.Context, domain.WebTurn, string) (service.CognitionDelta, error)
+}
+
 type brainTurnArgs struct {
-	TaskID       string `json:"task_id" jsonschema:"MAR durable task id"`
-	ResponseMode string `json:"response_mode,omitempty" jsonschema:"compat (default) or structured"`
+	TaskID          string `json:"task_id" jsonschema:"MAR durable task id"`
+	ResponseMode    string `json:"response_mode,omitempty" jsonschema:"compat (default) or structured"`
+	ContextMode     string `json:"context_mode,omitempty" jsonschema:"full (default) or delta; delta requires structured response mode"`
+	CognitionCursor string `json:"cognition_cursor,omitempty" jsonschema:"opaque cursor from a prior brain_turn delta/full view"`
 }
 
 type projectArgs struct {
@@ -323,11 +329,20 @@ func addBrainTurnTool(server *mcp.Server, backend Backend) {
 				"enum":        []string{"compat", "structured"},
 				"description": "compat (default) repeats the full JSON in TextContent and StructuredContent; structured keeps the exact JSON only in StructuredContent and emits a compact text receipt",
 			},
+			"context_mode": map[string]any{
+				"type":        "string",
+				"enum":        []string{"full", "delta"},
+				"description": "full (default) returns the exact pending WebTurn; delta is opt-in and requires structured mode",
+			},
+			"cognition_cursor": map[string]any{
+				"type":        "string",
+				"description": "opaque non-authoritative cursor from a prior cognition view; missing or stale cursor falls back to full current state",
+			},
 		},
 		"required":             []string{"task_id"},
 		"additionalProperties": false,
 	}
-	server.AddTool(&mcp.Tool{Name: "brain_turn", Description: "Read the pending durable GPT Web brain turn for one task. response_mode may be compat (default) or structured.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
+	server.AddTool(&mcp.Tool{Name: "brain_turn", Description: "Read the pending durable external-cognition turn for one task. response_mode may be compat (default) or structured; context_mode may opt into delta projection.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if req == nil || req.Params == nil {
 				return rawToolError(errors.New("tool request parameters are required")), nil
@@ -347,11 +362,40 @@ func addBrainTurnTool(server *mcp.Server, backend Backend) {
 			if mode != "compat" && mode != "structured" {
 				return rawToolError(fmt.Errorf("brain_turn response_mode %q is unsupported; must be compat or structured", args.ResponseMode)), nil
 			}
+			contextMode := strings.ToLower(strings.TrimSpace(args.ContextMode))
+			if contextMode == "" {
+				contextMode = "full"
+			}
+			if contextMode != "full" && contextMode != "delta" {
+				return rawToolError(fmt.Errorf("brain_turn context_mode %q is unsupported; must be full or delta", args.ContextMode)), nil
+			}
+			if contextMode == "delta" && mode != "structured" {
+				return rawToolError(errors.New("brain_turn context_mode delta requires response_mode structured")), nil
+			}
 			turn, available, err := backend.PendingWebTurn(ctx, args.TaskID)
 			if err != nil {
 				return rawToolError(err), nil
 			}
 			value := map[string]any{"available": available, "turn": turn}
+			if contextMode == "delta" && available {
+				deltaBackend, ok := backend.(cognitionDeltaBackend)
+				if !ok {
+					return rawToolError(errors.New("brain_turn delta context is unavailable for this backend")), nil
+				}
+				view, err := deltaBackend.CognitionDelta(ctx, turn, strings.TrimSpace(args.CognitionCursor))
+				if err != nil {
+					return rawToolError(err), nil
+				}
+				value = map[string]any{
+					"available": true,
+					"turn": map[string]any{
+						"turn_id": turn.ID, "task_id": turn.TaskID, "attempt_id": turn.AttemptID,
+						"run_epoch": turn.RunEpoch, "request_id": turn.RequestID, "request_hash": turn.RequestHash,
+						"integrity_hash": turn.IntegrityHash, "created_at": turn.CreatedAt,
+					},
+					"cognition": view,
+				}
+			}
 			payload, err := json.Marshal(value)
 			if err != nil {
 				return nil, fmt.Errorf("marshal brain_turn tool result: %w", err)

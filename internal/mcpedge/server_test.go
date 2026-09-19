@@ -449,3 +449,76 @@ func TestToolApplicationErrorStaysToolVisibleNotProtocolCrash(t *testing.T) {
 		t.Fatalf("application error was not visible as a tool error: %+v", result)
 	}
 }
+
+type deltaReceiptBackend struct{ largeReceiptBackend }
+
+func (b *deltaReceiptBackend) CognitionDelta(_ context.Context, turn domain.WebTurn, cursor string) (service.CognitionDelta, error) {
+	return service.CognitionDelta{
+		Version: 1,
+		Mode:    "delta",
+		Event: service.CognitionEvent{
+			Kind: service.CognitionEventDecisionRequired, Sequence: 2,
+			TaskID: turn.TaskID, RunEpoch: turn.RunEpoch, TaskState: domain.TaskRunning, CurrentRevision: "rev-current",
+		},
+		BaseCursor: cursor,
+		Cursor:     "cursor-next",
+		Delta: &service.CognitionRequestDelta{
+			RequestID: turn.RequestID,
+			Projection: map[string]json.RawMessage{
+				"recent_protocol_evidence": json.RawMessage("{}"),
+			},
+		},
+		FullBytes:    128 << 10,
+		PayloadBytes: 512,
+	}, nil
+}
+
+func TestBrainTurnDeltaModeIsOptInAndPreservesDefaultPayload(t *testing.T) {
+	session := connectTestMCP(t, &deltaReceiptBackend{})
+
+	full, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{
+		"task_id": "task-large-receipt", "response_mode": "structured",
+	}})
+	if err != nil || full.IsError {
+		t.Fatalf("default structured brain_turn failed: err=%v result=%+v", err, full)
+	}
+	fullRaw, err := json.Marshal(full.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(fullRaw), "brain-turn-request-marker-") {
+		t.Fatal("default brain_turn no longer returns the exact authoritative full WebTurn")
+	}
+
+	delta, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{
+		"task_id": "task-large-receipt", "response_mode": "structured",
+		"context_mode": "delta", "cognition_cursor": "cursor-prev",
+	}})
+	if err != nil || delta.IsError {
+		t.Fatalf("delta brain_turn failed: err=%v result=%+v", err, delta)
+	}
+	deltaRaw, err := json.Marshal(delta.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(deltaRaw)
+	if !strings.Contains(text, `"cognition"`) || !strings.Contains(text, `"mode":"delta"`) || !strings.Contains(text, `"cursor":"cursor-next"`) {
+		t.Fatalf("delta brain_turn omitted bounded cognition metadata: %s", text)
+	}
+	if strings.Contains(text, "brain-turn-request-marker-") || strings.Contains(text, `"request":`) {
+		t.Fatalf("delta brain_turn leaked the full request payload: len=%d", len(deltaRaw))
+	}
+	if len(deltaRaw)*100 > len(fullRaw)*20 {
+		t.Fatalf("delta MCP view did not materially reduce outward bytes: delta=%d full=%d ratio=%.3f", len(deltaRaw), len(fullRaw), float64(len(deltaRaw))/float64(len(fullRaw)))
+	}
+
+	invalid, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn", Arguments: map[string]any{
+		"task_id": "task-large-receipt", "context_mode": "delta",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !invalid.IsError {
+		t.Fatal("delta context without structured response mode was accepted")
+	}
+}
