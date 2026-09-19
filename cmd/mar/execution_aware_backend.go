@@ -9,9 +9,17 @@ import (
 	"mar/internal/domain"
 	"mar/internal/mcpedge"
 	"mar/internal/model"
+	"mar/internal/service"
 )
 
-var errExecutionRuntimeUnavailable = errors.New("execution runtime is unavailable")
+var (
+	errExecutionRuntimeUnavailable = errors.New("execution runtime is unavailable")
+	errCognitionDeltaUnavailable   = errors.New("cognition delta is unavailable for wrapped backend")
+)
+
+type cognitionDeltaProvider interface {
+	CognitionDelta(context.Context, domain.WebTurn, string) (service.CognitionDelta, error)
+}
 
 type executionAwareBackend struct {
 	mcpedge.Backend
@@ -44,4 +52,12 @@ func (b executionAwareBackend) RespondWebTurn(ctx context.Context, taskID, turnI
 		return domain.WebTurn{}, false, err
 	}
 	return b.Backend.RespondWebTurn(ctx, taskID, turnID, message, finishReason)
+}
+
+func (b executionAwareBackend) CognitionDelta(ctx context.Context, current domain.WebTurn, cursor string) (service.CognitionDelta, error) {
+	provider, ok := b.Backend.(cognitionDeltaProvider)
+	if !ok || provider == nil {
+		return service.CognitionDelta{}, errCognitionDeltaUnavailable
+	}
+	return provider.CognitionDelta(ctx, current, cursor)
 }
