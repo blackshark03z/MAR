@@ -93,6 +93,39 @@ func TestDecisionProjectionUsesObservationArtifactReferences(t *testing.T) {
 	}
 }
 
+func TestDecisionProjectionCarriesFirstVerificationFailure(t *testing.T) {
+	in := projectionFixture(t)
+	in.State.Result = &DecisionProjectionResult{
+		ID: "result-failed", Version: 1, FinalRevision: "candidate", EvidenceID: "evidence-failed",
+		IntegrationStatus: "NOT_INTEGRATED", WorkspaceDisposition: "RETAINED",
+		Verdict: domain.ResultVerificationFailed, IntegrityHash: strings.Repeat("c", 64), CreatedAt: time.Now().UTC(),
+	}
+	in.State.Evidence = &DecisionProjectionEvidence{
+		ID: "evidence-failed", AttemptID: "old-attempt", RunEpoch: 1, CandidateRevision: "candidate",
+		ProfileID: "go-standard", ProfileHash: strings.Repeat("d", 64), EnvironmentHash: strings.Repeat("e", 64),
+		Verdict: domain.VerificationFail,
+		FirstFailedCommand: &DecisionProjectionCommandFailure{
+			Index: 1, Name: "go", Args: []string{"test", "./..."}, ExitCode: 1, DurationMS: 120,
+			OutputSHA256: strings.Repeat("a", 64), OutputPrefix: "FAIL repair-me-now",
+		},
+		IntegrityHash: strings.Repeat("f", 64), CreatedAt: time.Now().UTC(),
+	}
+	p, err := BuildDecisionProjection(in, DecisionProjectionConfig{MaxBytes: 32 << 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Evidence == nil || p.Evidence.FirstFailedCommand == nil || p.Evidence.FirstFailedCommand.Name != "go" || !strings.Contains(p.Evidence.FirstFailedCommand.OutputPrefix, "repair-me-now") {
+		t.Fatalf("first verification failure was not preserved in projection: %+v", p.Evidence)
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "first_failed_command") || !strings.Contains(string(raw), "repair-me-now") {
+		t.Fatalf("bounded first failure missing from projection JSON: %s", raw)
+	}
+}
+
 func projectionFixture(t *testing.T) DecisionProjectionInput {
 	t.Helper()
 	contract := domain.GoalContract{Goal: "bounded decisions", Acceptance: []string{"bounded"}, ProjectID: "mar", BaseRevision: "base", VerificationProfile: "go-standard", Priority: "high"}

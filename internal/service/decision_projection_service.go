@@ -170,11 +170,31 @@ func (s *TaskService) DecisionProjectionState(ctx context.Context, taskID, attem
 		if evidence.TaskID != taskID || !strings.EqualFold(evidence.GoalHash, task.ContractHash) || !strings.EqualFold(evidence.BaseRevision, task.Contract.BaseRevision) || !evidence.IntegrityValid() {
 			return contextengine.DecisionProjectionState{}, fmt.Errorf("decision projection verification evidence identity is inconsistent")
 		}
-		state.Evidence = &contextengine.DecisionProjectionEvidence{ID: evidence.ID, AttemptID: evidence.AttemptID, RunEpoch: evidence.RunEpoch, CandidateRevision: evidence.CandidateRevision, ProfileID: evidence.ProfileID, ProfileHash: evidence.ProfileHash, EnvironmentHash: evidence.EnvironmentHash, Verdict: evidence.Verdict, IntegrityHash: evidence.IntegrityHash, CreatedAt: evidence.CreatedAt}
+		state.Evidence = &contextengine.DecisionProjectionEvidence{
+			ID: evidence.ID, AttemptID: evidence.AttemptID, RunEpoch: evidence.RunEpoch,
+			CandidateRevision: evidence.CandidateRevision, ProfileID: evidence.ProfileID, ProfileHash: evidence.ProfileHash,
+			EnvironmentHash: evidence.EnvironmentHash, Verdict: evidence.Verdict,
+			FirstFailedCommand: firstFailedVerificationCommand(evidence),
+			IntegrityHash:      evidence.IntegrityHash, CreatedAt: evidence.CreatedAt,
+		}
 		advance(evidence.CreatedAt)
 	}
 	if state.CreatedAt.IsZero() {
 		return contextengine.DecisionProjectionState{}, fmt.Errorf("decision projection has no durable timestamp")
 	}
 	return state, nil
+}
+
+func firstFailedVerificationCommand(evidence domain.VerificationEvidence) *contextengine.DecisionProjectionCommandFailure {
+	for i, command := range evidence.Commands {
+		if command.Passed {
+			continue
+		}
+		return &contextengine.DecisionProjectionCommandFailure{
+			Index: i + 1, Name: command.Name, Args: append([]string(nil), command.Args...), Cwd: command.Cwd,
+			ExitCode: command.ExitCode, DurationMS: command.DurationMS,
+			OutputSHA256: command.OutputSHA256, OutputPrefix: command.OutputPrefix,
+		}
+	}
+	return nil
 }

@@ -39,17 +39,29 @@ type DecisionProjectionResult struct {
 	IntegrityHash        string               `json:"integrity_hash"`
 	CreatedAt            time.Time            `json:"created_at"`
 }
+type DecisionProjectionCommandFailure struct {
+	Index        int      `json:"index"`
+	Name         string   `json:"name"`
+	Args         []string `json:"args,omitempty"`
+	Cwd          string   `json:"cwd,omitempty"`
+	ExitCode     int      `json:"exit_code"`
+	DurationMS   int64    `json:"duration_ms"`
+	OutputSHA256 string   `json:"output_sha256"`
+	OutputPrefix string   `json:"output_prefix,omitempty"`
+}
+
 type DecisionProjectionEvidence struct {
-	ID                string                     `json:"id"`
-	AttemptID         string                     `json:"attempt_id"`
-	RunEpoch          int64                      `json:"run_epoch"`
-	CandidateRevision string                     `json:"candidate_revision"`
-	ProfileID         string                     `json:"profile_id"`
-	ProfileHash       string                     `json:"profile_hash"`
-	EnvironmentHash   string                     `json:"environment_hash"`
-	Verdict           domain.VerificationVerdict `json:"verdict"`
-	IntegrityHash     string                     `json:"integrity_hash"`
-	CreatedAt         time.Time                  `json:"created_at"`
+	ID                 string                            `json:"id"`
+	AttemptID          string                            `json:"attempt_id"`
+	RunEpoch           int64                             `json:"run_epoch"`
+	CandidateRevision  string                            `json:"candidate_revision"`
+	ProfileID          string                            `json:"profile_id"`
+	ProfileHash        string                            `json:"profile_hash"`
+	EnvironmentHash    string                            `json:"environment_hash"`
+	Verdict            domain.VerificationVerdict        `json:"verdict"`
+	FirstFailedCommand *DecisionProjectionCommandFailure `json:"first_failed_command,omitempty"`
+	IntegrityHash      string                            `json:"integrity_hash"`
+	CreatedAt          time.Time                         `json:"created_at"`
 }
 
 // DecisionProjectionState is an ephemeral snapshot assembled from MAR durable truth, never a second authority source.
@@ -154,6 +166,12 @@ func BuildDecisionProjection(in DecisionProjectionInput, cfg DecisionProjectionC
 	}
 	if s.Evidence != nil && (s.Result == nil || s.Evidence.ID != s.Result.EvidenceID || s.Evidence.CandidateRevision == "" || s.Evidence.IntegrityHash == "") {
 		return DecisionProjection{}, errors.New("decision projection evidence mismatch")
+	}
+	if s.Evidence != nil && s.Evidence.FirstFailedCommand != nil {
+		failure := s.Evidence.FirstFailedCommand
+		if s.Evidence.Verdict != domain.VerificationFail || failure.Index <= 0 || strings.TrimSpace(failure.Name) == "" || strings.TrimSpace(failure.OutputSHA256) == "" || failure.DurationMS < 0 {
+			return DecisionProjection{}, errors.New("decision projection first failed command is invalid")
+		}
 	}
 	repo := cloneDecisionPack(in.Repository)
 	truncated := repo.Truncated

@@ -171,6 +171,9 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 			OutputSHA256: hex.EncodeToString(sum[:]),
 			OutputPrefix: boundVerificationText(observed, 4096),
 		})
+		if !passed {
+			break
+		}
 	}
 	if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
 		return domain.TaskResult{}, err

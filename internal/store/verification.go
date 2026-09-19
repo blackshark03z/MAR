@@ -26,7 +26,9 @@ func (s *SQLite) PersistVerificationOutcome(ctx context.Context, evidence domain
 	if evidence.Verdict == domain.VerificationPass && result.Verdict == domain.ResultVerified {
 		target = domain.TaskVerified
 	} else if evidence.Verdict == domain.VerificationFail && result.Verdict == domain.ResultVerificationFailed {
-		target = domain.TaskBlocked
+		if hasFailedVerificationCommand(evidence.Commands) {
+			target = domain.TaskRetryWait
+		}
 	} else if evidence.Verdict == domain.VerificationUnverified && result.Verdict == domain.ResultUnverified {
 		target = domain.TaskBlocked
 	} else {
@@ -143,6 +145,15 @@ WHERE id = ? AND state = ? AND run_epoch = ?`, target, stamp, evidence.TaskID, s
 		return domain.TaskResult{}, err
 	}
 	return result, nil
+}
+
+func hasFailedVerificationCommand(commands []domain.VerificationCommandEvidence) bool {
+	for _, command := range commands {
+		if !command.Passed {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *SQLite) LatestTaskResult(ctx context.Context, taskID string) (domain.TaskResult, bool, error) {

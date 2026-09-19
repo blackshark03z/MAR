@@ -100,6 +100,9 @@ func TestVerifierPassPersistsRevisionBoundEvidenceAndVerifiedState(t *testing.T)
 	if result.Verdict != domain.ResultVerified || result.Version != 1 || len(result.ChangedAreas) != 1 || result.ChangedAreas[0] != "main.go" {
 		t.Fatalf("unexpected verified result: %+v", result)
 	}
+	if len(runtime.calls) != len(verifierProfile().Commands) {
+		t.Fatalf("all-pass authoritative profile did not execute every command exactly once: calls=%d commands=%d", len(runtime.calls), len(verifierProfile().Commands))
+	}
 	if result.UnresolvedRisks == nil || len(result.UnresolvedRisks) != 0 || !result.IntegrityValid() {
 		t.Fatalf("verified result risks/integrity invalid: %+v", result)
 	}
@@ -290,11 +293,20 @@ func TestVerifierPassingCommandsWithoutCriterionOracleRemainUnverified(t *testin
 func TestVerifierFailurePersistsEvidenceAndCannotBecomeVerified(t *testing.T) {
 	h := newSealerHarness(t, true)
 	prepareVerifierCandidate(t, h)
-	verifier := verifierForHarness(t, h, verifierProfile())
+	profile := Profile{ID: "test", Commands: []Command{
+		{Name: "go", Args: []string{"test", "./..."}},
+		{Name: "go", Args: []string{"vet", "./..."}},
+		{Name: "go", Args: []string{"build", "./..."}},
+	}}
+	verifier := verifierForHarness(t, h, profile)
 	runtime := &fakeVerificationRuntime{
-		root:    h.root,
-		results: []aci.ExecResult{{Output: "FAIL", ExitCode: 1}, {Output: "ok vet", ExitCode: 0}},
-		errs:    []error{errors.New("exit status 1"), nil},
+		root: h.root,
+		results: []aci.ExecResult{
+			{Output: "FAIL first useful failure", ExitCode: 1},
+			{Output: "ok vet", ExitCode: 0},
+			{Output: "ok build", ExitCode: 0},
+		},
+		errs: []error{errors.New("exit status 1"), nil, nil},
 	}
 
 	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: runtime})
@@ -304,13 +316,19 @@ func TestVerifierFailurePersistsEvidenceAndCannotBecomeVerified(t *testing.T) {
 	if result.Verdict != domain.ResultVerificationFailed || len(result.UnresolvedRisks) == 0 {
 		t.Fatalf("failed verification did not produce explicit failed result/risk: %+v", result)
 	}
+	if len(runtime.calls) != 1 {
+		t.Fatalf("later authoritative commands were not skipped after first failure: calls=%d", len(runtime.calls))
+	}
 	task, err := h.store.GetTask(context.Background(), h.task.ID)
-	if err != nil || task.State != domain.TaskBlocked {
-		t.Fatalf("failed verification reached invalid state: task=%+v err=%v", task, err)
+	if err != nil || task.State != domain.TaskRetryWait {
+		t.Fatalf("command-failed verification did not enter RETRY_WAIT: task=%+v err=%v", task, err)
 	}
 	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
 	if err != nil || evidence.Verdict != domain.VerificationFail || evidence.Acceptance[0].Passed {
 		t.Fatalf("failed evidence invalid: evidence=%+v err=%v", evidence, err)
+	}
+	if len(evidence.Commands) != 1 || evidence.Commands[0].Passed || !strings.Contains(evidence.Commands[0].OutputPrefix, "FAIL first useful failure") {
+		t.Fatalf("first useful failure was not durably bounded: %+v", evidence.Commands)
 	}
 	fresh, err := verifier.EvidenceFresh(context.Background(), evidence.ID)
 	if err != nil || fresh {
