@@ -106,9 +106,6 @@ func (p *Preflight) validate(ctx context.Context, task domain.Task) error {
 	if !ok {
 		return fmt.Errorf("verification profile %q is not registered", task.Contract.VerificationProfile)
 	}
-	if err := validateSupportedV1Authority(task.Contract.Authority); err != nil {
-		return err
-	}
 	project, err := p.store.GetProject(ctx, task.Contract.ProjectID)
 	if err != nil {
 		return err
@@ -172,19 +169,3 @@ func verificationProfileRequiresGoModule(profile verification.Profile) bool {
 	}
 }
 
-func validateSupportedV1Authority(authority domain.Authority) error {
-	unsupported := make([]string, 0, 3)
-	if authority.NetworkAllowed {
-		unsupported = append(unsupported, "network")
-	}
-	if authority.RemoteGitWrite {
-		unsupported = append(unsupported, "remote Git write")
-	}
-	if authority.DeployAllowed {
-		unsupported = append(unsupported, "deploy")
-	}
-	if len(unsupported) > 0 {
-		return fmt.Errorf("requested authority is unsupported by MAR V1 runtime: %s", strings.Join(unsupported, ", "))
-	}
-	return nil
-}

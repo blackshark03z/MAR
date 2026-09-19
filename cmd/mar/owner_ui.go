@@ -95,6 +95,9 @@ type ownerProjectRequest struct {
 type ownerProjectPolicyRequest struct {
 	LocalFileWrite bool `json:"local_file_write"`
 	LocalGitWrite  bool `json:"local_git_write"`
+	NetworkAllowed bool `json:"network_allowed"`
+	RemoteGitWrite bool `json:"remote_git_write"`
+	DeployAllowed  bool `json:"deploy_allowed"`
 }
 
 type ownerProjectBrowseRequest struct {
@@ -255,6 +258,8 @@ type ownerSubmitRequest struct {
 	LocalFileWrite      bool     `json:"local_file_write"`
 	LocalGitWrite       bool     `json:"local_git_write"`
 	NetworkAllowed      bool     `json:"network_allowed"`
+	RemoteGitWrite      bool     `json:"remote_git_write"`
+	DeployAllowed       bool     `json:"deploy_allowed"`
 }
 
 type ownerInputRequest struct {
@@ -1372,7 +1377,7 @@ func (b *ownerUIBackend) updateProjectPolicy(w http.ResponseWriter, r *http.Requ
 		writeOwnerError(w, http.StatusBadRequest, errors.New("valid project id and policy JSON are required"))
 		return
 	}
-	policy, err := b.svc.UpdateProjectPolicy(r.Context(), projectID, req.LocalFileWrite, req.LocalGitWrite)
+	policy, err := b.svc.UpdateProjectPolicy(r.Context(), projectID, req.LocalFileWrite, req.LocalGitWrite, req.NetworkAllowed, req.RemoteGitWrite, req.DeployAllowed)
 	if err != nil {
 		writeOwnerError(w, http.StatusBadRequest, err)
 		return
@@ -1721,10 +1726,6 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 		writeOwnerError(w, http.StatusBadRequest, errors.New("priority must be P0, P1, P2, or P3"))
 		return
 	}
-	if req.NetworkAllowed {
-		writeOwnerError(w, http.StatusBadRequest, errors.New("network authority is not supported by MAR V1 runtime"))
-		return
-	}
 	profile, err := resolveOwnerVerificationProfile(r.Context(), b.svc, req.ProjectID, req.VerificationProfile)
 	if err != nil {
 		writeOwnerError(w, http.StatusBadRequest, err)
@@ -1745,8 +1746,8 @@ func (b *ownerUIBackend) submitTask(w http.ResponseWriter, r *http.Request) {
 			LocalFileWrite: req.LocalFileWrite,
 			LocalGitWrite:  req.LocalGitWrite,
 			NetworkAllowed: req.NetworkAllowed,
-			RemoteGitWrite: false,
-			DeployAllowed:  false,
+			RemoteGitWrite: req.RemoteGitWrite,
+			DeployAllowed:  req.DeployAllowed,
 		},
 		VerificationProfile: req.VerificationProfile,
 		Priority:            req.Priority,

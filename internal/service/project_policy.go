@@ -16,7 +16,7 @@ func (s *TaskService) ProjectPolicy(ctx context.Context, projectID string) (doma
 	return s.store.GetProjectPolicy(ctx, projectID)
 }
 
-func (s *TaskService) UpdateProjectPolicy(ctx context.Context, projectID string, localFileWrite, localGitWrite bool) (domain.ProjectPolicy, error) {
+func (s *TaskService) UpdateProjectPolicy(ctx context.Context, projectID string, localFileWrite, localGitWrite, networkAllowed, remoteGitWrite, deployAllowed bool) (domain.ProjectPolicy, error) {
 	projectID = strings.TrimSpace(projectID)
 	if projectID == "" {
 		return domain.ProjectPolicy{}, errors.New("project id is required")
@@ -24,7 +24,7 @@ func (s *TaskService) UpdateProjectPolicy(ctx context.Context, projectID string,
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return domain.ProjectPolicy{}, err
 	}
-	policy := domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: localFileWrite, LocalGitWrite: localGitWrite, UpdatedAt: s.now().UTC()}
+	policy := domain.ProjectPolicy{ProjectID: projectID, LocalFileWrite: localFileWrite, LocalGitWrite: localGitWrite, NetworkAllowed: networkAllowed, RemoteGitWrite: remoteGitWrite, DeployAllowed: deployAllowed, UpdatedAt: s.now().UTC()}
 	if err := s.store.PutProjectPolicy(ctx, policy); err != nil {
 		return domain.ProjectPolicy{}, err
 	}

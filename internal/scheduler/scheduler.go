@@ -153,7 +153,7 @@ func selectTask(tasks []domain.Task, states map[string]store.ProjectScheduleStat
 		rank := effectivePriority(task.Contract.Priority, task.UpdatedAt, now, aging)
 		candidate, ok := byProject[task.Contract.ProjectID]
 		if !ok || rank < candidate.effective || (rank == candidate.effective && task.UpdatedAt.Before(candidate.task.UpdatedAt)) ||
-			(rank == candidate.effective && task.UpdatedAt.Equal(candidate.task.UpdatedAt) && task.ID < candidate.task.ID) {
+			(rank == candidate.effective && task.UpdatedAt.Equal(candidate.task.UpdatedAt) && task.CreatedAt.Before(candidate.task.CreatedAt)) {
 			state := states[task.Contract.ProjectID]
 			byProject[task.Contract.ProjectID] = projectCandidate{task: task, effective: rank, lastDispatch: state.LastDispatchedAt}
 		}

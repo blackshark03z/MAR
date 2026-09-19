@@ -23,7 +23,7 @@ func (s *SQLite) ListWaitingTasks(ctx context.Context) ([]domain.Task, error) {
 func (s *SQLite) ListTasksByState(ctx context.Context, wanted domain.TaskState) ([]domain.Task, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, idempotency_key, contract_json, contract_hash, state, run_epoch, created_at, updated_at
-FROM tasks WHERE state = ? ORDER BY updated_at ASC, id ASC`, string(wanted))
+FROM tasks WHERE state = ? ORDER BY updated_at ASC, created_at ASC, rowid ASC`, string(wanted))
 	if err != nil {
 		return nil, fmt.Errorf("list tasks in state %s: %w", wanted, err)
 	}

@@ -103,7 +103,7 @@ func TestPreflightValidatesGitBaseBeforeWaitingResource(t *testing.T) {
 	}
 }
 
-func TestPreflightRejectsUnsupportedAuthorityBeforeQueueing(t *testing.T) {
+func TestPreflightProjectPolicyBlocksDisabledElevatedAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		mutate func(*domain.Authority)
@@ -116,7 +116,7 @@ func TestPreflightRejectsUnsupportedAuthorityBeforeQueueing(t *testing.T) {
 			s, svc, baseTask, root, profiles := preflightFixture(t, "go-standard")
 			contract := baseTask.Contract
 			tc.mutate(&contract.Authority)
-			task, _, err := svc.Submit(context.Background(), "unsupported-"+tc.name, contract)
+			task, _, err := svc.Submit(context.Background(), "policy-denied-"+tc.name, contract)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -125,13 +125,39 @@ func TestPreflightRejectsUnsupportedAuthorityBeforeQueueing(t *testing.T) {
 				t.Fatal(err)
 			}
 			if err := preflight.Drive(context.Background(), task.ID); err == nil {
-				t.Fatal("unsupported authority entered the resource queue")
+				t.Fatal("disabled elevated authority entered the resource queue")
 			}
 			got, err := s.GetTask(context.Background(), task.ID)
 			if err != nil || got.State != domain.TaskBlocked {
-				t.Fatalf("unsupported authority did not block in preflight: task=%+v err=%v", got, err)
+				t.Fatalf("disabled elevated authority did not block in preflight: task=%+v err=%v", got, err)
 			}
 		})
+	}
+}
+
+func TestPreflightProjectPolicyAllowsEnabledElevatedAuthority(t *testing.T) {
+	s, svc, baseTask, root, profiles := preflightFixture(t, "go-standard")
+	if _, err := svc.UpdateProjectPolicy(context.Background(), baseTask.Contract.ProjectID, true, true, true, true, true); err != nil {
+		t.Fatal(err)
+	}
+	contract := baseTask.Contract
+	contract.Authority.NetworkAllowed = true
+	contract.Authority.RemoteGitWrite = true
+	contract.Authority.DeployAllowed = true
+	task, _, err := svc.Submit(context.Background(), "policy-enabled-elevated-authority", contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := preflight.Drive(context.Background(), task.ID); err != nil {
+		t.Fatalf("enabled elevated authority was rejected: %v", err)
+	}
+	got, err := s.GetTask(context.Background(), task.ID)
+	if err != nil || got.State != domain.TaskWaitingResource {
+		t.Fatalf("enabled elevated authority did not enter resource queue: task=%+v err=%v", got, err)
 	}
 }
 
@@ -173,7 +199,7 @@ func TestPreflightInvalidBaseBlocksInsteadOfQueueing(t *testing.T) {
 
 func TestPreflightProjectPolicyBlocksAuthorityWidening(t *testing.T) {
 	s, svc, task, root, profiles := preflightFixture(t, "go-standard")
-	if _, err := svc.UpdateProjectPolicy(context.Background(), task.Contract.ProjectID, false, true); err != nil {
+	if _, err := svc.UpdateProjectPolicy(context.Background(), task.Contract.ProjectID, false, true, false, false, false); err != nil {
 		t.Fatal(err)
 	}
 	preflight, err := newPreflightWithGit(s, svc, profiles, fakePreflightGit{root: root, base: "abcdef0123456789"})

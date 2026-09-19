@@ -12750,12 +12750,15 @@ async function addProject(root, id = "") {
 		})
 	});
 }
-async function updateProjectPolicy(id, local_file_write, local_git_write) {
+async function updateProjectPolicy(id, local_file_write, local_git_write, network_allowed, remote_git_write, deploy_allowed) {
 	return api(`/api/projects/${encodeURIComponent(id)}/policy`, {
 		method: "POST",
 		body: JSON.stringify({
 			local_file_write,
-			local_git_write
+			local_git_write,
+			network_allowed,
+			remote_git_write,
+			deploy_allowed
 		})
 	});
 }
@@ -14270,10 +14273,13 @@ function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
 	] });
 }
 function WorkspaceCard({ p, reload, selected, onSelect }) {
-	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write);
+	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write), [network, setNetwork] = (0, import_react.useState)(!!p.policy?.network_allowed), [push, setPush] = (0, import_react.useState)(!!p.policy?.remote_git_write), [deploy, setDeploy] = (0, import_react.useState)(!!p.policy?.deploy_allowed);
 	(0, import_react.useEffect)(() => {
 		setFile(!!p.policy?.local_file_write);
 		setGit(!!p.policy?.local_git_write);
+		setNetwork(!!p.policy?.network_allowed);
+		setPush(!!p.policy?.remote_git_write);
+		setDeploy(!!p.policy?.deploy_allowed);
 	}, [p]);
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 		className: `workspace-card ${selected ? "selected" : ""}`,
@@ -14307,7 +14313,9 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 					checked: git,
 					onChange: (e) => setGit(e.target.checked)
 				}), "Local Git"] }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Network / push / deploy: off" }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: network, onChange: (e) => setNetwork(e.target.checked) }), "Network: ", network ? "ON" : "OFF"] }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: push, onChange: (e) => setPush(e.target.checked) }), "Push: ", push ? "ON" : "OFF"] }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: deploy, onChange: (e) => setDeploy(e.target.checked) }), "Deploy: ", deploy ? "ON" : "OFF"] }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					className: `workspace-select-button ${selected ? "selected" : ""}`,
 					onClick: onSelect,
@@ -14316,7 +14324,7 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					onClick: async () => {
-						await updateProjectPolicy(p.id, file, git);
+						await updateProjectPolicy(p.id, file, git, network, push, deploy);
 						await reload();
 					},
 					children: "Lưu quyền"

@@ -52,8 +52,8 @@ export async function pickProject() {
 export async function addProject(root: string, id = '') {
   return api('/api/projects', { method: 'POST', body: JSON.stringify({ root, id }) })
 }
-export async function updateProjectPolicy(id: string, local_file_write: boolean, local_git_write: boolean) {
-  return api(`/api/projects/${encodeURIComponent(id)}/policy`, { method: 'POST', body: JSON.stringify({ local_file_write, local_git_write }) })
+export async function updateProjectPolicy(id: string, local_file_write: boolean, local_git_write: boolean, network_allowed: boolean, remote_git_write: boolean, deploy_allowed: boolean) {
+  return api(`/api/projects/${encodeURIComponent(id)}/policy`, { method: 'POST', body: JSON.stringify({ local_file_write, local_git_write, network_allowed, remote_git_write, deploy_allowed }) })
 }
 export async function sandboxPrepare() {
   return api('/api/runtime/sandbox/prepare', { method: 'POST', body: '{}' })

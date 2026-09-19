@@ -757,10 +757,11 @@ func TestOwnerUISubmitAcceptsAdvertisedGoRelease(t *testing.T) {
 	}
 }
 
-func TestOwnerUISubmitRejectsUnsupportedNetworkAuthorityBeforeMCP(t *testing.T) {
-	fake := &fakeOwnerMCP{}
-	backend := &ownerUIBackend{session: fake, sessionToken: "test-owner-token"}
-	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"go-standard","priority":"P2","network_allowed":true}`)
+func TestOwnerUISubmitForwardsElevatedAuthorityToMCP(t *testing.T) {
+	backend, fake := newOwnerSubmitTestBackend(t, map[string]string{
+		"go.mod": "module example.com/owner-authority\n\ngo 1.27\n",
+	})
+	body := []byte(`{"project_id":"mar","base_revision":"abc","goal":"g","acceptance":["a"],"verification_profile":"go-standard","priority":"P2","network_allowed":true,"remote_git_write":true,"deploy_allowed":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/tasks", bytes.NewReader(body))
 	req.Host = "127.0.0.1:8787"
 	req.Header.Set("Origin", "http://127.0.0.1:8787")
@@ -768,11 +769,15 @@ func TestOwnerUISubmitRejectsUnsupportedNetworkAuthorityBeforeMCP(t *testing.T) 
 	req.Header.Set(ownerSessionHeader, "test-owner-token")
 	rec := httptest.NewRecorder()
 	backend.routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusBadRequest {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
 	}
-	if fake.name != "" {
-		t.Fatalf("unsupported network request reached MCP tool %q", fake.name)
+	if fake.name != "submit" {
+		t.Fatalf("elevated authority request did not reach submit tool: %q", fake.name)
+	}
+	contract := fake.args["contract"].(domain.GoalContract)
+	if !contract.Authority.NetworkAllowed || !contract.Authority.RemoteGitWrite || !contract.Authority.DeployAllowed {
+		t.Fatalf("elevated authority was not forwarded: %+v", contract.Authority)
 	}
 }
 
@@ -1241,8 +1246,11 @@ func TestOwnerUIAddProjectAndPolicyAreDurable(t *testing.T) {
 	if added.Project.ID == "" || !added.Project.Supported || !added.Project.Policy.LocalFileWrite || !added.Project.Policy.LocalGitWrite {
 		t.Fatalf("unexpected added project: %+v", added.Project)
 	}
+	if added.Project.Policy.NetworkAllowed || added.Project.Policy.RemoteGitWrite || added.Project.Policy.DeployAllowed {
+		t.Fatalf("elevated authority must default OFF: %+v", added.Project.Policy)
+	}
 
-	policyBody := []byte(`{"local_file_write":true,"local_git_write":false}`)
+	policyBody := []byte(`{"local_file_write":true,"local_git_write":false,"network_allowed":true,"remote_git_write":true,"deploy_allowed":true}`)
 	policyReq := httptest.NewRequest(http.MethodPost, "/api/projects/"+added.Project.ID+"/policy", bytes.NewReader(policyBody))
 	policyReq.Host = "127.0.0.1:8787"
 	policyReq.Header.Set("Origin", "http://127.0.0.1:8787")
@@ -1263,8 +1271,8 @@ func TestOwnerUIAddProjectAndPolicyAreDurable(t *testing.T) {
 	}
 	defer reopened.Close()
 	policy, err := reopened.GetProjectPolicy(context.Background(), added.Project.ID)
-	if err != nil || !policy.LocalFileWrite || policy.LocalGitWrite || policy.NetworkAllowed || policy.RemoteGitWrite || policy.DeployAllowed {
-		t.Fatalf("policy did not survive restart or widened unsupported authority: %+v err=%v", policy, err)
+	if err != nil || !policy.LocalFileWrite || policy.LocalGitWrite || !policy.NetworkAllowed || !policy.RemoteGitWrite || !policy.DeployAllowed {
+		t.Fatalf("all five policy flags did not survive restart: %+v err=%v", policy, err)
 	}
 }
 

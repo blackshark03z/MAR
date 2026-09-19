@@ -135,6 +135,59 @@ func queueTask(t *testing.T, svc *service.TaskService, projectID, key, priority 
 	return got
 }
 
+func TestSelectTaskPreservesInputOrderWhenAllSchedulingKeysTie(t *testing.T) {
+	now := time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC)
+	stamp := now.Add(-time.Minute)
+	first := domain.Task{ID: "task-z-first", CreatedAt: stamp, UpdatedAt: stamp, Contract: domain.GoalContract{ProjectID: "project-a", Priority: "P2"}}
+	second := domain.Task{ID: "task-a-second", CreatedAt: stamp, UpdatedAt: stamp, Contract: domain.GoalContract{ProjectID: "project-a", Priority: "P2"}}
+	got := selectTask([]domain.Task{first, second}, nil, now, time.Hour)
+	if got.ID != first.ID {
+		t.Fatalf("exact scheduling ties must preserve stable input order, got %s want %s", got.ID, first.ID)
+	}
+}
+
+func TestSchedulerPreservesSubmissionFIFOWhenTimestampsTie(t *testing.T) {
+	s, svc, sch, _ := schedulerHarness(t, healthyHost())
+	defer s.Close()
+	ctx := context.Background()
+	if _, _, err := svc.RegisterProject(ctx, "project-tie", filepath.Join(t.TempDir(), "project-tie")); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{Goal: "scheduler tie test", Acceptance: []string{"scheduled"}, ProjectID: "project-tie", BaseRevision: "abc", VerificationProfile: "test", Priority: "P2"}
+	hash, err := contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stamp := time.Date(2026, 9, 20, 0, 0, 0, 123, time.UTC)
+	first := domain.Task{ID: "task-z-first", IdempotencyKey: "tie-first", Contract: contract, ContractHash: hash, State: domain.TaskSubmitted, CreatedAt: stamp, UpdatedAt: stamp}
+	second := domain.Task{ID: "task-a-second", IdempotencyKey: "tie-second", Contract: contract, ContractHash: hash, State: domain.TaskSubmitted, CreatedAt: stamp, UpdatedAt: stamp}
+	for _, task := range []domain.Task{first, second} {
+		if _, created, err := s.SubmitTask(ctx, task); err != nil || !created {
+			t.Fatalf("submit tied task %s: created=%v err=%v", task.ID, created, err)
+		}
+		if err := s.OrchestratorTransition(ctx, task.ID, domain.TaskSubmitted, domain.TaskPreflight, stamp); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.OrchestratorTransition(ctx, task.ID, domain.TaskPreflight, domain.TaskWaitingResource, stamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waiting, err := s.ListWaitingTasks(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(waiting) != 2 || waiting[0].ID != first.ID || waiting[1].ID != second.ID {
+		t.Fatalf("persistent tie order is not insertion FIFO: %+v", waiting)
+	}
+	got, err := sch.Step(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TaskID != first.ID {
+		t.Fatalf("scheduler did not preserve persisted FIFO, got %+v want %s", got, first.ID)
+	}
+}
+
 func TestSchedulerPersistsProjectFairnessAcrossInstances(t *testing.T) {
 	s, svc, sch, workspace := schedulerHarness(t, healthyHost())
 	defer s.Close()
