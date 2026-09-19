@@ -53,6 +53,11 @@ type GitBroker interface {
 	Diff(ctx context.Context, taskID, root string, paths []string, maxOutputBytes int) (ExecResult, error)
 }
 
+type RemoteGitBroker interface {
+	RemoteRef(ctx context.Context, taskID, root, remote, branch string, maxOutputBytes int) (ExecResult, error)
+	PushHead(ctx context.Context, taskID, root, remote, branch string, maxOutputBytes int) (ExecResult, error)
+}
+
 type sandboxEnvironmentPolicy interface {
 	RequiresSanitizedEnvironment() bool
 }
@@ -445,6 +450,26 @@ func (r *Runtime) GitDiff(ctx context.Context, paths []string) (ExecResult, erro
 	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
 	defer cancel()
 	return r.gitBroker.Diff(commandCtx, r.taskID, r.root, cleanPaths, r.cfg.MaxCommandOutputBytes)
+}
+
+func (r *Runtime) GitRemoteRef(ctx context.Context, remote, branch string) (ExecResult, error) {
+	broker, ok := r.gitBroker.(RemoteGitBroker)
+	if !ok || broker == nil {
+		return ExecResult{}, errors.New("remote Git broker is not configured")
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	defer cancel()
+	return broker.RemoteRef(commandCtx, r.taskID, r.root, remote, branch, r.cfg.MaxCommandOutputBytes)
+}
+
+func (r *Runtime) GitPushHead(ctx context.Context, remote, branch string) (ExecResult, error) {
+	broker, ok := r.gitBroker.(RemoteGitBroker)
+	if !ok || broker == nil {
+		return ExecResult{}, errors.New("remote Git broker is not configured")
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, r.cfg.CommandTimeout)
+	defer cancel()
+	return broker.PushHead(commandCtx, r.taskID, r.root, remote, branch, r.cfg.MaxCommandOutputBytes)
 }
 
 func (r *Runtime) RunCommand(ctx context.Context, cmd Command) (ExecResult, error) {

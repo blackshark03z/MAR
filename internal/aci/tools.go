@@ -19,6 +19,9 @@ func (r *Runtime) ToolDefinitions() []model.ToolDefinition {
 		{Name: "replace_many_exact", Description: "Apply a bounded ordered batch of exact replacements to one hash-bound file with one final atomic write.", Parameters: schema(`{"type":"object","properties":{"path":{"type":"string"},"expected_sha256":{"type":"string"},"replacements":{"type":"array","minItems":1,"maxItems":16,"items":{"type":"object","properties":{"search":{"type":"string"},"replacement":{"type":"string"},"expected_count":{"type":"integer","minimum":1}},"required":["search","replacement","expected_count"],"additionalProperties":false}}},"required":["path","expected_sha256","replacements"],"additionalProperties":false}`), Strict: true},
 		{Name: "git_status", Description: "Return bounded Git status for the task workspace.", Parameters: schema(`{"type":"object","properties":{},"additionalProperties":false}`), Strict: true},
 		{Name: "git_diff", Description: "Return bounded Git diff, optionally limited to workspace-relative paths.", Parameters: schema(`{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`), Strict: true},
+		{Name: "network_fetch", Description: "Fetch a bounded public HTTP(S) resource with SSRF protections; GET only.", Parameters: schema(`{"type":"object","properties":{"url":{"type":"string"}},"required":["url"],"additionalProperties":false}`), Strict: true},
+		{Name: "git_remote_ref", Description: "Query one branch on an existing configured Git remote without accepting a remote URL.", Parameters: schema(`{"type":"object","properties":{"remote":{"type":"string"},"branch":{"type":"string"}},"required":["remote","branch"],"additionalProperties":false}`), Strict: true},
+		{Name: "git_push_head", Description: "Push the workspace current HEAD to one validated branch on an existing configured Git remote using a normal non-force push.", Parameters: schema(`{"type":"object","properties":{"remote":{"type":"string"},"branch":{"type":"string"}},"required":["remote","branch"],"additionalProperties":false}`), Strict: true},
 		{Name: "run_command", Description: "Run an allow-listed coding verification command inside the configured executor boundary.", Parameters: schema(`{"type":"object","properties":{"name":{"type":"string"},"args":{"type":"array","items":{"type":"string"}},"cwd":{"type":"string"}},"required":["name"],"additionalProperties":false}`), Strict: true},
 	}
 }
@@ -96,6 +99,35 @@ func (r *Runtime) ExecuteTool(ctx context.Context, call model.ToolCall) (string,
 			return "", err
 		}
 		result, err := r.GitDiff(ctx, args.Paths)
+		return encodeResult(result, err)
+	case "network_fetch":
+		var args struct {
+			URL string `json:"url"`
+		}
+		if err := decodeArgs(call.Arguments, &args); err != nil {
+			return "", err
+		}
+		result, err := r.NetworkFetch(ctx, args.URL)
+		return encodeResult(result, err)
+	case "git_remote_ref":
+		var args struct {
+			Remote string `json:"remote"`
+			Branch string `json:"branch"`
+		}
+		if err := decodeArgs(call.Arguments, &args); err != nil {
+			return "", err
+		}
+		result, err := r.GitRemoteRef(ctx, args.Remote, args.Branch)
+		return encodeResult(result, err)
+	case "git_push_head":
+		var args struct {
+			Remote string `json:"remote"`
+			Branch string `json:"branch"`
+		}
+		if err := decodeArgs(call.Arguments, &args); err != nil {
+			return "", err
+		}
+		result, err := r.GitPushHead(ctx, args.Remote, args.Branch)
 		return encodeResult(result, err)
 	case "run_command":
 		var args struct {

@@ -14273,7 +14273,7 @@ function WorkspacesPage({ projects, reload, workspace, setWorkspace }) {
 	] });
 }
 function WorkspaceCard({ p, reload, selected, onSelect }) {
-	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write), [network, setNetwork] = (0, import_react.useState)(!!p.policy?.network_allowed), [push, setPush] = (0, import_react.useState)(!!p.policy?.remote_git_write), [deploy, setDeploy] = (0, import_react.useState)(!!p.policy?.deploy_allowed);
+	const [file, setFile] = (0, import_react.useState)(!!p.policy?.local_file_write), [git, setGit] = (0, import_react.useState)(!!p.policy?.local_git_write), [network, setNetwork] = (0, import_react.useState)(!!p.policy?.network_allowed), [push, setPush] = (0, import_react.useState)(!!p.policy?.remote_git_write), [deploy, setDeploy] = (0, import_react.useState)(!!p.policy?.deploy_allowed), [saving, setSaving] = (0, import_react.useState)(false), [message, setMessage] = (0, import_react.useState)(""), [error, setError] = (0, import_react.useState)("");
 	(0, import_react.useEffect)(() => {
 		setFile(!!p.policy?.local_file_write);
 		setGit(!!p.policy?.local_git_write);
@@ -14323,12 +14323,25 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 					children: selected ? "Đang chọn" : "Chọn"
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+					disabled: saving,
 					onClick: async () => {
-						await updateProjectPolicy(p.id, file, git, network, push, deploy);
-						await reload();
+						setSaving(true);
+						setMessage("");
+						setError("");
+						try {
+							await updateProjectPolicy(p.id, file, git, network, push, deploy);
+							await reload();
+							setMessage("Đã lưu quyền");
+						} catch (e) {
+							setError(e?.message || "Không thể lưu quyền");
+						} finally {
+							setSaving(false);
+						}
 					},
-					children: "Lưu quyền"
-				})
+					children: saving ? "Đang lưu..." : "Lưu quyền"
+				}),
+				message && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "action-feedback success", children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CheckCircle2, { size: 15 }), message] }),
+				error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "action-feedback error", children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15 }), error] })
 			]
 		})]
 	});

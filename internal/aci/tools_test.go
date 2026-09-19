@@ -23,7 +23,7 @@ func TestToolDefinitionsAreValidAndUnique(t *testing.T) {
 			t.Fatalf("tool %s has invalid JSON schema: %s", def.Name, def.Parameters)
 		}
 	}
-	for _, want := range []string{"read_file", "search_text", "write_file", "replace_exact", "replace_many_exact", "git_status", "git_diff", "run_command"} {
+	for _, want := range []string{"read_file", "search_text", "write_file", "replace_exact", "replace_many_exact", "git_status", "git_diff", "network_fetch", "git_remote_ref", "git_push_head", "run_command"} {
 		if !seen[want] {
 			t.Fatalf("missing tool %s", want)
 		}

@@ -260,7 +260,7 @@ type mcpRuntimeOptions struct {
 	MaxWorkers      int
 }
 
-const defaultWorkerInstructions = `You are the bounded MAR coding worker for one immutable Goal Contract. Work only inside the assigned task workspace and granted authority. Inspect relevant context before editing. Use the provided coding tools for reads, writes, Git inspection and allowed commands. Never push, deploy, widen the Goal Contract, or mutate authoritative integration state. Checkpoint meaningful progress. Finish only with finish_task using completed_candidate, blocked, cancelled, or budget_exhausted; completed_candidate means ready for MAR verification, not verified or integrated.`
+const defaultWorkerInstructions = `You are the bounded MAR coding worker for one immutable Goal Contract. Work only inside the assigned task workspace and granted authority. Inspect relevant context before editing. Use only the provided authority-gated coding tools for reads, writes, bounded public network reads, typed Git operations and allowed verification commands. Remote Git writes are allowed only when the typed push tool is explicitly provided; never force, delete, rewrite Git history, deploy, widen the Goal Contract, or mutate authoritative integration state. Checkpoint meaningful progress. Finish only with finish_task using completed_candidate, blocked, cancelled, or budget_exhausted; completed_candidate means ready for MAR verification, not verified or integrated.`
 
 func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	if opts.MaxWorkers <= 0 {
