@@ -342,7 +342,7 @@ func addBrainTurnTool(server *mcp.Server, backend Backend) {
 		"required":             []string{"task_id"},
 		"additionalProperties": false,
 	}
-	server.AddTool(&mcp.Tool{Name: "brain_turn", Description: "Read the pending durable external-cognition turn for one task. response_mode may be compat (default) or structured; context_mode may opt into delta projection.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
+	server.AddTool(&mcp.Tool{Name: "brain_turn", Description: "Read the pending durable external-cognition turn for one task. Prefer structured+delta for modern MCP clients that support StructuredContent: use response_mode=structured, context_mode=delta, and carry cognition_cursor between turns; a missing or stale cursor safely falls back to full current state. compat/full remain defaults for compatibility.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if req == nil || req.Params == nil {
 				return rawToolError(errors.New("tool request parameters are required")), nil
