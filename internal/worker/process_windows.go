@@ -352,12 +352,42 @@ func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, 
 			}
 			if available {
 				if capacityReleased && start.Capacity != nil {
-					if err := start.Capacity.Resume(ctx); err != nil {
+					if err := r.resumeWebTurnCapacity(ctx, start); err != nil {
 						return model.TurnResponse{}, fmt.Errorf("resume web brain execution capacity: %w", err)
 					}
 					capacityReleased = false
 				}
 				return response, nil
+			}
+		}
+	}
+}
+
+func (r *ProcessRunner) resumeWebTurnCapacity(ctx context.Context, start StartRequest) error {
+	if start.Capacity == nil {
+		return nil
+	}
+	resumeCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- start.Capacity.Resume(resumeCtx)
+	}()
+	heartbeatEvery := r.cfg.LeaseDuration / 3
+	if heartbeatEvery < time.Second {
+		heartbeatEvery = time.Second
+	}
+	heartbeat := time.NewTicker(heartbeatEvery)
+	defer heartbeat.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-done:
+			return err
+		case <-heartbeat.C:
+			if err := r.backend.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
+				return fmt.Errorf("capacity reacquire heartbeat failed: %w", err)
 			}
 		}
 	}

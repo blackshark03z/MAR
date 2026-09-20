@@ -195,6 +195,61 @@ func TestWebTurnResponseWaitsForCapacityReacquireBeforeReturningToWorker(t *test
 	}
 }
 
+func TestWebTurnCapacityReacquireKeepsAttemptLeaseAlive(t *testing.T) {
+	start := workerProcessTestStart()
+	start.AgentConfig.MaxDuration = 5 * time.Second
+	capacity := newGatedWaitCapacity()
+	start.Capacity = capacity
+	backend := &webWaitBackend{
+		fakeControlBackend: &fakeControlBackend{authoritative: true},
+		turn:               domain.WebTurn{ID: "turn-capacity-heartbeat", TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch, RequestID: "request-capacity-heartbeat", CreatedAt: time.Now().UTC()},
+		response:           model.TurnResponse{ProviderResponseID: "web:turn-capacity-heartbeat", Model: "gpt-5.6-sol", Message: model.Message{Role: model.RoleAssistant, Content: "resume"}, FinishReason: "stop"},
+	}
+	runner := &ProcessRunner{backend: backend, cfg: ProcessConfig{LeaseDuration: 3 * time.Second}}
+	type result struct {
+		response model.TurnResponse
+		err      error
+	}
+	done := make(chan result, 1)
+	go func() {
+		response, err := runner.waitForWebTurn(context.Background(), start, webTurnRequest{TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch})
+		done <- result{response: response, err: err}
+	}()
+	select {
+	case <-capacity.parked:
+	case <-time.After(time.Second):
+		t.Fatal("Web wait did not park execution capacity")
+	}
+	backend.makeAvailable()
+	select {
+	case <-capacity.resumeCalled:
+	case <-time.After(time.Second):
+		t.Fatal("available Web response did not request capacity reacquire")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		backend.fakeControlBackend.mu.Lock()
+		heartbeats := backend.fakeControlBackend.heartbeatCalls
+		backend.fakeControlBackend.mu.Unlock()
+		if heartbeats > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("capacity reacquire did not heartbeat the attempt")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	close(capacity.allowResume)
+	select {
+	case got := <-done:
+		if got.err != nil || got.response.ProviderResponseID != backend.response.ProviderResponseID {
+			t.Fatalf("Web response did not resume after heartbeat-protected reacquire: response=%+v err=%v", got.response, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Web wait did not return after capacity reacquire")
+	}
+}
+
 func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {
 	start := workerProcessTestStart()
 	start.Task.Contract.Goal = strings.Repeat("large-goal-", 2048)
