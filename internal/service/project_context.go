@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -158,11 +157,7 @@ func (s *TaskService) ProjectContext(ctx context.Context, projectID string) ([]P
 		if projectID != "" && project.ID != projectID {
 			continue
 		}
-		cmd := exec.CommandContext(ctx, "git", "-C", project.Root, "rev-parse", "HEAD")
-		out, err := cmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("read current HEAD for project %q: %w", project.ID, err)
-		}
+		head, hasHead := currentProjectHead(ctx, project.Root)
 		policy, err := s.store.GetProjectPolicy(ctx, project.ID)
 		if err != nil {
 			return nil, fmt.Errorf("read project policy for %q: %w", project.ID, err)
@@ -171,9 +166,14 @@ func (s *TaskService) ProjectContext(ctx context.Context, projectID string) ([]P
 		if err != nil {
 			return nil, fmt.Errorf("detect project capability for %q: %w", project.ID, err)
 		}
+		if !hasHead {
+			capability.State = researchOnlyProjectMode
+			capability.SupportedVerificationProfiles = nil
+			capability.RecommendedVerificationProfile = ""
+		}
 		items = append(items, ProjectContextItem{
 			ProjectID:  project.ID,
-			Head:       strings.TrimSpace(string(out)),
+			Head:       head,
 			Policy:     policy,
 			Capability: capability,
 		})

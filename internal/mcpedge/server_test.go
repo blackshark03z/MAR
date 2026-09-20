@@ -52,6 +52,18 @@ func (f *fakeBackend) PendingWebTurn(context.Context, string) (domain.WebTurn, b
 func (f *fakeBackend) RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error) {
 	return domain.WebTurn{}, true, nil
 }
+func (f *fakeBackend) AttachLocalPath(_ context.Context, path string) (service.ProjectAttachResult, error) {
+	if strings.TrimSpace(path) == "" {
+		return service.ProjectAttachResult{}, errors.New("local path is required")
+	}
+	return service.ProjectAttachResult{Schema: "mar-project-attach-v1", ProjectID: "attached-project", Root: path, Kind: "directory", Mode: "research_only", Created: true}, nil
+}
+func (f *fakeBackend) ListProjectDirectory(_ context.Context, projectID, path string, maxEntries int) (service.ProjectListResult, error) {
+	if projectID == "" {
+		return service.ProjectListResult{}, errors.New("project_id is required for project list")
+	}
+	return service.ProjectListResult{ProjectID: projectID, Path: path, Entries: []service.ProjectListEntry{{Name: "README.md", Path: "README.md", Kind: "file", SizeBytes: 10}}}, nil
+}
 func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string) (service.ProjectReadResult, error) {
 	if path == "" {
 		return service.ProjectReadResult{}, errors.New("file path is required")

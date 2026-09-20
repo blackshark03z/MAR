@@ -27,6 +27,8 @@ type Backend interface {
 	PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error)
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
+	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
+	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
 }
 
@@ -75,9 +77,10 @@ type brainTurnArgs struct {
 }
 
 type projectArgs struct {
-	Operation string `json:"operation" jsonschema:"context or read"`
-	ProjectID string `json:"project_id,omitempty"`
-	Path      string `json:"path,omitempty"`
+	Operation  string `json:"operation" jsonschema:"context, read, attach, or list"`
+	ProjectID  string `json:"project_id,omitempty"`
+	Path       string `json:"path,omitempty"`
+	MaxEntries int    `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
 }
 
 type taskDomainArgs struct {
@@ -109,7 +112,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Read registered project context or one bounded project file. Use operation=context or operation=read."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, read registered project context/files, or list one bounded directory. Use operation=context, read, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -171,8 +174,20 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"file": result}, nil
+	case "attach":
+		result, err := backend.AttachLocalPath(ctx, strings.TrimSpace(args.Path))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"attachment": result}, nil
+	case "list":
+		result, err := backend.ListProjectDirectory(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path), args.MaxEntries)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context or read")
+		return nil, errors.New("project operation must be context, read, attach, or list")
 	}
 }
 
