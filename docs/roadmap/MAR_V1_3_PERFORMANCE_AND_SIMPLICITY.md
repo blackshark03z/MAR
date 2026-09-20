@@ -94,7 +94,11 @@ V1.3 must not rebuild this as a new Task Capsule subsystem.
 
 Treat it as the starting baseline for later measurements.
 
-## 6. Slice B — Delta/Event-Oriented Cognition Context
+## 6. Slice B — IMPLEMENTED / VERIFIED BASELINE
+
+**Current status:** implemented, verified, integrated, and activated. `brain_turn` structured+delta with carried `cognition_cursor` is the current baseline for modern StructuredContent-capable clients; stale or missing cursors safely fall back to durable full current state. Detailed evidence remains in `docs/implementation/030_V13_SLICE_B_DELTA_EVENT_CONTEXT.md`. Slice C telemetry/baseline work is the next bounded step; Slice B is not an open implementation target.
+
+### Delta/Event-Oriented Cognition Context
 
 ### Problem
 

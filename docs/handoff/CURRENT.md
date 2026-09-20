@@ -1,5 +1,13 @@
 # MAR — Current Tech-Lead Handoff
 
+## MAR V1.3 current progress — 2026-09-21
+
+Current canonical source baseline for this handoff update is `747504b214c9e6d505110f82f980e901a21dab66` on `master`.
+
+- **Slice B is closed as an implementation slice.** Delta/event cognition is implemented, verified, integrated, and activated. Modern StructuredContent-capable clients should prefer `brain_turn` with structured+delta context and carry `cognition_cursor`; missing or stale cursors safely fall back to MAR's durable full current state.
+- **Bounded local-path access is implemented.** A chat can attach/list a local path without first creating a Goal task or mutable Workspace. Non-Git research paths are registered as `research_only`, with write/Git/network/remote/deploy authority disabled; directory listing is bounded and path escape is rejected.
+- **Next bounded V1.3 work:** establish telemetry/baselines for Slice C compound deterministic operations and promote only recurring sequences with measured benefit. Do not reopen Slice B.
+
 ## Connection usability correction — 2026-09-19
 
 Owner real-use proved that a healthy public MCP route can exist while the current Web client has not initialized/discovered MAR. The bounded correction is `docs/implementation/028_CONNECTION_USABILITY_TRUTH.md`: Streamable HTTP connection truth is now derived as `ROUTE_READY -> CLIENT_ATTACHED -> USABLE`; route readiness alone is not client usability. OpenAI Secure MCP Tunnel remains the primary stable GPT path; temporary Server URL/Quick Tunnel remains fallback/debug. Canonical MCP tool names are unchanged and no new gateway tool is authorized by this slice.
