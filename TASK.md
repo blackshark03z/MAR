@@ -1,6 +1,6 @@
-# Current SoT — 2026-09-19
+# Current SoT — 2026-09-21
 
-**Active bounded correction before V1.3:** `docs/implementation/028_CONNECTION_USABILITY_TRUTH.md`. This fixes connection truth only: route readiness must not be presented as ChatGPT/Claude client usability. Existing stable endpoint mechanisms remain unchanged; no task/kernel redesign and no resubmission of completed CADS work.
+**Current line:** MAR V1.3 B–D remains the historical bounded stable release checkpoint, while the repository has since advanced on a post-V1.3 capability line. The base entering this reconciliation is `3e44b765eae34a2c1c1c1d3cc874385dceae18bd`. Later production changes include owner permission/network/remote-Git behavior, cognition-delta adapter/guidance, and bounded local-path attach/list access. These post-release changes require authoritative current-head `go-release` qualification before they may inherit a release-qualified claim.
 
 Forward MAR architecture is now governed by:
 
@@ -10,7 +10,9 @@ Forward MAR architecture is now governed by:
 
 Current direction: **MAR = Durable Local Execution Kernel for External Cognition**. Do not open a MAR V2 rewrite or add internal planner/multi-agent/memory infrastructure by default. Slice B (delta/event cognition context), Slice C (telemetry-proven compound deterministic operations), and Slice D (fast repair feedback) are complete for their bounded scopes. Re-measurement evidence is canonical in `docs/research/033_V13_BD_REMEASUREMENT_AND_STOP_RULE.md`; decision: `DO_NOT_OPEN_SLICE_E_F_NOW`. Slices B-D are the frozen current V1.3 optimization set. Slice E/F remain closed unless later representative evidence demonstrates a material remaining deficit with favorable complexity-adjusted benefit.
 
-**MAR V1.3 is STABLE for the bounded B-D optimization scope** at exact revision `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a`. Release closeout: COMPLETE. Authoritative `go-release PASS` completed with `go test -v ./...`, `go vet`, and `go build` PASS; result `VERIFIED`, integration `INTEGRATED`, unresolved risks `0`, and workspace removed. The exact same revision was promoted successfully to the live runtime with `runtime_health=HEALTHY`, `status=ALIGNED`, `manifest_status=ALIGNED`, and `trusted_for_release=true`. Remote convergence is also complete: local HEAD = `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a` and origin/master = ff2fcc6ad2eed9118e8f11a0c70adb44428d437a. No further V1.3 optimization slice should be opened unless later representative evidence proves a material deficit that outweighs the added complexity.
+**Historical V1.3 release checkpoint:** MAR V1.3 is STABLE for the bounded B-D optimization scope at exact revision `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a`. Its release closeout is COMPLETE: authoritative `go-release` PASS, result `VERIFIED`, integration `INTEGRATED`, unresolved risks `0`, exact-runtime `HEALTHY / ALIGNED / trusted_for_release=true`, and remote convergence proved for that revision. This remains historical release truth; it does not automatically release-qualify later production changes.
+
+**Current post-V1.3 capability line:** Slices B, C, and D are already complete/verified/integrated. `docs/research/033_V13_BD_REMEASUREMENT_AND_STOP_RULE.md` decided `DO_NOT_OPEN_SLICE_E_F_NOW`. Keep E/F closed unless new representative evidence proves a material deficit. The next release action is current-head qualification of the accumulated post-V1.3 capability changes, not another V1.3 optimization slice.
 
 The older V1 product goal/history below is retained as historical context and accepted-product intent. It does **not** override the 2026-09-19 architecture constitution or create implementation authority for a new V1.3 slice. A new implementation slice must still be opened as a bounded Goal with acceptance evidence.
 
@@ -87,7 +89,7 @@ Launch MAR Console -> see connection readiness -> add/select a local project and
 
 # Current Safe Action
 
-Ship MAR V1 Stable using **MCP Link as the current Web transport for both GPT and Claude**. Reuse the existing hardened token-bound Streamable HTTP bridge; give `chatgpt-web` and `claude-web` independent 256-bit capability paths, configuration, rotation and telemetry while sharing only the underlying public route process. Keep OpenAI Secure MCP Tunnel implemented as an optional advanced/future transport, but do not let missing tunnel owner configuration block the current stable gate. Run the full release gates, then execute one real GPT Web Goal through the GPT MCP Link. Do not claim Owner acceptance from engineering evidence.
+Run authoritative **current-head go-release qualification** for the post-V1.3 capability line. Bind acceptance to the production regressions for permission/network/remote-Git authority, cognition delta/guidance, scheduler/policy behavior, and bounded local-path attach/list. If and only if that exact HEAD is `VERIFIED + INTEGRATED`, promote the same revision to the live runtime, prove `HEALTHY / ALIGNED / trusted_for_release=true`, and confirm local/remote convergence. Do not open Slice E/F and do not inherit the historical `ff2fcc6...` release claim onto later code without this qualification.
 
 ## MCP Link UX contract — current V1 path
 

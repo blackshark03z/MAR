@@ -1,12 +1,12 @@
 # MAR — Current Tech-Lead Handoff
 
-## MAR V1.3 current progress — 2026-09-21
+## Current post-V1.3 release line — 2026-09-21
 
-Current canonical source baseline for this handoff update is `747504b214c9e6d505110f82f980e901a21dab66` on `master`.
+The historical bounded V1.3 B–D release checkpoint remains `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a`. Slices **B, C, and D are complete/verified/integrated**; their implementation records are `030`, `031`, and `032`. Re-measurement in `docs/research/033_V13_BD_REMEASUREMENT_AND_STOP_RULE.md` decided `DO_NOT_OPEN_SLICE_E_F_NOW`, so E/F remain closed absent new representative evidence.
 
-- **Slice B is closed as an implementation slice.** Delta/event cognition is implemented, verified, integrated, and activated. Modern StructuredContent-capable clients should prefer `brain_turn` with structured+delta context and carry `cognition_cursor`; missing or stale cursors safely fall back to MAR's durable full current state.
-- **Bounded local-path access is implemented.** A chat can attach/list a local path without first creating a Goal task or mutable Workspace. Non-Git research paths are registered as `research_only`, with write/Git/network/remote/deploy authority disabled; directory listing is bounded and path escape is rejected.
-- **Next bounded V1.3 work:** establish telemetry/baselines for Slice C compound deterministic operations and promote only recurring sequences with measured benefit. Do not reopen Slice B.
+The repository has since advanced on a **post-V1.3 capability line** containing later production changes: owner permission/network/remote-Git behavior, cognition-delta adapter/guidance, and bounded local-path attach/list access (including `research_only` fail-closed access for non-Git research paths). The base entering this reconciliation is `3e44b765eae34a2c1c1c1d3cc874385dceae18bd`.
+
+**Next safe action:** run authoritative current-head `go-release` qualification for the accumulated post-V1.3 capability line. If it passes and integrates, activate that same exact revision and prove runtime `HEALTHY / ALIGNED / trusted_for_release=true` plus local/remote convergence. Do not open a new optimization slice merely because one is possible.
 
 ## Connection usability correction — 2026-09-19
 

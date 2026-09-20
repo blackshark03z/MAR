@@ -5,6 +5,8 @@
 **Architecture parent:** `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`
 **Cognition parent:** `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`
 
+**Current execution status (2026-09-21):** Slices B, C, and D are complete/verified/integrated. The re-measurement decision in `docs/research/033_V13_BD_REMEASUREMENT_AND_STOP_RULE.md` is `DO_NOT_OPEN_SLICE_E_F_NOW`; conditional E/F remain closed unless new representative evidence demonstrates a favorable complexity-adjusted need. `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a` is the historical bounded B-D V1.3 stable checkpoint. Later post-V1.3 capability changes must be current-head release-qualified independently before inheriting a release claim.
+
 ## 1. Release intent
 
 MAR V1.3 is not a V2 rewrite.
@@ -96,7 +98,7 @@ Treat it as the starting baseline for later measurements.
 
 ## 6. Slice B — IMPLEMENTED / VERIFIED BASELINE
 
-**Current status:** implemented, verified, integrated, and activated. `brain_turn` structured+delta with carried `cognition_cursor` is the current baseline for modern StructuredContent-capable clients; stale or missing cursors safely fall back to durable full current state. Detailed evidence remains in `docs/implementation/030_V13_SLICE_B_DELTA_EVENT_CONTEXT.md`. Slice C telemetry/baseline work is the next bounded step; Slice B is not an open implementation target.
+**Current status:** implemented, verified, integrated, and activated. `brain_turn` structured+delta with carried `cognition_cursor` is the current baseline for modern StructuredContent-capable clients; stale or missing cursors safely fall back to durable full current state. Detailed evidence remains in `docs/implementation/030_V13_SLICE_B_DELTA_EVENT_CONTEXT.md`. Slice B is not an open implementation target; Slices C and D are also complete and the program stop rule is `DO_NOT_OPEN_SLICE_E_F_NOW`.
 
 ### Delta/Event-Oriented Cognition Context
 
@@ -128,7 +130,11 @@ On fixed representative tasks:
 - reconnect does not require historical transcript replay;
 - no second event database/source of truth is introduced.
 
-## 7. Slice C — Compound Deterministic Operations
+## 7. Slice C — IMPLEMENTED / VERIFIED BASELINE
+
+**Current status:** the telemetry-proven `replace_many_exact` compound operation is complete, verified, and integrated. Detailed evidence: `docs/implementation/031_V13_SLICE_C_COMPOUND_DETERMINISTIC_OPERATIONS.md`.
+
+### Compound Deterministic Operations
 
 ### Problem
 
@@ -162,7 +168,11 @@ Every compound operation must:
 
 A compound operation remains only if it produces a measured reduction in cognition turns/tool chatter or wall time on real/representative traces without lowering correctness.
 
-## 8. Slice D — Fast Repair Feedback
+## 8. Slice D — IMPLEMENTED / VERIFIED BASELINE
+
+**Current status:** first-failure repair feedback is complete, verified, and integrated without weakening final authoritative verification. Detailed evidence: `docs/implementation/032_V13_SLICE_D_FAST_REPAIR_FEEDBACK.md`.
+
+### Fast Repair Feedback
 
 ### Problem
 
