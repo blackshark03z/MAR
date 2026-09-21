@@ -22,15 +22,30 @@ type terminalWorkspaceReclaimer interface {
 	ReclaimTerminal(context.Context, int) (int, error)
 }
 
+type diskPressureReclaimer interface {
+	ReclaimDiskPressure(context.Context, int, bool) (int, int64, error)
+}
+
 type Config struct {
 	AgingInterval            time.Duration
 	WorkspaceRAMReservation  uint64
 	WorkspaceDiskReservation uint64
+	PressureReclaimLimit     int
+}
+
+func (c Config) withDefaults() Config {
+	if c.PressureReclaimLimit <= 0 {
+		c.PressureReclaimLimit = 8
+	}
+	return c
 }
 
 func (c Config) validate() error {
 	if c.AgingInterval <= 0 {
 		return errors.New("scheduler aging interval must be positive")
+	}
+	if c.PressureReclaimLimit <= 0 {
+		return errors.New("scheduler pressure reclaim limit must be positive")
 	}
 	return nil
 }
@@ -45,11 +60,13 @@ const (
 )
 
 type StepResult struct {
-	Action        StepAction
-	TaskID        string
-	ProjectID     string
-	DenialReasons []resourcegov.DenialReason
-	Workspace     *domain.Workspace
+	Action                      StepAction
+	TaskID                      string
+	ProjectID                   string
+	DenialReasons               []resourcegov.DenialReason
+	Workspace                   *domain.Workspace
+	ReclaimedTerminalWorkspaces int
+	ReclaimedCacheBytes         int64
 }
 
 type Scheduler struct {
@@ -65,6 +82,7 @@ func New(s *store.SQLite, governor *resourcegov.Governor, workspace WorkspacePro
 	if s == nil || governor == nil || workspace == nil {
 		return nil, errors.New("store, resource governor, and workspace provisioner are required")
 	}
+	cfg = cfg.withDefaults()
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -112,13 +130,38 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	if err != nil {
 		return StepResult{}, err
 	}
+	reclaimedWorkspaces := 0
+	var reclaimedCacheBytes int64
+	var reclaimErr error
+	if !decision.Allowed && hasDiskPressure(decision.Reasons) {
+		if reclaimer, ok := s.workspace.(diskPressureReclaimer); ok {
+			// Shared rebuildable caches are pruned only while MAR has no active
+			// resource claims. Terminal workspace reclamation remains safe and
+			// bounded regardless of other active work.
+			allowCachePrune := len(s.governor.Active()) == 0
+			reclaimedWorkspaces, reclaimedCacheBytes, reclaimErr = reclaimer.ReclaimDiskPressure(ctx, s.cfg.PressureReclaimLimit, allowCachePrune)
+			if reclaimedWorkspaces > 0 || reclaimedCacheBytes > 0 {
+				s.governor.InvalidateMARDiskUsageCache()
+				lease, decision, err = s.governor.TryAcquire(ctx, claim)
+				if err != nil {
+					return StepResult{}, err
+				}
+			}
+		}
+	}
 	if !decision.Allowed {
-		return StepResult{
-			Action:        ActionWaitingResource,
-			TaskID:        task.ID,
-			ProjectID:     task.Contract.ProjectID,
-			DenialReasons: append([]resourcegov.DenialReason(nil), decision.Reasons...),
-		}, nil
+		result := StepResult{
+			Action:                      ActionWaitingResource,
+			TaskID:                      task.ID,
+			ProjectID:                   task.Contract.ProjectID,
+			DenialReasons:               append([]resourcegov.DenialReason(nil), decision.Reasons...),
+			ReclaimedTerminalWorkspaces: reclaimedWorkspaces,
+			ReclaimedCacheBytes:         reclaimedCacheBytes,
+		}
+		if reclaimErr != nil {
+			return result, fmt.Errorf("disk-pressure reclaim: %w", reclaimErr)
+		}
+		return result, nil
 	}
 	defer lease.Release()
 
@@ -134,11 +177,22 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 		return StepResult{}, err
 	}
 	return StepResult{
-		Action:    ActionWorkspaceReady,
-		TaskID:    task.ID,
-		ProjectID: task.Contract.ProjectID,
-		Workspace: &workspace,
+		Action:                      ActionWorkspaceReady,
+		TaskID:                      task.ID,
+		ProjectID:                   task.Contract.ProjectID,
+		Workspace:                   &workspace,
+		ReclaimedTerminalWorkspaces: reclaimedWorkspaces,
+		ReclaimedCacheBytes:         reclaimedCacheBytes,
 	}, nil
+}
+
+func hasDiskPressure(reasons []resourcegov.DenialReason) bool {
+	for _, reason := range reasons {
+		if reason == resourcegov.DenyHostDiskReserve || reason == resourcegov.DenyMARDiskBudget {
+			return true
+		}
+	}
+	return false
 }
 
 type projectCandidate struct {

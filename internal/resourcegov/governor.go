@@ -66,6 +66,10 @@ type pressureSensor interface {
 	PressureSnapshot(context.Context) (Snapshot, error)
 }
 
+type marDiskUsageCacheInvalidator interface {
+	InvalidateMARDiskUsageCache()
+}
+
 type Config struct {
 	MaxCPUPercent           float64
 	MaxMemoryLoadPercent    float64
@@ -285,6 +289,18 @@ func (g *Governor) evaluateLocked(snapshot Snapshot, claim Claim) Decision {
 
 	decision.Allowed = len(decision.Reasons) == 0
 	return decision
+}
+
+// InvalidateMARDiskUsageCache forces the next admission snapshot to observe
+// post-reclamation MAR disk truth when the configured sensor supports caching.
+// Sensors without a cache simply ignore this hint.
+func (g *Governor) InvalidateMARDiskUsageCache() {
+	if g == nil {
+		return
+	}
+	if sensor, ok := g.sensor.(marDiskUsageCacheInvalidator); ok {
+		sensor.InvalidateMARDiskUsageCache()
+	}
 }
 
 func (g *Governor) Active() []Claim {

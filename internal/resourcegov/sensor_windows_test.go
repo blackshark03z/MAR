@@ -69,6 +69,45 @@ func containsDenialReason(reasons []DenialReason, want DenialReason) bool {
 	return false
 }
 
+func TestWindowsSensorInvalidationForcesFreshMARDiskObservation(t *testing.T) {
+	root := t.TempDir()
+	payload := filepath.Join(root, "artifact.bin")
+	if err := os.WriteFile(payload, make([]byte, 4096), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sensor, err := NewWindowsSensor(WindowsSensorConfig{
+		DiskPath:                 root,
+		MARRoots:                 []string{root},
+		InteractiveIdleThreshold: 2 * time.Minute,
+		DiskUsageCacheTTL:        time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := sensor.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(payload); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := sensor.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.MARDiskUsedBytes != first.MARDiskUsedBytes {
+		t.Fatalf("expected cached disk usage before invalidation: first=%d cached=%d", first.MARDiskUsedBytes, cached.MARDiskUsedBytes)
+	}
+	sensor.InvalidateMARDiskUsageCache()
+	fresh, err := sensor.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.MARDiskUsedBytes >= first.MARDiskUsedBytes {
+		t.Fatalf("invalidation did not force fresh lower usage: first=%d fresh=%d", first.MARDiskUsedBytes, fresh.MARDiskUsedBytes)
+	}
+}
+
 func TestWindowsSensorReportsHostAndMARDiskUsage(t *testing.T) {
 	root := t.TempDir()
 	payload := make([]byte, 4096)

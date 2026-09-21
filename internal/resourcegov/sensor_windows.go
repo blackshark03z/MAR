@@ -40,8 +40,9 @@ type WindowsSensor struct {
 	prevKernel uint64
 	prevUser   uint64
 
-	diskCachedAt time.Time
-	diskCached   uint64
+	diskCachedAt        time.Time
+	diskCached          uint64
+	diskCacheGeneration uint64
 
 	pressureScanMu sync.Mutex
 	pressureScan   *marDiskScan
@@ -322,6 +323,7 @@ func userInteractive(threshold time.Duration) (bool, error) {
 func (s *WindowsSensor) marDiskUsage(ctx context.Context) (uint64, error) {
 	now := time.Now()
 	s.mu.Lock()
+	generation := s.diskCacheGeneration
 	if s.cfg.DiskUsageCacheTTL > 0 && !s.diskCachedAt.IsZero() && now.Sub(s.diskCachedAt) < s.cfg.DiskUsageCacheTTL {
 		cached := s.diskCached
 		s.mu.Unlock()
@@ -365,10 +367,22 @@ func (s *WindowsSensor) marDiskUsage(ctx context.Context) (uint64, error) {
 	}
 
 	s.mu.Lock()
-	s.diskCachedAt = now
-	s.diskCached = total
+	if s.diskCacheGeneration == generation {
+		s.diskCachedAt = now
+		s.diskCached = total
+	}
 	s.mu.Unlock()
 	return total, nil
+}
+
+// InvalidateMARDiskUsageCache is used after bounded reclamation so an
+// immediate admission retry cannot reuse the pre-reclamation byte count.
+func (s *WindowsSensor) InvalidateMARDiskUsageCache() {
+	s.mu.Lock()
+	s.diskCacheGeneration++
+	s.diskCachedAt = time.Time{}
+	s.diskCached = 0
+	s.mu.Unlock()
 }
 
 func filetimeTicks(ft windows.Filetime) uint64 {

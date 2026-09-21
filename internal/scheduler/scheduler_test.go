@@ -26,10 +26,16 @@ func (s *staticSensor) Snapshot(context.Context) (resourcegov.Snapshot, error) {
 }
 
 type fakeWorkspace struct {
-	store *store.SQLite
-	mu    sync.Mutex
-	calls []string
-	err   error
+	store               *store.SQLite
+	mu                  sync.Mutex
+	calls               []string
+	err                 error
+	pressureCalls       int
+	pressureWorkspaces  int
+	pressureBytes       int64
+	pressureAllowCache  bool
+	pressureReclaimHook func()
+	pressureReclaimErr  error
 }
 
 func (f *fakeWorkspace) EnsureMutable(ctx context.Context, taskID string) (domain.Workspace, error) {
@@ -47,6 +53,19 @@ func (f *fakeWorkspace) EnsureMutable(ctx context.Context, taskID string) (domai
 		return domain.Workspace{}, err
 	}
 	return domain.Workspace{ID: "fake-" + taskID, TaskID: taskID, ProjectID: task.Contract.ProjectID, State: domain.WorkspaceReady}, nil
+}
+
+func (f *fakeWorkspace) ReclaimDiskPressure(_ context.Context, _ int, allowCache bool) (int, int64, error) {
+	f.mu.Lock()
+	f.pressureCalls++
+	f.pressureAllowCache = allowCache
+	hook := f.pressureReclaimHook
+	workspaces, bytes, err := f.pressureWorkspaces, f.pressureBytes, f.pressureReclaimErr
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return workspaces, bytes, err
 }
 
 func healthyGovernor(t *testing.T, sensor *staticSensor) *resourcegov.Governor {
@@ -269,6 +288,95 @@ func TestResourceDenialLeavesTaskWaiting(t *testing.T) {
 	defer workspace.mu.Unlock()
 	if len(workspace.calls) != 0 {
 		t.Fatal("workspace provisioner called despite denied resource claim")
+	}
+}
+
+func TestDiskPressureReclaimsAndRetriesAdmission(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	svc := service.NewTaskService(s)
+	sensor := &staticSensor{snapshot: healthyHost()}
+	sensor.snapshot.MARDiskUsedBytes = 99_950
+	workspace := &fakeWorkspace{store: s, pressureWorkspaces: 2, pressureBytes: 4096}
+	workspace.pressureReclaimHook = func() { sensor.snapshot.MARDiskUsedBytes = 1_000 }
+	governor := healthyGovernor(t, sensor)
+	sch, err := New(s, governor, workspace, Config{AgingInterval: time.Hour, WorkspaceRAMReservation: 10, WorkspaceDiskReservation: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := queueTask(t, svc, "project-pressure", "pressure-retry", "P2")
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionWorkspaceReady || result.TaskID != task.ID {
+		t.Fatalf("pressure reclaim did not recover admission: %+v", result)
+	}
+	if result.ReclaimedTerminalWorkspaces != 2 || result.ReclaimedCacheBytes != 4096 {
+		t.Fatalf("reclaim evidence missing from result: %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.pressureCalls != 1 || !workspace.pressureAllowCache {
+		t.Fatalf("unexpected pressure reclaim invocation: calls=%d allow_cache=%v", workspace.pressureCalls, workspace.pressureAllowCache)
+	}
+}
+
+func TestDiskPressureDoesNotPruneSharedCacheWhileAnotherClaimIsActive(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	svc := service.NewTaskService(s)
+	sensor := &staticSensor{snapshot: healthyHost()}
+	sensor.snapshot.MARDiskUsedBytes = 99_950
+	workspace := &fakeWorkspace{store: s, pressureWorkspaces: 1, pressureBytes: 0}
+	governor := healthyGovernor(t, sensor)
+	activeLease, decision, err := governor.TryAcquire(context.Background(), resourcegov.Claim{ID: "active-worker", ProjectID: "other-project", Class: resourcegov.WorkloadUnitTest, RAMBytes: 1, DiskBytes: 0})
+	if err != nil || !decision.Allowed {
+		t.Fatalf("seed active claim: decision=%+v err=%v", decision, err)
+	}
+	defer activeLease.Release()
+	sch, err := New(s, governor, workspace, Config{AgingInterval: time.Hour, WorkspaceRAMReservation: 10, WorkspaceDiskReservation: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = queueTask(t, svc, "project-pressure-active", "pressure-active", "P2")
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionWaitingResource {
+		t.Fatalf("terminal-only reclaim unexpectedly bypassed disk pressure: %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.pressureCalls != 1 || workspace.pressureAllowCache {
+		t.Fatalf("shared cache prune was allowed with active claim: calls=%d allow_cache=%v", workspace.pressureCalls, workspace.pressureAllowCache)
+	}
+}
+
+func TestNonDiskResourceDenialDoesNotRunPressureReclaimer(t *testing.T) {
+	host := healthyHost()
+	host.AvailableRAMBytes = 50
+	s, svc, sch, workspace := schedulerHarness(t, host)
+	defer s.Close()
+	_ = queueTask(t, svc, "project-memory", "memory-denied", "P2")
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionWaitingResource {
+		t.Fatalf("expected memory resource wait, got %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.pressureCalls != 0 {
+		t.Fatalf("non-disk denial invoked disk-pressure cleanup %d times", workspace.pressureCalls)
 	}
 }
 

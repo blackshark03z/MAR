@@ -268,3 +268,71 @@ func TestPruneRejectsSymlinkDataRootWhenSupported(t *testing.T) {
 		t.Fatal("symlink data root was admitted")
 	}
 }
+
+func TestPrunePressureCachesClearsOnlyPositiveAllowlistAndPreservesRoots(t *testing.T) {
+	root := t.TempDir()
+	buildCache := filepath.Join(root, "runtime", "go-build-cache")
+	legacyCache := filepath.Join(root, "runtime", "diag-gocache")
+	moduleCache := filepath.Join(root, "runtime", "gomodcache")
+	audit := filepath.Join(root, "runtime", "audit-keep")
+	for _, dir := range []string{buildCache, legacyCache, moduleCache, audit} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, body := range map[string]string{
+		filepath.Join(buildCache, "a", "cache.bin"): "build-cache",
+		filepath.Join(legacyCache, "diag.bin"):      "diag-cache",
+		filepath.Join(moduleCache, "module.zip"):    "offline-module",
+		filepath.Join(audit, "evidence.json"):       "evidence",
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := PrunePressureCaches(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"runtime/diag-gocache", "runtime/go-build-cache"}
+	if !slices.Equal(result.ClearedRebuildableCaches, want) {
+		t.Fatalf("cleared caches = %v, want %v", result.ClearedRebuildableCaches, want)
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive pressure-prune bytes")
+	}
+	for _, dir := range []string{buildCache, legacyCache} {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("cache root must be preserved for ACL identity: %s err=%v", dir, err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("cache root not emptied: %s entries=%d err=%v", dir, len(entries), err)
+		}
+	}
+	for _, path := range []string{filepath.Join(moduleCache, "module.zip"), filepath.Join(audit, "evidence.json")} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("non-allowlisted runtime state was removed: %s: %v", path, err)
+		}
+	}
+}
+
+func TestPrunePressureCachesFailsClosedOnSymlinkedCacheRootWhenSupported(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "runtime", "go-build-cache")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink unavailable on this host: %v", err)
+	}
+	if _, err := PrunePressureCaches(root); err == nil {
+		t.Fatal("symlinked rebuildable cache root was admitted")
+	}
+}

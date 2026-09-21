@@ -18,7 +18,14 @@ const activationMetadataFile = "activation.json"
 type Result struct {
 	RemovedActivationBackups []string `json:"removed_activation_backups"`
 	RemovedStagingFiles      []string `json:"removed_staging_files"`
+	ClearedRebuildableCaches []string `json:"cleared_rebuildable_caches"`
 	FreedBytes               int64    `json:"freed_bytes"`
+}
+
+var pressureRebuildableCacheDirs = []string{
+	filepath.Join("runtime", "go-build-cache"),
+	filepath.Join("runtime", "gocache"),
+	filepath.Join("runtime", "diag-gocache"),
 }
 
 type activationMetadata struct {
@@ -49,6 +56,26 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 	if err := pruneStaging(root, &result); err != nil {
 		return Result{}, err
 	}
+	return result, nil
+}
+
+// PrunePressureCaches removes only explicitly classified rebuildable cache
+// contents. Cache roots themselves are preserved so Windows ACLs granted to
+// sandboxed workers remain intact. Module caches and evidence/history are not
+// pressure-pruned because they may be required for offline execution or are not
+// yet classified as safely reproducible.
+func PrunePressureCaches(dataRoot string) (Result, error) {
+	root, err := cleanRoot(dataRoot)
+	if err != nil {
+		return Result{}, err
+	}
+	result := Result{}
+	for _, relative := range pressureRebuildableCacheDirs {
+		if err := pruneCacheContents(root, relative, &result); err != nil {
+			return Result{}, err
+		}
+	}
+	sort.Strings(result.ClearedRebuildableCaches)
 	return result, nil
 }
 
@@ -209,6 +236,66 @@ func allowedStagingName(name string) bool {
 	lower := strings.ToLower(name)
 	return (strings.HasPrefix(lower, "mar-") && strings.HasSuffix(lower, ".exe")) ||
 		(strings.HasPrefix(lower, "release-manifest-") && strings.HasSuffix(lower, ".json"))
+}
+
+func pruneCacheContents(root, relative string, result *Result) error {
+	cacheRoot := filepath.Join(root, relative)
+	if !isWithinRoot(root, cacheRoot) {
+		return errors.New("rebuildable cache path escaped MAR data root")
+	}
+	ok, err := realOptionalDir(cacheRoot)
+	if err != nil || !ok {
+		return err
+	}
+	entries, err := os.ReadDir(cacheRoot)
+	if err != nil {
+		return fmt.Errorf("read rebuildable cache %s: %w", relative, err)
+	}
+	var freed int64
+	removedAny := false
+	for _, entry := range entries {
+		candidate := filepath.Join(cacheRoot, entry.Name())
+		if !isDirectChild(cacheRoot, candidate) || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		info, err := os.Lstat(candidate)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		var size int64
+		if info.IsDir() {
+			var safe bool
+			size, safe, err = safeTreeSize(candidate)
+			if err != nil {
+				return err
+			}
+			if !safe {
+				continue
+			}
+		} else if info.Mode().IsRegular() {
+			size = info.Size()
+		} else {
+			continue
+		}
+		if err := os.RemoveAll(candidate); err != nil {
+			return fmt.Errorf("remove rebuildable cache entry %s: %w", candidate, err)
+		}
+		freed += size
+		removedAny = true
+	}
+	if removedAny {
+		result.ClearedRebuildableCaches = append(result.ClearedRebuildableCaches, filepath.ToSlash(relative))
+		result.FreedBytes += freed
+	}
+	return nil
+}
+
+func isWithinRoot(root, candidate string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	return err == nil && rel != "." && !filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 func realOptionalDir(path string) (bool, error) {
