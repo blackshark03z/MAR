@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -208,7 +209,12 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 			<-pressureDone
 		}()
 	}
-	executor, err := aci.NewWindowsSandboxExecutorWithWritePaths(start.WorkspacePath, []string{start.GoBuildCache}, start.SandboxReadPaths...)
+	goTempDir := aci.TaskGoTempDir(start.GoBuildCache, start.Task.ID)
+	if err := os.MkdirAll(goTempDir, 0o755); err != nil {
+		_ = sendChildError(encoder, fmt.Errorf("create task-scoped Go temp directory: %w", err))
+		return err
+	}
+	executor, err := aci.NewWindowsSandboxExecutorWithWritePaths(start.WorkspacePath, []string{start.GoBuildCache, goTempDir}, start.SandboxReadPaths...)
 	if err != nil {
 		_ = sendChildError(encoder, err)
 		return err

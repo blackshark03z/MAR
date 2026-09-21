@@ -198,7 +198,11 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		return nil, err
 	}
 	runtimeFactory := func(workspacePath, taskID string) (verification.CommandRuntime, error) {
-		executor, err := aci.NewWindowsSandboxExecutorWithLimitsAndWritePaths(workspacePath, processLimits, []string{goBuildCache}, readPaths...)
+		goTempDir := aci.TaskGoTempDir(goBuildCache, taskID)
+		if err := os.MkdirAll(goTempDir, 0o755); err != nil {
+			return nil, fmt.Errorf("create task-scoped Go temp directory: %w", err)
+		}
+		executor, err := aci.NewWindowsSandboxExecutorWithLimitsAndWritePaths(workspacePath, processLimits, []string{goBuildCache, goTempDir}, readPaths...)
 		if err != nil {
 			return nil, err
 		}

@@ -522,6 +522,9 @@ func (r *Runtime) runCommand(ctx context.Context, cmd Command) (ExecResult, erro
 			modCache = r.goModuleCache
 		}
 		tmpCache := filepath.Join(cacheRoot, "tmp")
+		if r.goBuildCache != "" {
+			tmpCache = TaskGoTempDir(r.goBuildCache, r.taskID)
+		}
 		dirs := []string{buildCache, tmpCache}
 		if r.goModuleCache == "" {
 			dirs = append(dirs, modCache)
@@ -748,6 +751,17 @@ func boundText(s string, max int) string {
 		return s
 	}
 	return s[:max] + "…"
+}
+
+// TaskGoTempDir returns the task-scoped Go temporary directory adjacent to
+// MAR's trusted runtime build cache. Keeping generated test executables out of
+// disposable worktrees avoids Windows Application Control path rejection while
+// retaining a unique temp directory per durable task.
+func TaskGoTempDir(goBuildCache, taskID string) string {
+	if strings.TrimSpace(goBuildCache) == "" || strings.TrimSpace(taskID) == "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(filepath.Clean(goBuildCache)), "go-tmp", shortHash(taskID))
 }
 
 func shortHash(s string) string {

@@ -17,6 +17,8 @@ import (
 type WindowsSandboxExecutor struct {
 	root       string
 	readPaths  []string
+	// writePaths may include a task-scoped Temp materialization directory for
+	// generated executables; each path is still granted explicitly to LPAC.
 	writePaths []string
 	limits     processctl.Limits
 	readyErr   error

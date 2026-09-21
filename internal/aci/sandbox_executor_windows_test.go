@@ -75,7 +75,15 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 	}
 	goBin := filepath.Dir(findPortableGoForACI(t))
 	t.Setenv("PATH", goBin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	executor, err := NewWindowsSandboxExecutor(root, filepath.Dir(goBin))
+	sharedBuildCache := filepath.Join(t.TempDir(), "runtime", "go-build-cache")
+	if err := os.MkdirAll(sharedBuildCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	goTempDir := TaskGoTempDir(sharedBuildCache, "task-sandbox-go")
+	if err := os.MkdirAll(goTempDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executor, err := NewWindowsSandboxExecutorWithWritePaths(root, []string{sharedBuildCache, goTempDir}, filepath.Dir(goBin))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +92,7 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Match the ACI production default so a post-reboot cold Go build cache is not misclassified as a sandbox deadlock.
-	runtime, err := New(Config{Root: root, TaskID: "task-sandbox-go", CommandTimeout: 2 * time.Minute, GitBroker: broker}, executor)
+	runtime, err := New(Config{Root: root, TaskID: "task-sandbox-go", CommandTimeout: 2 * time.Minute, GitBroker: broker, GoBuildCache: sharedBuildCache}, executor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,6 +105,9 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "ok") {
 		t.Fatalf("unexpected sandboxed go test output: %q", result.Output)
+	}
+	if _, err := os.Stat(goTempDir); err != nil {
+		t.Fatalf("task-scoped runtime Go temp directory missing after sandbox test: %v", err)
 	}
 }
 
