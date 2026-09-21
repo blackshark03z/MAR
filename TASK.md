@@ -1,5 +1,15 @@
 # Current SoT — 2026-09-21
 
+## Architecture simplification decision
+
+Independent architecture review has been accepted as an evidence-backed amendment to MAR's forward architecture. Canonical decision: `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md`. Canonical migration roadmap: `docs/roadmap/MAR_V2_HYBRID_SIMPLIFICATION.md`.
+
+Verdict: MAR currently preserves valuable safety guarantees with too much durable lifecycle/storage machinery for the actual single-owner/single-host use case. Target architecture is **Hybrid MAR**, not Minimal MAR and not a rewrite.
+
+Invariant: **Persist facts and irreproducible intent; reconstruct execution materializations.** A live per-task worktree is no longer durable resumability truth; Git checkpoints reconstruct source state, SQLite retains coordination/authority/result facts, and disposable execution materializations/caches are reclaimed.
+
+**Authorized next implementation scope:** Phase 0 baseline + Phase 1 cleanup-first resource lifecycle only. Do not open later simplification phases until this scope has representative before/after evidence and applicable release qualification.
+
 **Current line:** MAR V1.3 B–D remains the historical bounded stable release checkpoint, while the repository has since advanced on a post-V1.3 capability line. The base entering this reconciliation is `3e44b765eae34a2c1c1c1d3cc874385dceae18bd`. Later production changes include owner permission/network/remote-Git behavior, cognition-delta adapter/guidance, and bounded local-path attach/list access. These post-release changes require authoritative current-head `go-release` qualification before they may inherit a release-qualified claim.
 
 Forward MAR architecture is now governed by:

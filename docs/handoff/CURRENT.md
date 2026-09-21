@@ -1,5 +1,13 @@
 # MAR — Current Tech-Lead Handoff
 
+## Hybrid simplification architecture decision — 2026-09-21
+
+Independent adversarial review concluded that MAR is over-engineered in lifecycle/storage representation for the current single-owner/single-host deployment, while its earned safety kernel remains valuable. The accepted canonical amendment is `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md`; the migration roadmap is `docs/roadmap/MAR_V2_HYBRID_SIMPLIFICATION.md`.
+
+Target: **persist facts and irreproducible intent; reconstruct execution materializations**. Git owns reconstructible source checkpoints, SQLite owns coordination/authority/result facts, isolated worktrees exist while mutation is active, rebuildable caches are disposable, resource admission reclaims safely before denial, and long-term runtime promotion uses immutable versioned binaries plus a current pointer instead of overwriting a running executable.
+
+Immediate authorized implementation scope is **Phase 0 + Phase 1 only**: baseline current storage/lifecycle cost, then implement cleanup-first resource lifecycle with evidence. This is incremental migration, not a rewrite. Existing activation-process-stop work is compatibility-only and must not grow into the long-term activation design.
+
 ## Current post-V1.3 release line — 2026-09-21
 
 The historical bounded V1.3 B–D release checkpoint remains `ff2fcc6ad2eed9118e8f11a0c70adb44428d437a`. Slices **B, C, and D are complete/verified/integrated**; their implementation records are `030`, `031`, and `032`. Re-measurement in `docs/research/033_V13_BD_REMEASUREMENT_AND_STOP_RULE.md` decided `DO_NOT_OPEN_SLICE_E_F_NOW`, so E/F remain closed absent new representative evidence.

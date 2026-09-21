@@ -5,6 +5,8 @@
 **Scope:** Future MAR evolution after the accepted V1/V1.2 safety architecture
 **Change policy:** May be changed only by explicit architecture review backed by evidence.
 
+**Accepted amendment — 2026-09-21:** `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md` is the canonical evidence-backed amendment for workspace materialization, lifecycle simplification, cleanup-first resource governance, authority/capacity decoupling, and immutable runtime promotion. It preserves the earned safety outcomes while explicitly allowing simpler representations.
+
 ## 1. Purpose and precedence
 
 This constitution defines the long-term architectural boundary of MAR.
@@ -91,7 +93,7 @@ The following are long-lived MAR kernel primitives. They should change only when
 - single durable coordination authority;
 - durable Task / Attempt / Run Epoch identity;
 - logical fencing plus physical mutation-authority control;
-- one mutable task -> one isolated mutable workspace;
+- one simultaneously mutating attempt -> one isolated mutable workspace while active; workspace is reconstructible execution materialization, not durable task truth;
 - process-tree ownership;
 - worker authority weaker than daemon authority;
 - resource governor and bounded host envelope;
@@ -409,18 +411,22 @@ Prefer changes that let stronger cognition produce fewer turns and more verified
 
 ## 18. Current forward direction
 
-The next bounded development line is **MAR V1.3 — Performance & Simplicity**.
+MAR V1.3 B-D is the completed bounded performance/simplicity optimization set; later E/F work remains closed under its stop rule.
 
-Priority order:
+The next architecture program is **MAR V2 — Hybrid Simplification**, governed by `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md` and `docs/roadmap/MAR_V2_HYBRID_SIMPLIFICATION.md`.
 
-1. delta/event-oriented cognition context;
-2. compound deterministic operations / observation barriers;
-3. fast repair feedback with unchanged final authoritative verification;
-4. incremental Project Intelligence / affected analysis only when measured;
-5. minimal proven-safe reuse/cache;
-6. connector/protocol adaptation where interoperability evidence justifies it.
+This is an incremental simplification migration, **not a from-scratch V2 rewrite**. Priority order:
 
-Do not open a MAR V2 rewrite.
+1. baseline current storage/lifecycle cost;
+2. cleanup-first resource lifecycle;
+3. checkpoint/rehydrate inactive BLOCKED/NEEDS_INPUT work;
+4. lazy isolated workspace materialization;
+5. lifecycle/status simplification;
+6. decouple attempt authority heartbeat from resource-slot waits;
+7. immutable versioned runtime promotion;
+8. compact historical evidence/derived state where measured.
+
+No phase may weaken final verification, stale-worker fencing, owner-work protection, expected-head integration, dangerous-action controls, or runtime identity truth.
 
 ## 19. Governance
 
