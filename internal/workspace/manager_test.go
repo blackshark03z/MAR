@@ -412,15 +412,18 @@ func TestCheckpointRecoveryUnsafeTaskDoesNotFailWholeRecoveryBatch(t *testing.T)
 	gitRun(t, ws.Path, "-c", "user.name=MAR Test", "-c", "user.email=mar@example.invalid", "commit", "-m", "unsafe recovery drift")
 
 	count, err := manager.ReconcileCheckpointTransactions(ctx, 8)
-	if err != nil || count != 0 {
-		t.Fatalf("unsafe task-local recovery should be skipped without global failure: count=%d err=%v", count, err)
+	if err != nil || count != 1 {
+		t.Fatalf("pre-record drift recovery should restore READY without global failure: count=%d err=%v", count, err)
 	}
 	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stored.State != domain.WorkspaceCheckpointing {
-		t.Fatalf("unsafe checkpoint recovery must remain fail-closed: %+v", stored)
+	if stored.State != domain.WorkspaceReady {
+		t.Fatalf("pre-record drift recovery must restore READY without discarding source: %+v", stored)
+	}
+	if _, _, err := manager.CheckpointBlocked(ctx, task.ID); !errors.Is(err, workspace.ErrCheckpointUnsafe) {
+		t.Fatalf("restored drifted workspace must remain fail-closed for future compaction, got %v", err)
 	}
 }
 

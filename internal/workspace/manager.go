@@ -232,11 +232,12 @@ func (m *Manager) reconcileCheckpointTransaction(ctx context.Context, taskID str
 		return err
 	}
 
-	// Crash before a durable snapshot was recorded: the original workspace is
-	// still the only authority. Restore READY only when exact Git identity is
-	// unchanged; otherwise preserve CHECKPOINTING for operator reconciliation.
+	// Crash before a durable snapshot was recorded leaves no replacement
+	// authority behind. If the managed worktree still exists, restore READY
+	// even when its HEAD drifted: no source is discarded, and the normal
+	// checkpoint admission guard will continue to reject that drift fail-closed.
 	if !hasCheckpoint {
-		if !registered || actualHead != workspace.HeadRevision {
+		if !registered {
 			return ErrCheckpointUnsafe
 		}
 		return m.store.AbortWorkspaceCheckpoint(ctx, taskID, m.now().UTC())

@@ -104,7 +104,7 @@ The scheduler reconciles bounded CHECKPOINTING transactions before normal admiss
 
 Two crash windows are covered:
 
-- crash before durable snapshot record: restore READY only when the original registered worktree still matches durable HEAD;
+- crash before durable snapshot record: if the original registered worktree still exists, restore READY without discarding it; any HEAD drift remains protected by the normal compaction guard on the next attempt;
 - crash after CAPTURED: verify the private checkpoint ref, complete worktree removal if needed, then finalize CHECKPOINTED.
 
 A task-local unsafe/stale checkpoint remains fail-closed but does not fail the entire scheduler step. This prevents one damaged workspace from starving unrelated admission.
