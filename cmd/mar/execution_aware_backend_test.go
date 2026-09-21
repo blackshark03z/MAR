@@ -14,8 +14,9 @@ import (
 
 type executionAwareDeltaFixture struct {
 	mcpedge.Backend
-	called bool
-	cursor string
+	called          bool
+	automaticCalled bool
+	cursor          string
 }
 
 func (b *executionAwareDeltaFixture) CognitionDelta(_ context.Context, turn domain.WebTurn, cursor string) (service.CognitionDelta, error) {
@@ -26,6 +27,11 @@ func (b *executionAwareDeltaFixture) CognitionDelta(_ context.Context, turn doma
 		Mode:    "full",
 		Cursor:  "next-cursor",
 	}, nil
+}
+
+func (b *executionAwareDeltaFixture) AutomaticCognitionDelta(_ context.Context, _ domain.WebTurn) (service.CognitionDelta, error) {
+	b.automaticCalled = true
+	return service.CognitionDelta{Version: service.CognitionDeltaVersion, Mode: "delta", Cursor: "automatic-cursor"}, nil
 }
 
 type executionAwareNoDeltaFixture struct {
@@ -49,6 +55,18 @@ func TestExecutionAwareBackendPreservesBrainTurnCognitionDelta(t *testing.T) {
 	}
 }
 
+func TestExecutionAwareBackendPreservesAutomaticCognitionDelta(t *testing.T) {
+	underlying := &executionAwareDeltaFixture{}
+	backend := executionAwareBackend{Backend: underlying}
+	got, err := backend.AutomaticCognitionDelta(context.Background(), domain.WebTurn{ID: "turn-auto", TaskID: "task-auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !underlying.automaticCalled || got.Mode != "delta" || got.Cursor != "automatic-cursor" {
+		t.Fatalf("automatic cognition delta was not forwarded: called=%v got=%+v", underlying.automaticCalled, got)
+	}
+}
+
 func TestExecutionAwareBackendCognitionDeltaFailsClosedWhenWrappedBackendDoesNotSupportIt(t *testing.T) {
 	backend := executionAwareBackend{Backend: &executionAwareNoDeltaFixture{}}
 	_, err := backend.CognitionDelta(context.Background(), domain.WebTurn{ID: "turn-1", TaskID: "task-1"}, "")
@@ -57,6 +75,10 @@ func TestExecutionAwareBackendCognitionDeltaFailsClosedWhenWrappedBackendDoesNot
 	}
 	if !strings.Contains(err.Error(), "cognition delta") {
 		t.Fatalf("cognition delta error must remain explicit: %v", err)
+	}
+	_, err = backend.AutomaticCognitionDelta(context.Background(), domain.WebTurn{ID: "turn-1", TaskID: "task-1"})
+	if !errors.Is(err, errCognitionDeltaUnavailable) {
+		t.Fatalf("missing fail-closed automatic cognition delta error: %v", err)
 	}
 }
 

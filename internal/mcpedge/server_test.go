@@ -274,6 +274,28 @@ func TestPublicToolSurfaceListsExactlySixCanonicalTools(t *testing.T) {
 	}
 }
 
+func TestPublicToolSurfaceAddsFastToolOnlyForAutomaticDeltaBackend(t *testing.T) {
+	session := connectTestMCP(t, &deltaReceiptBackend{})
+	listed, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	want := []string{"brain_respond", "brain_turn", "brain_turn_fast", "control", "project", "submit", "task"}
+	if len(names) != len(want) {
+		t.Fatalf("unexpected capable public tool count: got=%v want=%v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("capable public MCP surface mismatch: got=%v want=%v", names, want)
+		}
+	}
+}
+
 func TestSubmitStatusAndBrainRespondUseCompactNoEchoReceipts(t *testing.T) {
 	session := connectTestMCP(t, &largeReceiptBackend{})
 	goalMarker := strings.Repeat("submit-secret-marker-", 8<<10)
@@ -483,6 +505,35 @@ func (b *deltaReceiptBackend) CognitionDelta(_ context.Context, turn domain.WebT
 		FullBytes:    128 << 10,
 		PayloadBytes: 512,
 	}, nil
+}
+
+func (b *deltaReceiptBackend) AutomaticCognitionDelta(ctx context.Context, turn domain.WebTurn) (service.CognitionDelta, error) {
+	return b.CognitionDelta(ctx, turn, "automatic-base")
+}
+
+func TestBrainTurnFastUsesAutomaticDeltaWithoutCursor(t *testing.T) {
+	session := connectTestMCP(t, &deltaReceiptBackend{})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "brain_turn_fast", Arguments: map[string]any{
+		"task_id": "task-large-receipt",
+	}})
+	if err != nil || result.IsError {
+		t.Fatalf("brain_turn_fast failed: err=%v result=%+v", err, result)
+	}
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, `"cognition"`) || !strings.Contains(text, `"mode":"delta"`) || !strings.Contains(text, `"base_cursor":"automatic-base"`) {
+		t.Fatalf("brain_turn_fast omitted automatic delta metadata: %s", text)
+	}
+	if strings.Contains(text, "brain-turn-request-marker-") || strings.Contains(text, `"request":`) {
+		t.Fatalf("brain_turn_fast leaked full request in delta mode: %d bytes", len(raw))
+	}
+	content, _ := json.Marshal(result.Content)
+	if !strings.Contains(string(content), "brain_turn_fast") || !strings.Contains(string(content), "mode=delta") {
+		t.Fatalf("brain_turn_fast compact receipt is incomplete: %s", content)
+	}
 }
 
 func TestBrainTurnDeltaModeIsOptInAndPreservesDefaultPayload(t *testing.T) {

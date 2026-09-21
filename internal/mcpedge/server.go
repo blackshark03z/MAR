@@ -69,11 +69,19 @@ type cognitionDeltaBackend interface {
 	CognitionDelta(context.Context, domain.WebTurn, string) (service.CognitionDelta, error)
 }
 
+type automaticCognitionDeltaBackend interface {
+	AutomaticCognitionDelta(context.Context, domain.WebTurn) (service.CognitionDelta, error)
+}
+
 type brainTurnArgs struct {
 	TaskID          string `json:"task_id" jsonschema:"MAR durable task id"`
 	ResponseMode    string `json:"response_mode,omitempty" jsonschema:"compat (default) or structured"`
 	ContextMode     string `json:"context_mode,omitempty" jsonschema:"full (default) or delta; delta requires structured response mode"`
 	CognitionCursor string `json:"cognition_cursor,omitempty" jsonschema:"opaque cursor from a prior brain_turn delta/full view"`
+}
+
+type brainTurnFastArgs struct {
+	TaskID string `json:"task_id" jsonschema:"MAR durable task id"`
 }
 
 type projectArgs struct {
@@ -148,6 +156,9 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			return nil, value, nil
 		})
 	addBrainTurnTool(server, backend)
+	if _, ok := backend.(automaticCognitionDeltaBackend); ok {
+		addBrainTurnFastTool(server, backend)
+	}
 	mcp.AddTool(server, &mcp.Tool{Name: "brain_respond", Description: "Return one response for the exact pending GPT Web brain turn; coding tools execute later inside the worker sandbox."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args brainRespondArgs) (*mcp.CallToolResult, map[string]any, error) {
 			turn, created, err := backend.RespondWebTurn(ctx, args.TaskID, args.TurnID, model.Message{Role: model.RoleAssistant, Content: args.Content, ToolCalls: args.ToolCalls}, args.FinishReason)
@@ -432,6 +443,72 @@ func addBrainTurnTool(server *mcp.Server, backend Backend) {
 			}
 			return &mcp.CallToolResult{
 				Content:           []mcp.Content{&mcp.TextContent{Text: string(payload)}},
+				StructuredContent: json.RawMessage(payload),
+			}, nil
+		})
+}
+
+func addBrainTurnFastTool(server *mcp.Server, backend Backend) {
+	inputSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"task_id": map[string]any{"type": "string"},
+		},
+		"required":             []string{"task_id"},
+		"additionalProperties": false,
+	}
+	server.AddTool(&mcp.Tool{Name: "brain_turn_fast", Description: "Read the pending durable external-cognition turn using an automatically selected safe delta base. No cognition cursor is required; uncertain history falls back to full current state.", InputSchema: inputSchema, OutputSchema: map[string]any{"type": "object"}},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if req == nil || req.Params == nil {
+				return rawToolError(errors.New("tool request parameters are required")), nil
+			}
+			var args brainTurnFastArgs
+			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				return rawToolError(fmt.Errorf("decode tool arguments: %w", err)), nil
+			}
+			args.TaskID = strings.TrimSpace(args.TaskID)
+			if args.TaskID == "" {
+				return rawToolError(errors.New("task_id is required")), nil
+			}
+			turn, available, err := backend.PendingWebTurn(ctx, args.TaskID)
+			if err != nil {
+				return rawToolError(err), nil
+			}
+			value := map[string]any{"available": available}
+			mode := "none"
+			turnID := "-"
+			attemptID := "-"
+			runEpoch := int64(0)
+			if available {
+				fastBackend, ok := backend.(automaticCognitionDeltaBackend)
+				if !ok {
+					return rawToolError(errors.New("brain_turn_fast is unavailable for this backend")), nil
+				}
+				view, err := fastBackend.AutomaticCognitionDelta(ctx, turn)
+				if err != nil {
+					return rawToolError(err), nil
+				}
+				mode = view.Mode
+				turnID = turn.ID
+				attemptID = turn.AttemptID
+				runEpoch = turn.RunEpoch
+				value = map[string]any{
+					"available": true,
+					"turn": map[string]any{
+						"turn_id": turn.ID, "task_id": turn.TaskID, "attempt_id": turn.AttemptID,
+						"run_epoch": turn.RunEpoch, "request_id": turn.RequestID, "request_hash": turn.RequestHash,
+						"integrity_hash": turn.IntegrityHash, "created_at": turn.CreatedAt,
+					},
+					"cognition": view,
+				}
+			}
+			payload, err := json.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("marshal brain_turn_fast tool result: %w", err)
+			}
+			receipt := fmt.Sprintf("brain_turn_fast structured payload is authoritative; task_id=%s turn_id=%s attempt_id=%s run_epoch=%d mode=%s", args.TaskID, turnID, attemptID, runEpoch, mode)
+			return &mcp.CallToolResult{
+				Content:           []mcp.Content{&mcp.TextContent{Text: receipt}},
 				StructuredContent: json.RawMessage(payload),
 			}, nil
 		})

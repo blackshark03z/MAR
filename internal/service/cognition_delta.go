@@ -94,6 +94,54 @@ func (s *TaskService) CognitionDelta(ctx context.Context, current domain.WebTurn
 	return BuildCognitionDelta(current, previous)
 }
 
+// AutomaticCognitionDelta derives a safe delta base from durable turns without
+// requiring the external cognition client to manage a cursor. It only reuses a
+// responded predecessor from the same task, attempt, and run epoch. If the
+// bounded history cannot prove the correct predecessor, it falls back to full.
+func (s *TaskService) AutomaticCognitionDelta(ctx context.Context, current domain.WebTurn) (CognitionDelta, error) {
+	if !current.IntegrityValid() || len(current.Response) != 0 {
+		return CognitionDelta{}, errors.New("automatic cognition delta requires an intact pending web turn")
+	}
+	turns, err := s.store.ListWebTurnsByTaskEpoch(ctx, current.TaskID, current.RunEpoch, 128)
+	if err != nil {
+		return CognitionDelta{}, err
+	}
+	return BuildCognitionDelta(current, latestAutomaticCognitionBase(current, turns))
+}
+
+func latestAutomaticCognitionBase(current domain.WebTurn, turns []domain.WebTurn) *domain.WebTurn {
+	currentSeen := false
+	for i := range turns {
+		if turns[i].ID == current.ID {
+			currentSeen = true
+			break
+		}
+	}
+	if !currentSeen {
+		return nil
+	}
+	var previous *domain.WebTurn
+	for i := range turns {
+		candidate := turns[i]
+		if candidate.ID == current.ID ||
+			candidate.TaskID != current.TaskID ||
+			candidate.AttemptID != current.AttemptID ||
+			candidate.RunEpoch != current.RunEpoch ||
+			!candidate.CreatedAt.Before(current.CreatedAt) ||
+			len(candidate.Response) == 0 ||
+			candidate.RespondedAt == nil ||
+			!candidate.IntegrityValid() {
+			continue
+		}
+		if previous == nil || candidate.CreatedAt.After(previous.CreatedAt) ||
+			(candidate.CreatedAt.Equal(previous.CreatedAt) && candidate.ID > previous.ID) {
+			copy := candidate
+			previous = &copy
+		}
+	}
+	return previous
+}
+
 func BuildCognitionDelta(current domain.WebTurn, previous *domain.WebTurn) (CognitionDelta, error) {
 	if !current.IntegrityValid() {
 		return CognitionDelta{}, errors.New("current web turn integrity is invalid")

@@ -21,6 +21,10 @@ type cognitionDeltaProvider interface {
 	CognitionDelta(context.Context, domain.WebTurn, string) (service.CognitionDelta, error)
 }
 
+type automaticCognitionDeltaProvider interface {
+	AutomaticCognitionDelta(context.Context, domain.WebTurn) (service.CognitionDelta, error)
+}
+
 type executionAwareBackend struct {
 	mcpedge.Backend
 	readiness func(context.Context) (bool, string)
@@ -60,4 +64,12 @@ func (b executionAwareBackend) CognitionDelta(ctx context.Context, current domai
 		return service.CognitionDelta{}, errCognitionDeltaUnavailable
 	}
 	return provider.CognitionDelta(ctx, current, cursor)
+}
+
+func (b executionAwareBackend) AutomaticCognitionDelta(ctx context.Context, current domain.WebTurn) (service.CognitionDelta, error) {
+	provider, ok := b.Backend.(automaticCognitionDeltaProvider)
+	if !ok || provider == nil {
+		return service.CognitionDelta{}, errCognitionDeltaUnavailable
+	}
+	return provider.AutomaticCognitionDelta(ctx, current)
 }

@@ -53,6 +53,52 @@ func TestCognitionDeltaRecoveryFromCurrentState(t *testing.T) {
 	}
 }
 
+func TestAutomaticCognitionDeltaSelectsLatestSameAttemptRespondedBase(t *testing.T) {
+	first := testCognitionTurn(t, "turn-first", "request-first", time.Unix(1700000000, 0).UTC(), "first")
+	completeCognitionTurn(t, &first)
+	latest := testCognitionTurn(t, "turn-latest", "request-latest", time.Unix(1700000010, 0).UTC(), "latest")
+	completeCognitionTurn(t, &latest)
+
+	wrongAttempt := testCognitionTurn(t, "turn-wrong-attempt", "request-wrong-attempt", time.Unix(1700000020, 0).UTC(), "wrong attempt")
+	wrongAttempt.AttemptID = "attempt-other"
+	wrongAttempt.Request = testCognitionRequestJSON(t, wrongAttempt.TaskID, wrongAttempt.AttemptID, wrongAttempt.RunEpoch, "wrong attempt")
+	wrongAttempt.RequestHash, _ = domain.HashWebTurnJSON(wrongAttempt.Request)
+	wrongAttempt.IntegrityHash, _ = wrongAttempt.IntegrityDigest()
+	completeCognitionTurn(t, &wrongAttempt)
+
+	wrongEpoch := testCognitionTurn(t, "turn-wrong-epoch", "request-wrong-epoch", time.Unix(1700000030, 0).UTC(), "wrong epoch")
+	wrongEpoch.RunEpoch = 2
+	wrongEpoch.Request = testCognitionRequestJSON(t, wrongEpoch.TaskID, wrongEpoch.AttemptID, wrongEpoch.RunEpoch, "wrong epoch")
+	wrongEpoch.RequestHash, _ = domain.HashWebTurnJSON(wrongEpoch.Request)
+	wrongEpoch.IntegrityHash, _ = wrongEpoch.IntegrityDigest()
+	completeCognitionTurn(t, &wrongEpoch)
+
+	unanswered := testCognitionTurn(t, "turn-unanswered", "request-unanswered", time.Unix(1700000040, 0).UTC(), "unanswered")
+	current := testCognitionTurn(t, "turn-current-fast", "request-current-fast", time.Unix(1700000050, 0).UTC(), "current")
+
+	base := latestAutomaticCognitionBase(current, []domain.WebTurn{first, latest, wrongAttempt, wrongEpoch, unanswered, current})
+	if base == nil || base.ID != latest.ID {
+		t.Fatalf("automatic cognition selected wrong base: got=%+v want=%s", base, latest.ID)
+	}
+}
+
+func TestAutomaticCognitionDeltaFallsBackWhenHistoryCannotProveCurrentWindow(t *testing.T) {
+	previous := testCognitionTurn(t, "turn-prev-fast", "request-prev-fast", time.Unix(1700000000, 0).UTC(), "previous")
+	completeCognitionTurn(t, &previous)
+	current := testCognitionTurn(t, "turn-current-fast", "request-current-fast", time.Unix(1700000010, 0).UTC(), "current")
+
+	if base := latestAutomaticCognitionBase(current, []domain.WebTurn{previous}); base != nil {
+		t.Fatalf("automatic cognition must not guess from a truncated/uncertain window: %+v", base)
+	}
+	view, err := BuildCognitionDelta(current, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Mode != "full" || view.FullRequest == nil {
+		t.Fatalf("uncertain automatic history must fall back to full current state: %+v", view)
+	}
+}
+
 func TestCognitionDeltaReducesProjectionCost(t *testing.T) {
 	previous := testCognitionTurn(t, "turn-prev", "request-prev", time.Unix(1700000000, 0).UTC(), "first")
 	completeCognitionTurn(t, &previous)
