@@ -308,6 +308,39 @@ func (m *Manager) CheckpointBlockedWorkspaces(ctx context.Context, limit int) (i
 
 var ErrCheckpointUnsafe = errors.New("workspace checkpoint is unsafe for current physical Git truth")
 
+func hasIrreproducibleIgnoredMaterial(raw string) bool {
+	for _, token := range strings.Split(raw, "\x00") {
+		rel := strings.TrimSpace(token)
+		if rel == "" {
+			continue
+		}
+		if isRebuildableTaskLocalIgnoredPath(rel) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func isRebuildableTaskLocalIgnoredPath(rel string) bool {
+	normalized := filepath.ToSlash(filepath.Clean(strings.TrimSpace(rel)))
+	normalized = strings.TrimPrefix(normalized, "./")
+	roots := []string{
+		".mar/go/build",
+		".mar/go/mod",
+		".mar/go/tmp",
+		".mar/runtime/profile",
+		".mar/runtime/tmp",
+		".mar/runtime/python-cache",
+	}
+	for _, root := range roots {
+		if normalized == root || strings.HasPrefix(normalized, root+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) CheckpointBlocked(ctx context.Context, taskID string) (domain.WorkspaceCheckpoint, int64, error) {
 	workspace, err := m.store.BeginWorkspaceCheckpoint(ctx, taskID, m.now().UTC())
 	if err != nil {
@@ -344,7 +377,7 @@ func (m *Manager) CheckpointBlocked(ctx context.Context, taskID string) (domain.
 	if err != nil {
 		return domain.WorkspaceCheckpoint{}, 0, err
 	}
-	if strings.Trim(ignored, "\x00") != "" {
+	if hasIrreproducibleIgnoredMaterial(ignored) {
 		return domain.WorkspaceCheckpoint{}, 0, ErrCheckpointUnsafe
 	}
 	status, err := m.git(ctx, taskID, workspace.Path, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=all")

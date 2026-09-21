@@ -493,6 +493,131 @@ func TestCheckpointRecoveryAfterCapturedSnapshotFinishesCompaction(t *testing.T)
 	}
 }
 
+func TestCheckpointBlockedDiscardsOnlyRebuildableTaskLocalIgnoredCaches(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	excludePath := gitOut(t, repo, "rev-parse", "--git-path", "info/exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repo, excludePath)
+	}
+	if err := os.WriteFile(excludePath, []byte(".mar/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+	task := waitingTask(t, svc, "workspace-checkpoint-rebuildable-ignored", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-cache", "supervisor-cache", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Path, "seed.txt"), []byte("preserved WIP\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scratch := []string{
+		".mar/go/build/cache.bin",
+		".mar/go/mod/example/cache.bin",
+		".mar/go/tmp/tmp.bin",
+		".mar/runtime/profile/user.dat",
+		".mar/runtime/tmp/runtime.tmp",
+		".mar/runtime/python-cache/test.pyc",
+	}
+	for _, rel := range scratch {
+		path := filepath.Join(ws.Path, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("rebuildable"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-cache-policy", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	checkpoint, _, err := manager.CheckpointBlocked(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !checkpoint.Dirty {
+		t.Fatal("tracked WIP should produce a dirty checkpoint snapshot")
+	}
+	if err := svc.RecoverBlockedChoice(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	rehydrated, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(rehydrated.Path, "seed.txt"))
+	if err != nil || string(content) != "preserved WIP\n" {
+		t.Fatalf("real WIP was not preserved: %q err=%v", content, err)
+	}
+	for _, rel := range scratch {
+		if _, err := os.Stat(filepath.Join(rehydrated.Path, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("rebuildable scratch path was restored instead of discarded: %s err=%v", rel, err)
+		}
+	}
+}
+
+func TestCheckpointBlockedRejectsUnknownIgnoredMaterial(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	excludePath := gitOut(t, repo, "rev-parse", "--git-path", "info/exclude")
+	if !filepath.IsAbs(excludePath) {
+		excludePath = filepath.Join(repo, excludePath)
+	}
+	if err := os.WriteFile(excludePath, []byte("owner-secret/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+	task := waitingTask(t, svc, "workspace-checkpoint-unknown-ignored", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-secret", "supervisor-secret", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretPath := filepath.Join(ws.Path, "owner-secret", "keep.bin")
+	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secretPath, []byte("irreproducible"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-unknown-ignored", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, err := manager.CheckpointBlocked(ctx, task.ID); !errors.Is(err, workspace.ErrCheckpointUnsafe) {
+		t.Fatalf("unknown ignored material must fail closed, got %v", err)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceReady {
+		t.Fatalf("failed checkpoint should restore READY, got %+v", stored)
+	}
+	if content, err := os.ReadFile(secretPath); err != nil || string(content) != "irreproducible" {
+		t.Fatalf("unknown ignored material was lost: %q err=%v", content, err)
+	}
+}
+
 func TestCheckpointBlockedFailsClosedOnDurableHeadDrift(t *testing.T) {
 	ctx := context.Background()
 	repo, base := makeRepo(t)

@@ -55,7 +55,7 @@ A BLOCKED workspace is eligible only when:
 2. every execution attempt is PHYSICALLY_TERMINATED;
 3. actual registered worktree HEAD equals durable `head_revision`;
 4. latest VERIFIED/integration-BLOCKED result does not protect the workspace;
-5. ignored/untracked-ignored material is absent.
+5. ignored material is absent except for the explicit reconstructible task-local scratch allowlist: `.mar/go/{build,mod,tmp}` and `.mar/runtime/{profile,tmp,python-cache}`.
 
 Clean workspaces use the existing HEAD as the snapshot.
 
@@ -69,7 +69,7 @@ Dirty workspaces use an isolated temporary Git index:
 
 This preserves tracked changes plus normal untracked WIP without changing the user's branch, current worktree index, or authoritative branch ref.
 
-Ignored material is deliberately not inferred to be disposable. Its presence blocks automatic compaction.
+Ignored material is deliberately not inferred to be disposable. Only ACI-owned task-local scratch paths with direct source provenance are classified reconstructible: `.mar/go/{build,mod,tmp}` and `.mar/runtime/{profile,tmp,python-cache}`. They are not checkpointed and are recreated on demand. Any other ignored material blocks automatic compaction.
 
 ## Compaction
 
@@ -129,7 +129,7 @@ This slice does not:
 - compact VERIFIED/integration-BLOCKED workspaces;
 - overwrite branch refs;
 - push checkpoint refs remotely;
-- classify ignored files as disposable;
+- classify arbitrary ignored files as disposable;
 - delete checkpoint refs before the task lifecycle makes them unnecessary;
 - replace final verification/integration semantics;
 - change the currently activated production runtime until exact-candidate qualification passes.
