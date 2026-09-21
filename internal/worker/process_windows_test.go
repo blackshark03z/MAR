@@ -280,6 +280,96 @@ func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {
 	}
 }
 
+func TestDecisionProjectionResponseFrameOwnsPayloadAcrossRepeatedOuterDecoding(t *testing.T) {
+	now := time.Unix(1_800_000_000, 123).UTC()
+	checkpoint := domain.SemanticCheckpoint{
+		ID:              "checkpoint-rpc",
+		TaskID:          "task-rpc",
+		AttemptID:       "attempt-rpc-1",
+		RunEpoch:        1,
+		Version:         2,
+		GoalHash:        strings.Repeat("a", 64),
+		BaseRevision:    strings.Repeat("b", 40),
+		CurrentRevision: strings.Repeat("c", 40),
+		Payload: domain.SemanticCheckpointPayload{
+			CompletedWork:        []string{"full verification passed", strings.Repeat("evidence-", 256)},
+			CurrentHypothesis:    "resume from durable checkpoint",
+			ChangedAreas:         []string{"internal/worker"},
+			VerificationStatus:   "release checks pending",
+			Blockers:             []string{},
+			RemainingWork:        []string{"finish qualification"},
+			NextAction:           "resume",
+			CriticalEvidenceRefs: []string{"obs-" + strings.Repeat("d", 64)},
+		},
+		IntegrityHash: strings.Repeat("e", 64),
+		CreatedAt:     now,
+	}
+	control := domain.TaskControl{
+		ID:             "control-rpc",
+		TaskID:         "task-rpc",
+		Version:        1,
+		IdempotencyKey: "resume-rpc",
+		Kind:           domain.ControlSteer,
+		Payload:        json.RawMessage(`{"kind":"blocked_choice","message":"resume from checkpoint"}`),
+		IntegrityHash:  strings.Repeat("f", 64),
+		CreatedAt:      now,
+	}
+	response := decisionProjectionResponse{State: contextengine.DecisionProjectionState{
+		TaskID:               "task-rpc",
+		GoalHash:             checkpoint.GoalHash,
+		TaskState:            domain.TaskRunning,
+		ProjectID:            "mar",
+		WorkspaceID:          "workspace-rpc",
+		WorkspaceState:       domain.WorkspaceReady,
+		BaseRevision:         checkpoint.BaseRevision,
+		CurrentRevision:      checkpoint.CurrentRevision,
+		AttemptID:            "attempt-rpc-2",
+		RunEpoch:             2,
+		AttemptAuthority:     domain.AttemptActive,
+		LatestControlVersion: 1,
+		Controls:             []domain.TaskControl{control},
+		Checkpoint:           &checkpoint,
+		CreatedAt:            now,
+	}}
+
+	for i := 0; i < 1024; i++ {
+		f, err := marshalFrame(frameResponse, uint64(i+1), methodDecisionProjection, response, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !json.Valid(f.Payload) || len(f.Payload) == 0 || f.Payload[0] == 0 {
+			t.Fatalf("frame %d inner payload invalid before outer encode", i)
+		}
+
+		var wire bytes.Buffer
+		if err := json.NewEncoder(&wire).Encode(f); err != nil {
+			t.Fatalf("frame %d outer encode failed: %v", i, err)
+		}
+		wireBytes := append([]byte(nil), wire.Bytes()...)
+		var decoded frame
+		if err := json.NewDecoder(bytes.NewReader(wireBytes)).Decode(&decoded); err != nil {
+			t.Fatalf("frame %d outer decode failed: %v", i, err)
+		}
+		for j := range wireBytes {
+			wireBytes[j] = 0
+		}
+		if !json.Valid(decoded.Payload) || len(decoded.Payload) == 0 || decoded.Payload[0] == 0 {
+			t.Fatalf("frame %d decoded payload lost owned valid JSON bytes", i)
+		}
+
+		var roundTrip decisionProjectionResponse
+		if err := json.Unmarshal(decoded.Payload, &roundTrip); err != nil {
+			t.Fatalf("frame %d decision projection payload round-trip failed: %v", i, err)
+		}
+		if roundTrip.State.Checkpoint == nil || roundTrip.State.Checkpoint.ID != checkpoint.ID {
+			t.Fatalf("frame %d checkpoint identity changed across framing", i)
+		}
+		if len(roundTrip.State.Controls) != 1 || string(roundTrip.State.Controls[0].Payload) != string(control.Payload) {
+			t.Fatalf("frame %d control payload changed across framing", i)
+		}
+	}
+}
+
 func TestProcessRunnerBridgesWorkerRPCAndReturnsPhysicalProof(t *testing.T) {
 	backend := &fakeControlBackend{authoritative: true}
 	runner, err := NewProcessRunner(backend, processctl.NewSupervisor(), ProcessConfig{

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -125,12 +126,47 @@ func protocolPathWithin(path, root string) bool {
 }
 
 type frame struct {
-	Version int    `json:"version"`
-	Type    string `json:"type"`
-	ID      uint64 `json:"id,omitempty"`
-	Method  string `json:"method,omitempty"`
-	Payload []byte `json:"payload,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Version int          `json:"version"`
+	Type    string       `json:"type"`
+	ID      uint64       `json:"id,omitempty"`
+	Method  string       `json:"method,omitempty"`
+	Payload framePayload `json:"payload,omitempty"`
+	Error   string       `json:"error,omitempty"`
+}
+
+// framePayload preserves the existing base64-on-the-wire representation while
+// owning the decode path explicitly. Go 1.27 routes encoding/json through the
+// JSON v2 engine; relying on its implicit []byte codec under framed worker RPC
+// has produced NUL-prefixed inner payloads in live decision_projection_state
+// traffic. Decoding through a JSON string and an explicit base64 copy avoids
+// that aliasing/special-case path without changing wire compatibility.
+type framePayload []byte
+
+func (p framePayload) MarshalJSON() ([]byte, error) {
+	if p == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(base64.StdEncoding.EncodeToString([]byte(p)))
+}
+
+func (p *framePayload) UnmarshalJSON(data []byte) error {
+	if p == nil {
+		return errors.New("worker frame payload target is nil")
+	}
+	if string(data) == "null" {
+		*p = nil
+		return nil
+	}
+	var encoded string
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		return err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+	*p = append(framePayload(nil), decoded...)
+	return nil
 }
 
 const (
@@ -159,12 +195,14 @@ func marshalFrame(kind string, id uint64, method string, payload any, errText st
 		if err != nil {
 			return frame{}, err
 		}
-		// Keep the inner payload as owned JSON bytes, but carry those bytes as a
-		// normal []byte in the outer frame. Go 1.27 routes encoding/json through
-		// JSON v2, where RawMessage/jsontext.Value validation can surface intermittent
-		// NUL-prefixed failures under framed worker traffic. The outer []byte is
-		// base64 encoded and decoded back to the same JSON bytes before inner unmarshal.
-		raw = append([]byte(nil), encoded...)
+		if !json.Valid(encoded) {
+			return frame{}, errors.New("worker frame payload marshal produced invalid JSON")
+		}
+		// Own the inner bytes before the outer frame encoder sees them. framePayload
+		// keeps the same base64 JSON string wire shape as []byte, but its explicit
+		// decoder copies out of the outer decoder instead of using the JSON v2 []byte
+		// special case that has produced NUL-prefixed live RPC payloads.
+		raw = append(framePayload(nil), encoded...)
 	}
 	return frame{Version: protocolVersion, Type: kind, ID: id, Method: method, Payload: raw, Error: errText}, nil
 }
