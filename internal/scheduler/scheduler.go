@@ -26,6 +26,14 @@ type rebuildableCacheReclaimer interface {
 	PruneRebuildableCaches(context.Context) (int64, error)
 }
 
+type blockedWorkspaceCheckpointer interface {
+	CheckpointBlockedWorkspaces(context.Context, int) (int, int64, error)
+}
+
+type checkpointTransactionReconciler interface {
+	ReconcileCheckpointTransactions(context.Context, int) (int, error)
+}
+
 type Config struct {
 	AgingInterval            time.Duration
 	WorkspaceRAMReservation  uint64
@@ -60,13 +68,15 @@ const (
 )
 
 type StepResult struct {
-	Action                      StepAction
-	TaskID                      string
-	ProjectID                   string
-	DenialReasons               []resourcegov.DenialReason
-	Workspace                   *domain.Workspace
-	ReclaimedTerminalWorkspaces int
-	ReclaimedCacheBytes         int64
+	Action                        StepAction
+	TaskID                        string
+	ProjectID                     string
+	DenialReasons                 []resourcegov.DenialReason
+	Workspace                     *domain.Workspace
+	ReclaimedTerminalWorkspaces   int
+	ReclaimedCacheBytes           int64
+	CheckpointedBlockedWorkspaces int
+	CheckpointedWorkspaceBytes    int64
 }
 
 type Scheduler struct {
@@ -104,6 +114,12 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if reconciler, ok := s.workspace.(checkpointTransactionReconciler); ok {
+		if _, err := reconciler.ReconcileCheckpointTransactions(ctx, s.cfg.PressureReclaimLimit); err != nil {
+			return StepResult{}, fmt.Errorf("reconcile checkpoint transactions: %w", err)
+		}
+	}
+
 	waiting, err := s.store.ListWaitingTasks(ctx)
 	if err != nil {
 		return StepResult{}, err
@@ -132,6 +148,8 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	}
 	reclaimedWorkspaces := 0
 	var reclaimedCacheBytes int64
+	checkpointedWorkspaces := 0
+	var checkpointedBytes int64
 	var reclaimErr error
 	if !decision.Allowed && hasDiskPressure(decision.Reasons) {
 		// Terminal workspace reclamation is already fail-closed by durable task,
@@ -169,15 +187,32 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 				}
 			}
 		}
+
+		if !decision.Allowed && hasDiskPressure(decision.Reasons) {
+			if checkpointer, ok := s.workspace.(blockedWorkspaceCheckpointer); ok {
+				var checkpointErr error
+				checkpointedWorkspaces, checkpointedBytes, checkpointErr = checkpointer.CheckpointBlockedWorkspaces(ctx, s.cfg.PressureReclaimLimit)
+				reclaimErr = errors.Join(reclaimErr, checkpointErr)
+				if checkpointedWorkspaces > 0 || checkpointedBytes > 0 {
+					s.governor.InvalidateMARDiskUsageCache()
+					lease, decision, err = s.governor.TryAcquire(ctx, claim)
+					if err != nil {
+						return StepResult{}, err
+					}
+				}
+			}
+		}
 	}
 	if !decision.Allowed {
 		result := StepResult{
-			Action:                      ActionWaitingResource,
-			TaskID:                      task.ID,
-			ProjectID:                   task.Contract.ProjectID,
-			DenialReasons:               append([]resourcegov.DenialReason(nil), decision.Reasons...),
-			ReclaimedTerminalWorkspaces: reclaimedWorkspaces,
-			ReclaimedCacheBytes:         reclaimedCacheBytes,
+			Action:                        ActionWaitingResource,
+			TaskID:                        task.ID,
+			ProjectID:                     task.Contract.ProjectID,
+			DenialReasons:                 append([]resourcegov.DenialReason(nil), decision.Reasons...),
+			ReclaimedTerminalWorkspaces:   reclaimedWorkspaces,
+			ReclaimedCacheBytes:           reclaimedCacheBytes,
+			CheckpointedBlockedWorkspaces: checkpointedWorkspaces,
+			CheckpointedWorkspaceBytes:    checkpointedBytes,
 		}
 		if reclaimErr != nil {
 			return result, fmt.Errorf("disk-pressure reclaim: %w", reclaimErr)
@@ -198,12 +233,14 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 		return StepResult{}, err
 	}
 	return StepResult{
-		Action:                      ActionWorkspaceReady,
-		TaskID:                      task.ID,
-		ProjectID:                   task.Contract.ProjectID,
-		Workspace:                   &workspace,
-		ReclaimedTerminalWorkspaces: reclaimedWorkspaces,
-		ReclaimedCacheBytes:         reclaimedCacheBytes,
+		Action:                        ActionWorkspaceReady,
+		TaskID:                        task.ID,
+		ProjectID:                     task.Contract.ProjectID,
+		Workspace:                     &workspace,
+		ReclaimedTerminalWorkspaces:   reclaimedWorkspaces,
+		ReclaimedCacheBytes:           reclaimedCacheBytes,
+		CheckpointedBlockedWorkspaces: checkpointedWorkspaces,
+		CheckpointedWorkspaceBytes:    checkpointedBytes,
 	}, nil
 }
 

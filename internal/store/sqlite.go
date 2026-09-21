@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 15
+const latestSchemaVersion = 16
 
 func SupportedSchemaVersion() int { return latestSchemaVersion }
 
@@ -424,6 +424,32 @@ CREATE TABLE task_blockers (
     updated_at TEXT NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(id)
 );
+`
+	case 16:
+		script = `
+CREATE TABLE workspace_checkpoints (
+    checkpoint_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    original_head TEXT NOT NULL,
+    snapshot_revision TEXT NOT NULL,
+    ref_name TEXT NOT NULL,
+    status_hash TEXT NOT NULL,
+    dirty INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    compacted_at TEXT,
+    rehydrated_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(workspace_id) REFERENCES workspaces(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    UNIQUE(task_id, version),
+    UNIQUE(ref_name)
+);
+CREATE INDEX idx_workspace_checkpoints_task_version ON workspace_checkpoints(task_id, version DESC);
+CREATE INDEX idx_workspace_checkpoints_state ON workspace_checkpoints(state, created_at);
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

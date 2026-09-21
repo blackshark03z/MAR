@@ -212,6 +212,15 @@ func (s *TaskService) RecoverBlockedChoice(ctx context.Context, taskID string) e
 	if workspaceErr != nil {
 		return workspaceErr
 	}
+	if workspace.State == domain.WorkspaceCheckpointed {
+		if hasAttempt && attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
+			return store.ErrPhysicalFenceRequired
+		}
+		if err := s.store.RecoverBlockedCheckpointToWaitingResource(ctx, taskID, s.now().UTC()); err != nil {
+			return err
+		}
+		return s.store.ClearTaskBlocker(ctx, taskID)
+	}
 	if workspace.State != domain.WorkspaceReady {
 		return s.store.SetTaskBlocker(ctx, domain.TaskBlocker{TaskID: taskID, Phase: domain.BlockerPhaseWorkspace, Code: "BLOCKED_WORKSPACE_NOT_READY", Detail: fmt.Sprintf("Blocked task workspace is %s, not READY.", workspace.State), Recovery: "Reconcile the managed workspace before replacement execution."}, s.now().UTC())
 	}

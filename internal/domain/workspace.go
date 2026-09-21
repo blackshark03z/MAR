@@ -5,11 +5,13 @@ import "time"
 type WorkspaceState string
 
 const (
-	WorkspacePreparing WorkspaceState = "PREPARING"
-	WorkspaceReady     WorkspaceState = "READY"
-	WorkspaceFailed    WorkspaceState = "FAILED"
-	WorkspaceRemoving  WorkspaceState = "REMOVING"
-	WorkspaceRemoved   WorkspaceState = "REMOVED"
+	WorkspacePreparing     WorkspaceState = "PREPARING"
+	WorkspaceReady         WorkspaceState = "READY"
+	WorkspaceFailed        WorkspaceState = "FAILED"
+	WorkspaceCheckpointing WorkspaceState = "CHECKPOINTING"
+	WorkspaceCheckpointed  WorkspaceState = "CHECKPOINTED"
+	WorkspaceRemoving      WorkspaceState = "REMOVING"
+	WorkspaceRemoved       WorkspaceState = "REMOVED"
 )
 
 type Workspace struct {

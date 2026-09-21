@@ -37,6 +37,11 @@ type fakeWorkspace struct {
 	cacheBytes         int64
 	cacheReclaimHook   func()
 	cacheReclaimErr    error
+	checkpointCalls    int
+	checkpointCount    int
+	checkpointBytes    int64
+	checkpointHook     func()
+	checkpointErr      error
 }
 
 func (f *fakeWorkspace) EnsureMutable(ctx context.Context, taskID string) (domain.Workspace, error) {
@@ -61,6 +66,18 @@ func (f *fakeWorkspace) ReclaimTerminal(context.Context, int) (int, error) {
 	defer f.mu.Unlock()
 	f.terminalCalls++
 	return f.terminalWorkspaces, f.terminalReclaimErr
+}
+
+func (f *fakeWorkspace) CheckpointBlockedWorkspaces(context.Context, int) (int, int64, error) {
+	f.mu.Lock()
+	f.checkpointCalls++
+	hook := f.checkpointHook
+	count, bytes, err := f.checkpointCount, f.checkpointBytes, f.checkpointErr
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return count, bytes, err
 }
 
 func (f *fakeWorkspace) PruneRebuildableCaches(context.Context) (int64, error) {
@@ -332,6 +349,40 @@ func TestDiskPressureReclaimsAndRetriesAdmission(t *testing.T) {
 	}
 }
 
+func TestDiskPressureCheckpointsBlockedWorkspaceWhenEarlierReclaimIsInsufficient(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	svc := service.NewTaskService(s)
+	sensor := &staticSensor{snapshot: healthyHost()}
+	sensor.snapshot.MARDiskUsedBytes = 99_950
+	workspace := &fakeWorkspace{store: s, checkpointCount: 2, checkpointBytes: 8192}
+	workspace.checkpointHook = func() { sensor.snapshot.MARDiskUsedBytes = 1_000 }
+	governor := healthyGovernor(t, sensor)
+	sch, err := New(s, governor, workspace, Config{AgingInterval: time.Hour, WorkspaceRAMReservation: 10, WorkspaceDiskReservation: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := queueTask(t, svc, "project-checkpoint-pressure", "checkpoint-pressure", "P2")
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionWorkspaceReady || result.TaskID != task.ID {
+		t.Fatalf("blocked checkpoint reclaim did not recover admission: %+v", result)
+	}
+	if result.CheckpointedBlockedWorkspaces != 2 || result.CheckpointedWorkspaceBytes != 8192 {
+		t.Fatalf("checkpoint reclaim evidence missing: %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.terminalCalls != 1 || workspace.cacheCalls != 1 || workspace.checkpointCalls != 1 {
+		t.Fatalf("unexpected reclaim sequence: terminal=%d cache=%d checkpoint=%d", workspace.terminalCalls, workspace.cacheCalls, workspace.checkpointCalls)
+	}
+}
+
 func TestDiskPressureDoesNotPruneSharedCacheWhileAnotherClaimIsActive(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
 	if err != nil {
@@ -382,8 +433,8 @@ func TestNonDiskResourceDenialDoesNotRunPressureReclaimer(t *testing.T) {
 	}
 	workspace.mu.Lock()
 	defer workspace.mu.Unlock()
-	if workspace.terminalCalls != 0 || workspace.cacheCalls != 0 {
-		t.Fatalf("non-disk denial invoked disk-pressure cleanup: terminal=%d cache=%d", workspace.terminalCalls, workspace.cacheCalls)
+	if workspace.terminalCalls != 0 || workspace.cacheCalls != 0 || workspace.checkpointCalls != 0 {
+		t.Fatalf("non-disk denial invoked disk-pressure cleanup: terminal=%d cache=%d checkpoint=%d", workspace.terminalCalls, workspace.cacheCalls, workspace.checkpointCalls)
 	}
 }
 

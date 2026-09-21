@@ -249,6 +249,292 @@ func maxInt64(a, b int64) int64 {
 	return b
 }
 
+func TestBlockedDirtyWorkspaceCheckpointCompactsAndRehydratesExactContent(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	task := waitingTask(t, svc, "workspace-checkpoint-dirty", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-checkpoint", "supervisor-checkpoint", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Path, "seed.txt"), []byte("checkpointed change\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Path, "new.txt"), []byte("untracked checkpoint payload\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-e2e", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	checkpoint, freed, err := manager.CheckpointBlocked(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !checkpoint.Dirty || checkpoint.SnapshotRevision == base || freed <= 0 {
+		t.Fatalf("dirty workspace checkpoint did not capture a new immutable snapshot: checkpoint=%+v freed=%d", checkpoint, freed)
+	}
+	if _, err := os.Stat(ws.Path); !os.IsNotExist(err) {
+		t.Fatalf("compacted workspace path still exists: %v", err)
+	}
+	if got := countWorktrees(t, repo); got != 1 {
+		t.Fatalf("checkpoint compaction did not remove task worktree: worktrees=%d", got)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceCheckpointed {
+		t.Fatalf("workspace not durably checkpointed: %+v", stored)
+	}
+	durableCheckpoint, ok, err := s.LatestWorkspaceCheckpoint(ctx, task.ID)
+	if err != nil || !ok || durableCheckpoint.State != domain.WorkspaceCheckpointCompacted {
+		t.Fatalf("checkpoint not durably compacted: checkpoint=%+v ok=%v err=%v", durableCheckpoint, ok, err)
+	}
+	if gitOut(t, repo, "rev-parse", checkpoint.RefName) != checkpoint.SnapshotRevision {
+		t.Fatal("private checkpoint ref does not anchor snapshot revision")
+	}
+
+	if err := svc.RecoverBlockedChoice(ctx, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	waiting, err := svc.Status(ctx, task.ID)
+	if err != nil || waiting.State != domain.TaskWaitingResource {
+		t.Fatalf("checkpointed blocked task did not return to WAITING_RESOURCE: task=%+v err=%v", waiting, err)
+	}
+	rehydrated, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rehydrated.State != domain.WorkspaceReady || rehydrated.HeadRevision != checkpoint.SnapshotRevision {
+		t.Fatalf("rehydrated workspace identity mismatch: %+v checkpoint=%+v", rehydrated, checkpoint)
+	}
+	seed, err := os.ReadFile(filepath.Join(rehydrated.Path, "seed.txt"))
+	if err != nil || string(seed) != "checkpointed change\n" {
+		t.Fatalf("tracked WIP was not restored: %q err=%v", seed, err)
+	}
+	untracked, err := os.ReadFile(filepath.Join(rehydrated.Path, "new.txt"))
+	if err != nil || string(untracked) != "untracked checkpoint payload\n" {
+		t.Fatalf("untracked WIP was not restored: %q err=%v", untracked, err)
+	}
+	if status := gitOut(t, rehydrated.Path, "status", "--porcelain=v1", "--untracked-files=all"); status != "" {
+		t.Fatalf("rehydrated snapshot is not a clean immutable checkpoint: %q", status)
+	}
+	after, ok, err := s.LatestWorkspaceCheckpoint(ctx, task.ID)
+	if err != nil || !ok || after.State != domain.WorkspaceCheckpointRehydrated || after.RehydratedAt == nil {
+		t.Fatalf("checkpoint rehydrate was not durably finalized: checkpoint=%+v ok=%v err=%v", after, ok, err)
+	}
+	finalTask, err := svc.Status(ctx, task.ID)
+	if err != nil || finalTask.State != domain.TaskWorkspaceReady {
+		t.Fatalf("rehydrated task not WORKSPACE_READY: task=%+v err=%v", finalTask, err)
+	}
+}
+
+func TestCheckpointRecoveryBeforeSnapshotRecordRestoresReady(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	task := waitingTask(t, svc, "workspace-checkpoint-crash-before-record", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-crash-a", "supervisor-crash-a", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-crash-before-record", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.BeginWorkspaceCheckpoint(ctx, task.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := manager.ReconcileCheckpointTransactions(ctx, 8)
+	if err != nil || count != 1 {
+		t.Fatalf("pre-record checkpoint recovery failed: count=%d err=%v", count, err)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceReady {
+		t.Fatalf("pre-record crash did not restore READY: %+v", stored)
+	}
+	if _, err := os.Stat(ws.Path); err != nil {
+		t.Fatalf("pre-record crash recovery removed authoritative worktree: %v", err)
+	}
+}
+
+func TestCheckpointRecoveryUnsafeTaskDoesNotFailWholeRecoveryBatch(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	task := waitingTask(t, svc, "workspace-checkpoint-unsafe-recovery", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-unsafe", "supervisor-unsafe", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-unsafe-recovery", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.BeginWorkspaceCheckpoint(ctx, task.ID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Path, "drift.txt"), []byte("drift\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, ws.Path, "add", "drift.txt")
+	gitRun(t, ws.Path, "-c", "user.name=MAR Test", "-c", "user.email=mar@example.invalid", "commit", "-m", "unsafe recovery drift")
+
+	count, err := manager.ReconcileCheckpointTransactions(ctx, 8)
+	if err != nil || count != 0 {
+		t.Fatalf("unsafe task-local recovery should be skipped without global failure: count=%d err=%v", count, err)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceCheckpointing {
+		t.Fatalf("unsafe checkpoint recovery must remain fail-closed: %+v", stored)
+	}
+}
+
+func TestCheckpointRecoveryAfterCapturedSnapshotFinishesCompaction(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	task := waitingTask(t, svc, "workspace-checkpoint-crash-after-record", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-crash-b", "supervisor-crash-b", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-crash-after-record", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	checkpointing, err := s.BeginWorkspaceCheckpoint(ctx, task.ID, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	refName := "refs/mar/checkpoints/test/" + task.ID
+	gitRun(t, repo, "update-ref", refName, base)
+	checkpoint, err := s.RecordWorkspaceCheckpoint(ctx, domain.WorkspaceCheckpoint{
+		ID:               "checkpoint-crash-after-record",
+		TaskID:           task.ID,
+		WorkspaceID:      checkpointing.ID,
+		ProjectID:        checkpointing.ProjectID,
+		OriginalHead:     base,
+		SnapshotRevision: base,
+		RefName:          refName,
+		StatusHash:       strings.Repeat("0", 64),
+		Dirty:            false,
+		CreatedAt:        time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checkpoint.State != domain.WorkspaceCheckpointCaptured {
+		t.Fatalf("checkpoint was not CAPTURED: %+v", checkpoint)
+	}
+
+	count, err := manager.ReconcileCheckpointTransactions(ctx, 8)
+	if err != nil || count != 1 {
+		t.Fatalf("captured checkpoint recovery failed: count=%d err=%v", count, err)
+	}
+	if _, err := os.Stat(ws.Path); !os.IsNotExist(err) {
+		t.Fatalf("captured checkpoint recovery left worktree path: %v", err)
+	}
+	if got := countWorktrees(t, repo); got != 1 {
+		t.Fatalf("captured checkpoint recovery left registered worktree: %d", got)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceCheckpointed {
+		t.Fatalf("captured crash did not finish CHECKPOINTED state: %+v", stored)
+	}
+	latest, ok, err := s.LatestWorkspaceCheckpoint(ctx, task.ID)
+	if err != nil || !ok || latest.State != domain.WorkspaceCheckpointCompacted || latest.CompactedAt == nil {
+		t.Fatalf("captured crash did not durably finish checkpoint: checkpoint=%+v ok=%v err=%v", latest, ok, err)
+	}
+}
+
+func TestCheckpointBlockedFailsClosedOnDurableHeadDrift(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+
+	task := waitingTask(t, svc, "workspace-checkpoint-drift", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-drift", "supervisor-drift", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-drift", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Path, "drift.txt"), []byte("committed drift\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, ws.Path, "add", "drift.txt")
+	gitRun(t, ws.Path, "-c", "user.name=MAR Test", "-c", "user.email=mar@example.invalid", "commit", "-m", "drift durable head")
+
+	if _, _, err := manager.CheckpointBlocked(ctx, task.ID); !errors.Is(err, workspace.ErrCheckpointUnsafe) {
+		t.Fatalf("head drift must fail closed, got %v", err)
+	}
+	stored, err := s.GetWorkspaceByTask(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.State != domain.WorkspaceReady {
+		t.Fatalf("failed checkpoint did not roll workspace back to READY: %+v", stored)
+	}
+	if _, err := os.Stat(ws.Path); err != nil {
+		t.Fatalf("head-drift workspace was removed despite failed checkpoint: %v", err)
+	}
+}
+
 func TestCancelledPreAttemptWorkspaceCanBeRemoved(t *testing.T) {
 	ctx := context.Background()
 	repo, base := makeRepo(t)
