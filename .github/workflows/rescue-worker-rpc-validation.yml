@@ -1,0 +1,47 @@
+name: rescue-worker-rpc-validation
+
+on:
+  push:
+    branches:
+      - rescue/worker-rpc-nul-20260921
+  workflow_dispatch:
+
+jobs:
+  targeted:
+    name: targeted-go-${{ matrix.go }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.27.0', '1.27.1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false
+      - name: Toolchain
+        shell: pwsh
+        run: go version
+      - name: Worker RPC regression
+        shell: pwsh
+        run: go test ./internal/worker -run 'TestDecisionProjectionResponseFrameOwnsPayloadAcrossRepeatedOuterDecoding|TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding|TestProcessRunnerBridgesWorkerRPCAndReturnsPhysicalProof' -count=20
+
+  release:
+    name: release-go-1.27.1
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: Test
+        shell: pwsh
+        run: go test ./...
+      - name: Vet
+        shell: pwsh
+        run: go vet ./...
+      - name: Build
+        shell: pwsh
+        run: go build ./...
