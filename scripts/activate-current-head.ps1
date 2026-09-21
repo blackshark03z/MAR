@@ -55,6 +55,43 @@ function Stop-MARListener {
     throw "MAR listener on 127.0.0.1:8787 did not stop."
 }
 
+function Get-MARStableProcesses {
+    param(
+        [Parameter(Mandatory = $true)][string]$StableExe
+    )
+    $target = [System.IO.Path]::GetFullPath($StableExe)
+    return @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+        try {
+            $processPath = $_.Path
+            (-not [string]::IsNullOrWhiteSpace($processPath)) -and
+                [string]::Equals(
+                    [System.IO.Path]::GetFullPath($processPath),
+                    $target,
+                    [System.StringComparison]::OrdinalIgnoreCase
+                )
+        }
+        catch {
+            $false
+        }
+    })
+}
+
+function Stop-MARStableProcesses {
+    param(
+        [Parameter(Mandatory = $true)][string]$StableExe
+    )
+    foreach ($process in @(Get-MARStableProcesses -StableExe $StableExe)) {
+        Stop-Process -Id $process.Id -Force -ErrorAction Stop
+    }
+    for ($i = 0; $i -lt 40; $i++) {
+        if (@(Get-MARStableProcesses -StableExe $StableExe).Count -eq 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "MAR stable binary still has live processes after stop: $StableExe"
+}
+
 function Wait-MARRuntime {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedRevision,
@@ -191,6 +228,7 @@ try {
     if ($priorWasRunning) {
         Stop-MARListener
     }
+    Stop-MARStableProcesses -StableExe $stableExe
 
     Copy-BackupFile -Source $stableExe -Destination (Join-Path $backupRuntime 'mar-v1-stable.exe')
     Copy-BackupFile -Source $releaseManifest -Destination (Join-Path $backupRuntime 'release-manifest.json')
@@ -231,6 +269,7 @@ catch {
     $activationError = $_
     try {
         Stop-MARListener
+        Stop-MARStableProcesses -StableExe $stableExe
 
         Restore-BackupFile -Backup (Join-Path $backupRuntime 'mar-v1-stable.exe') -Destination $stableExe
         Restore-BackupFile -Backup (Join-Path $backupRuntime 'release-manifest.json') -Destination $releaseManifest

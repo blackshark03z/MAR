@@ -32,6 +32,8 @@ func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract
 		"return $response",
 		"start-owner-console.ps1",
 		"Stop-MARListener",
+		"Stop-MARStableProcesses",
+		"Get-MARStableProcesses -StableExe $StableExe",
 		"Restore-BackupFile",
 		"retention-prune",
 		"-keep-activation 5",
@@ -58,6 +60,15 @@ func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract
 	}
 	if !(trusted < retention && retention < pass) {
 		t.Fatalf("retention must run only after trusted activation and before PASS output: trusted=%d retention=%d pass=%d", trusted, retention, pass)
+	}
+
+	stopStable := strings.Index(text, `Stop-MARStableProcesses -StableExe $stableExe`)
+	promote := strings.Index(text, `Copy-Item -LiteralPath $candidateExe -Destination $stableExe -Force`)
+	if stopStable < 0 || promote < 0 || stopStable > promote {
+		t.Fatalf("all stable-binary processes must stop before promotion: stop=%d promote=%d", stopStable, promote)
+	}
+	if strings.Count(text, `Stop-MARStableProcesses -StableExe $stableExe`) < 2 {
+		t.Fatal("activation must stop all stable-binary processes before both promotion and rollback restore")
 	}
 
 	if strings.Contains(text, "Invoke-WebRequest -Uri 'http") && !strings.Contains(text, "127.0.0.1:8787") {
