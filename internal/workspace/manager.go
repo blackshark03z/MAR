@@ -235,20 +235,12 @@ func (m *Manager) ReclaimTerminal(ctx context.Context, limit int) (int, error) {
 	return reclaimed, firstErr
 }
 
-// ReclaimDiskPressure performs only Phase-1-safe reclamation. It may remove
-// already-terminal workspaces through the existing fail-closed retention path
-// and, when explicitly allowed by the scheduler, clear only positive-allowlist
-// rebuildable cache contents. BLOCKED workspaces are never removed here.
-func (m *Manager) ReclaimDiskPressure(ctx context.Context, terminalLimit int, pruneRebuildableCaches bool) (int, int64, error) {
-	reclaimed, terminalErr := m.ReclaimTerminal(ctx, terminalLimit)
-	var cacheBytes int64
-	var cacheErr error
-	if pruneRebuildableCaches {
-		result, err := retention.PrunePressureCaches(m.dataRoot)
-		cacheErr = err
-		cacheBytes = result.FreedBytes
-	}
-	return reclaimed, cacheBytes, errors.Join(terminalErr, cacheErr)
+// PruneRebuildableCaches clears only Phase-1 positive-allowlist cache
+// contents. The scheduler must call this through the ResourceGovernor's
+// idle-exclusive admission gate; Manager deliberately does not infer idleness.
+func (m *Manager) PruneRebuildableCaches(context.Context) (int64, error) {
+	result, err := retention.PrunePressureCaches(m.dataRoot)
+	return result.FreedBytes, err
 }
 
 func (m *Manager) createWorktree(ctx context.Context, taskID, repoRoot, path, base string) error {

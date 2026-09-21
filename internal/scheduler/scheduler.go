@@ -22,8 +22,8 @@ type terminalWorkspaceReclaimer interface {
 	ReclaimTerminal(context.Context, int) (int, error)
 }
 
-type diskPressureReclaimer interface {
-	ReclaimDiskPressure(context.Context, int, bool) (int, int64, error)
+type rebuildableCacheReclaimer interface {
+	PruneRebuildableCaches(context.Context) (int64, error)
 }
 
 type Config struct {
@@ -134,17 +134,38 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	var reclaimedCacheBytes int64
 	var reclaimErr error
 	if !decision.Allowed && hasDiskPressure(decision.Reasons) {
-		if reclaimer, ok := s.workspace.(diskPressureReclaimer); ok {
-			// Shared rebuildable caches are pruned only while MAR has no active
-			// resource claims. Terminal workspace reclamation remains safe and
-			// bounded regardless of other active work.
-			allowCachePrune := len(s.governor.Active()) == 0
-			reclaimedWorkspaces, reclaimedCacheBytes, reclaimErr = reclaimer.ReclaimDiskPressure(ctx, s.cfg.PressureReclaimLimit, allowCachePrune)
-			if reclaimedWorkspaces > 0 || reclaimedCacheBytes > 0 {
+		// Terminal workspace reclamation is already fail-closed by durable task,
+		// result and physical-fencing truth, so it can run independently of other
+		// active resource claims.
+		if reclaimer, ok := s.workspace.(terminalWorkspaceReclaimer); ok {
+			reclaimedWorkspaces, reclaimErr = reclaimer.ReclaimTerminal(ctx, s.cfg.PressureReclaimLimit)
+			if reclaimedWorkspaces > 0 {
 				s.governor.InvalidateMARDiskUsageCache()
 				lease, decision, err = s.governor.TryAcquire(ctx, claim)
 				if err != nil {
 					return StepResult{}, err
+				}
+			}
+		}
+
+		// Shared rebuildable cache cleanup is more restrictive: the governor
+		// owns an exclusive admission gate across the idle check and prune itself,
+		// so a concurrent TryAcquire cannot start using the cache after an
+		// optimistic Active()==0 check.
+		if !decision.Allowed && hasDiskPressure(decision.Reasons) {
+			if reclaimer, ok := s.workspace.(rebuildableCacheReclaimer); ok {
+				var cacheErr error
+				ran, gateErr := s.governor.RunIfIdleExclusive(func() error {
+					reclaimedCacheBytes, cacheErr = reclaimer.PruneRebuildableCaches(ctx)
+					return cacheErr
+				})
+				reclaimErr = errors.Join(reclaimErr, gateErr)
+				if ran && reclaimedCacheBytes > 0 {
+					s.governor.InvalidateMARDiskUsageCache()
+					lease, decision, err = s.governor.TryAcquire(ctx, claim)
+					if err != nil {
+						return StepResult{}, err
+					}
 				}
 			}
 		}

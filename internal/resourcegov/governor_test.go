@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
 
 type fakeSensor struct {
@@ -248,6 +249,80 @@ func TestConcurrentHeavyAdmissionNeverExceedsCapacity(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected exactly 2 admitted heavy claims, got %d", count)
+	}
+}
+
+func TestIdleExclusiveMaintenanceBlocksConcurrentAdmission(t *testing.T) {
+	s := &fakeSensor{snapshot: healthySnapshot()}
+	g, err := New(s, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entered := make(chan struct{})
+	releaseMaintenance := make(chan struct{})
+	maintenanceDone := make(chan error, 1)
+	go func() {
+		ran, runErr := g.RunIfIdleExclusive(func() error {
+			close(entered)
+			<-releaseMaintenance
+			return nil
+		})
+		if !ran && runErr == nil {
+			runErr = errors.New("idle maintenance did not run")
+		}
+		maintenanceDone <- runErr
+	}()
+	<-entered
+
+	admissionDone := make(chan error, 1)
+	go func() {
+		lease, decision, acquireErr := g.TryAcquire(context.Background(), claim("after-maintenance", "p", false))
+		if acquireErr != nil {
+			admissionDone <- acquireErr
+			return
+		}
+		if !decision.Allowed || lease == nil {
+			admissionDone <- errors.New("claim was not admitted after maintenance")
+			return
+		}
+		lease.Release()
+		admissionDone <- nil
+	}()
+
+	select {
+	case err := <-admissionDone:
+		t.Fatalf("TryAcquire crossed exclusive maintenance gate: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseMaintenance)
+	if err := <-maintenanceDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-admissionDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIdleExclusiveMaintenanceSkipsWhenClaimIsActive(t *testing.T) {
+	s := &fakeSensor{snapshot: healthySnapshot()}
+	g, _ := New(s, testConfig())
+	lease, decision, err := g.TryAcquire(context.Background(), claim("active", "p", false))
+	if err != nil || !decision.Allowed || lease == nil {
+		t.Fatalf("seed active claim: lease=%v decision=%+v err=%v", lease, decision, err)
+	}
+	defer lease.Release()
+
+	called := false
+	ran, err := g.RunIfIdleExclusive(func() error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ran || called {
+		t.Fatalf("idle maintenance ran with active claim: ran=%v called=%v", ran, called)
 	}
 }
 

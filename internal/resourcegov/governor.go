@@ -134,8 +134,14 @@ type Governor struct {
 	sensor Sensor
 	cfg    Config
 
-	mu     sync.Mutex
-	active map[string]Claim
+	// admissionGate separates ordinary resource admission from bounded
+	// maintenance that is only safe while no claims are active. TryAcquire holds
+	// a read lease across snapshot + admission, while idle maintenance holds the
+	// exclusive lease. This closes the check-idle/then-prune race without
+	// coupling resource-lease release to maintenance.
+	admissionGate sync.RWMutex
+	mu            sync.Mutex
+	active        map[string]Claim
 }
 
 func New(sensor Sensor, cfg Config) (*Governor, error) {
@@ -152,6 +158,8 @@ func (g *Governor) TryAcquire(ctx context.Context, claim Claim) (*Lease, Decisio
 	if err := claim.validate(); err != nil {
 		return nil, Decision{}, err
 	}
+	g.admissionGate.RLock()
+	defer g.admissionGate.RUnlock()
 	snapshot, err := g.sensor.Snapshot(ctx)
 	if err != nil {
 		return nil, Decision{}, fmt.Errorf("resource snapshot: %w", err)
@@ -289,6 +297,29 @@ func (g *Governor) evaluateLocked(snapshot Snapshot, claim Claim) Decision {
 
 	decision.Allowed = len(decision.Reasons) == 0
 	return decision
+}
+
+// RunIfIdleExclusive executes bounded maintenance only when MAR has no
+// active resource claims, while preventing a new TryAcquire from slipping in
+// between the idle check and the maintenance action. The callback must not call
+// TryAcquire on this governor.
+func (g *Governor) RunIfIdleExclusive(fn func() error) (bool, error) {
+	if g == nil {
+		return false, errors.New("resource governor is required")
+	}
+	if fn == nil {
+		return false, errors.New("idle maintenance callback is required")
+	}
+	g.admissionGate.Lock()
+	defer g.admissionGate.Unlock()
+
+	g.mu.Lock()
+	idle := len(g.active) == 0
+	g.mu.Unlock()
+	if !idle {
+		return false, nil
+	}
+	return true, fn()
 }
 
 // InvalidateMARDiskUsageCache forces the next admission snapshot to observe

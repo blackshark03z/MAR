@@ -35,7 +35,7 @@ When scheduler admission is denied specifically by:
 the scheduler performs one bounded safe reclaim pass before returning `WAITING_RESOURCE`:
 
 1. existing terminal-safe workspace reclaim;
-2. shared rebuildable-cache cleanup only when MAR has zero active resource claims;
+2. shared rebuildable-cache cleanup only under the ResourceGovernor's idle-exclusive admission gate, which atomically spans the zero-active-claim check and cleanup so no concurrent `TryAcquire` can start using that cache;
 3. invalidate cached MAR disk usage;
 4. take a fresh governor admission decision for the same task/claim;
 5. admit if the refreshed truth is now safe, otherwise preserve the final denial.
@@ -55,7 +55,7 @@ Phase 1 preserves the existing safety kernel:
 - BLOCKED workspaces remain untouched.
 - Existing store-level terminal-removal eligibility remains authoritative.
 - Cache deletion is a positive allowlist, not an age/name heuristic over arbitrary runtime state.
-- Shared rebuildable cache is not pruned while another MAR resource claim is active.
+- Shared rebuildable cache is not pruned while another MAR resource claim is active, and new admissions are excluded for the bounded duration of the idle cache prune.
 - `GOMODCACHE` is not pressure-pruned because it participates in offline module availability.
 - Failed/insufficient reclamation leaves the task resource-blocked rather than bypassing the governor.
 - Final verification, integration, attempt fencing and owner-checkout semantics are unchanged.
