@@ -1,0 +1,48 @@
+{
+  "schema": "mar-hybrid-phase0-baseline-v1",
+  "date": "2026-09-21",
+  "source_head": "dfb29b4c5355413822a05494253864e60b865a6c",
+  "data_root": {
+    "path": "D:\\MAR\\.mar",
+    "bytes": 18127188304,
+    "gib": 16.882
+  },
+  "top_level": {
+    "w": {"bytes": 7559765281, "gib": 7.041},
+    "runtime": {"bytes": 5650860101, "gib": 5.263},
+    "selfdev": {"bytes": 1131557726, "gib": 1.054},
+    "recovery": {"bytes": 983471581, "gib": 0.916},
+    "go": {"bytes": 537766414, "gib": 0.501},
+    "mar.db": {"bytes": 109346816, "gib": 0.102}
+  },
+  "sqlite": {
+    "user_version": 15,
+    "task_states": {
+      "BLOCKED": 118,
+      "COMPLETE": 66,
+      "CANCELLED": 43,
+      "RETRY_WAIT": 1
+    },
+    "workspace_rows": 219,
+    "live_workspace_paths": 114,
+    "live_workspace_path_bytes": 7670433508,
+    "attempt_authority": {
+      "PHYSICALLY_TERMINATED": 331,
+      "LOGICALLY_FENCED": 9
+    }
+  },
+  "blocked_physically_terminated": {
+    "workspace_count": 104,
+    "approx_gib": 7.053,
+    "phase1_deletion_authorized": false,
+    "reason": "checkpoint/rehydrate is Phase 2"
+  },
+  "runtime_known_rebuildable": {
+    "go-build-cache": {"bytes": 231633300, "mib": 220.9}
+  },
+  "resource_policy": {
+    "max_mar_disk_bytes": 21474836480,
+    "denial_reason": "MAR_DISK_BUDGET",
+    "cleanup_before_denial_currently_integrated": false
+  }
+}

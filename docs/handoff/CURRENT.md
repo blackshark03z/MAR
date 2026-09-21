@@ -6,7 +6,7 @@ Independent adversarial review concluded that MAR is over-engineered in lifecycl
 
 Target: **persist facts and irreproducible intent; reconstruct execution materializations**. Git owns reconstructible source checkpoints, SQLite owns coordination/authority/result facts, isolated worktrees exist while mutation is active, rebuildable caches are disposable, resource admission reclaims safely before denial, and long-term runtime promotion uses immutable versioned binaries plus a current pointer instead of overwriting a running executable.
 
-Immediate authorized implementation scope is **Phase 0 + Phase 1 only**: baseline current storage/lifecycle cost, then implement cleanup-first resource lifecycle with evidence. This is incremental migration, not a rewrite. Existing activation-process-stop work is compatibility-only and must not grow into the long-term activation design.
+Immediate authorized implementation scope is **Phase 0 + Phase 1 only**. Phase 0 is now measured in `docs/research/034_HYBRID_SIMPLIFICATION_PHASE0_BASELINE.md` / `.json`: `.mar` = 16.882 GiB after prior cache cleanup; 114 live workspace paths remain; 104 BLOCKED workspaces are already physically terminated yet retain ~7.05 GiB. Phase 1 must implement cleanup-first resource lifecycle without deleting those BLOCKED workspaces; checkpoint/rehydrate remains Phase 2. Existing activation-process-stop work is compatibility-only and must not grow into the long-term activation design.
 
 ## Current post-V1.3 release line — 2026-09-21
 
