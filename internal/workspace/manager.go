@@ -282,7 +282,11 @@ func (m *Manager) reconcileCheckpointTransaction(ctx context.Context, taskID str
 }
 
 func (m *Manager) CheckpointBlockedWorkspaces(ctx context.Context, limit int) (int, int64, error) {
-	taskIDs, err := m.store.ListBlockedWorkspaceCheckpointCandidates(ctx, limit)
+	if limit <= 0 {
+		return 0, 0, nil
+	}
+	candidateLimit := limit * 8
+	taskIDs, err := m.store.ListBlockedWorkspaceCheckpointCandidates(ctx, candidateLimit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -290,6 +294,9 @@ func (m *Manager) CheckpointBlockedWorkspaces(ctx context.Context, limit int) (i
 	var bytes int64
 	var firstErr error
 	for _, taskID := range taskIDs {
+		if count >= limit {
+			break
+		}
 		_, freed, checkpointErr := m.CheckpointBlocked(ctx, taskID)
 		if checkpointErr != nil {
 			if errors.Is(checkpointErr, ErrCheckpointUnsafe) || errors.Is(checkpointErr, store.ErrStateConflict) || errors.Is(checkpointErr, store.ErrWorkspaceRemovalUnsafe) || errors.Is(checkpointErr, store.ErrPhysicalFenceRequired) {

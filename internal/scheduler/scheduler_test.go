@@ -291,6 +291,64 @@ func TestAcceptanceT6ThreeProjectsAreFairAndLazilyProvisioned(t *testing.T) {
 	}
 }
 
+func TestIdleSchedulerBackfillsBlockedWorkspaceCheckpoints(t *testing.T) {
+	s, _, sch, workspace := schedulerHarness(t, healthyHost())
+	defer s.Close()
+	workspace.checkpointCount = idleCheckpointBatch
+	workspace.checkpointBytes = 8192
+
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionIdle {
+		t.Fatalf("idle maintenance changed scheduler action: %+v", result)
+	}
+	if result.CheckpointedBlockedWorkspaces != idleCheckpointBatch || result.CheckpointedWorkspaceBytes != 8192 {
+		t.Fatalf("idle checkpoint evidence missing: %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.checkpointCalls != 1 {
+		t.Fatalf("idle checkpoint maintenance calls=%d want 1", workspace.checkpointCalls)
+	}
+}
+
+func TestIdleSchedulerSkipsCheckpointBackfillWhileResourceClaimIsActive(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	sensor := &staticSensor{snapshot: healthyHost()}
+	workspace := &fakeWorkspace{store: s, checkpointCount: idleCheckpointBatch, checkpointBytes: 8192}
+	governor := healthyGovernor(t, sensor)
+	lease, decision, err := governor.TryAcquire(context.Background(), resourcegov.Claim{
+		ID: "active-idle-test", ProjectID: "active-project", Class: resourcegov.WorkloadUnitTest, RAMBytes: 1,
+	})
+	if err != nil || !decision.Allowed {
+		t.Fatalf("seed active claim: decision=%+v err=%v", decision, err)
+	}
+	defer lease.Release()
+	sch, err := New(s, governor, workspace, Config{AgingInterval: time.Hour, WorkspaceRAMReservation: 10, WorkspaceDiskReservation: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := sch.Step(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != ActionIdle {
+		t.Fatalf("active-claim idle step changed action: %+v", result)
+	}
+	workspace.mu.Lock()
+	defer workspace.mu.Unlock()
+	if workspace.checkpointCalls != 0 {
+		t.Fatalf("idle checkpoint ran while a resource claim was active: %d", workspace.checkpointCalls)
+	}
+}
+
 func TestResourceDenialLeavesTaskWaiting(t *testing.T) {
 	host := healthyHost()
 	host.FreeDiskBytes = 1050

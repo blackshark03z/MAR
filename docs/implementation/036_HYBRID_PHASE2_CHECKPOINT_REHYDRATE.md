@@ -77,6 +77,8 @@ After the private ref and DB checkpoint record are durable, MAR removes only the
 
 The task remains BLOCKED. No result, verification evidence, authority record, or project branch is rewritten.
 
+When the scheduler is truly idle (no waiting task and the resource governor can take its idle-exclusive gate), MAR also backfills at most two safe BLOCKED workspaces per scheduler tick. This migrates historical materializations without delaying queued/running work. Candidate scanning is wider than the mutation batch so a small number of fail-closed HEAD-drift workspaces cannot permanently starve later safe candidates.
+
 Disk-pressure admission order becomes:
 
 1. bounded terminal workspace reclaim;

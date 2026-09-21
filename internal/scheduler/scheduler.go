@@ -61,6 +61,8 @@ func (c Config) validate() error {
 type StepAction string
 
 const (
+	idleCheckpointBatch = 2
+
 	ActionIdle            StepAction = "IDLE"
 	ActionWaitingResource StepAction = "WAITING_RESOURCE"
 	ActionWorkspaceReady  StepAction = "WORKSPACE_READY"
@@ -125,7 +127,22 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 		return StepResult{}, err
 	}
 	if len(waiting) == 0 {
-		return StepResult{Action: ActionIdle}, nil
+		result := StepResult{Action: ActionIdle}
+		if checkpointer, ok := s.workspace.(blockedWorkspaceCheckpointer); ok {
+			ran, gateErr := s.governor.RunIfIdleExclusive(func() error {
+				var checkpointErr error
+				result.CheckpointedBlockedWorkspaces, result.CheckpointedWorkspaceBytes, checkpointErr =
+					checkpointer.CheckpointBlockedWorkspaces(ctx, idleCheckpointBatch)
+				return checkpointErr
+			})
+			if gateErr != nil {
+				return result, fmt.Errorf("idle blocked-workspace checkpoint: %w", gateErr)
+			}
+			if ran && (result.CheckpointedBlockedWorkspaces > 0 || result.CheckpointedWorkspaceBytes > 0) {
+				s.governor.InvalidateMARDiskUsageCache()
+			}
+		}
+		return result, nil
 	}
 	states, err := s.store.ListProjectScheduleStates(ctx)
 	if err != nil {
