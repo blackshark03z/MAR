@@ -102,6 +102,15 @@ func TestPythonStandardVerificationProfileUsesBoundedStandardModules(t *testing.
 	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
 }
 
+func TestPythonCompileVerificationProfileUsesDependencyLightCompileGate(t *testing.T) {
+	pythonExecutable := `C:\\Python\\python.exe`
+	profile := pythonCompileVerificationProfile(pythonExecutable)
+	if profile.ID != "python-compile" { t.Fatalf("unexpected profile id %q", profile.ID) }
+	if profile.ChangedTests != verification.ChangedTestPolicyNone { t.Fatalf("python-compile must not infer a test runner: %+v", profile) }
+	want := [][]string{{"-m", "compileall", "-q", "."}}
+	assertVerificationCommands(t, profile.ID, profile.Commands, pythonExecutable, want)
+}
+
 func TestPythonPortableVerificationProfileUsesChangedTestPolicy(t *testing.T) {
 	pythonExecutable := `C:\\Python\\python.exe`
 	profile := pythonPortableVerificationProfile(pythonExecutable)
@@ -123,7 +132,7 @@ func TestBuiltinVerificationProfilesIncludeReleaseResearchAndPythonOnlyWhenAvail
 		t.Fatalf("unexpected Go/research built-in verification profiles: %+v", withoutPython)
 	}
 	withPython := builtinVerificationProfiles(goExecutable, pythonExecutable)
-	if len(withPython) != 6 || withPython[4].ID != "python-standard" || withPython[5].ID != "python-portable" {
+	if len(withPython) != 7 || withPython[4].ID != "python-standard" || withPython[5].ID != "python-compile" || withPython[6].ID != "python-portable" {
 		t.Fatalf("Python verification profiles were not registered with an available interpreter: %+v", withPython)
 	}
 }

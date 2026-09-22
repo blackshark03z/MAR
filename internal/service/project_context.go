@@ -14,6 +14,7 @@ import (
 
 const (
 	researchArtifactVerificationProfile = "research-artifacts"
+	pythonCompileVerificationProfile    = "python-compile"
 	pythonPortableVerificationProfile   = "python-portable"
 )
 
@@ -89,7 +90,7 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		if hasPythonPortableTest {
 			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
 		}
-		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release"}
+		capability.SupportedVerificationProfiles = []string{"go-standard", "go-docs", "go-release", pythonCompileVerificationProfile}
 		if hasPythonPortableTest {
 			capability.SupportedVerificationProfiles = append(capability.SupportedVerificationProfiles, pythonPortableVerificationProfile)
 		}
@@ -107,10 +108,10 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		capability.EvidenceMarkers = append([]string(nil), pythonMarkers...)
 		if hasPythonPortableTest {
 			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
-			capability.SupportedVerificationProfiles = []string{pythonPortableVerificationProfile, "python-standard"}
+			capability.SupportedVerificationProfiles = []string{pythonCompileVerificationProfile, pythonPortableVerificationProfile, "python-standard"}
 			capability.RecommendedVerificationProfile = pythonPortableVerificationProfile
 		} else {
-			capability.SupportedVerificationProfiles = []string{"python-standard"}
+			capability.SupportedVerificationProfiles = []string{pythonCompileVerificationProfile, "python-standard"}
 			capability.RecommendedVerificationProfile = "python-standard"
 		}
 	case hasPythonSelfTest || hasPythonPortableTest:
@@ -122,10 +123,10 @@ func detectProjectCapability(root string) (ProjectCapability, error) {
 		}
 		if hasPythonPortableTest {
 			capability.EvidenceMarkers = append(capability.EvidenceMarkers, pythonPortableTestMarker)
-			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, pythonPortableVerificationProfile, "python-standard"}
+			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, pythonCompileVerificationProfile, pythonPortableVerificationProfile, "python-standard"}
 			capability.RecommendedVerificationProfile = pythonPortableVerificationProfile
 		} else {
-			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, "python-standard"}
+			capability.SupportedVerificationProfiles = []string{researchArtifactVerificationProfile, pythonCompileVerificationProfile, "python-standard"}
 			capability.RecommendedVerificationProfile = ""
 		}
 	}

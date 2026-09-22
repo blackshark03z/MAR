@@ -50,7 +50,7 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 				Ecosystems:                     []string{"python"},
 				Languages:                      []string{"python"},
 				EvidenceMarkers:                []string{"requirements-dev.txt"},
-				SupportedVerificationProfiles:  []string{"python-standard"},
+				SupportedVerificationProfiles:  []string{"python-compile", "python-standard"},
 				RecommendedVerificationProfile: "python-standard",
 			},
 		},
@@ -65,7 +65,7 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 				Ecosystems:                    []string{"go", "python"},
 				Languages:                     []string{"go", "python"},
 				EvidenceMarkers:               []string{"go.mod", "pyproject.toml"},
-				SupportedVerificationProfiles: []string{"go-standard", "go-docs", "go-release", "python-standard"},
+				SupportedVerificationProfiles: []string{"go-standard", "go-docs", "go-release", "python-compile", "python-standard"},
 			},
 		},
 		{
@@ -93,7 +93,7 @@ func TestProjectContextDetectsPythonMixedAndUnknownCapabilities(t *testing.T) {
 				Ecosystems:                    []string{"artifact", "python"},
 				Languages:                     []string{"python"},
 				EvidenceMarkers:               []string{"scripts/self_test.py"},
-				SupportedVerificationProfiles: []string{"research-artifacts", "python-standard"},
+				SupportedVerificationProfiles: []string{"research-artifacts", "python-compile", "python-standard"},
 			},
 		},
 	}

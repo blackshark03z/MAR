@@ -463,6 +463,7 @@ func builtinVerificationProfiles(goExecutable, pythonExecutable string) []verifi
 	if strings.TrimSpace(pythonExecutable) != "" {
 		profiles = append(profiles,
 			pythonStandardVerificationProfile(pythonExecutable),
+			pythonCompileVerificationProfile(pythonExecutable),
 			pythonPortableVerificationProfile(pythonExecutable),
 		)
 	}
@@ -474,6 +475,15 @@ func pythonStandardVerificationProfile(pythonExecutable string) verification.Pro
 		ID: "python-standard",
 		Commands: []verification.Command{
 			{Name: pythonExecutable, Args: []string{"-m", "unittest", "discover", "-v"}, Cwd: "."},
+			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
+		},
+	}
+}
+
+func pythonCompileVerificationProfile(pythonExecutable string) verification.Profile {
+	return verification.Profile{
+		ID: "python-compile",
+		Commands: []verification.Command{
 			{Name: pythonExecutable, Args: []string{"-m", "compileall", "-q", "."}, Cwd: "."},
 		},
 	}
