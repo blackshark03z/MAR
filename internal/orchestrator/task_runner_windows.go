@@ -180,11 +180,12 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 	if task.State != domain.TaskWorkspaceReady {
 		return RunOutcome{}, fmt.Errorf("task %s is not WORKSPACE_READY", taskID)
 	}
+	mode := r.cfg.Provider.Mode()
 	budget, err := r.service.TaskConvergenceBudget(ctx, taskID)
 	if err != nil {
 		return RunOutcome{}, err
 	}
-	if reason := convergenceStopReason(budget); reason != "" {
+	if reason := convergenceStopReasonForMode(mode, budget); reason != "" {
 		if err := r.service.BlockForConvergenceBudget(ctx, taskID); err != nil {
 			return RunOutcome{}, err
 		}
@@ -202,7 +203,6 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 		return RunOutcome{}, errors.New("task/attempt state diverged after attempt admission")
 	}
 
-	mode := r.cfg.Provider.Mode()
 	start := worker.StartRequest{
 		Task:                  task,
 		Attempt:               attempt,

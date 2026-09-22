@@ -5,6 +5,7 @@ package orchestrator
 import (
 	"mar/internal/agent"
 	"mar/internal/service"
+	"mar/internal/worker"
 )
 
 func convergenceStopReason(budget service.TaskConvergenceBudget) string {
@@ -12,6 +13,22 @@ func convergenceStopReason(budget service.TaskConvergenceBudget) string {
 		return "no_progress"
 	}
 	return budget.ExhaustedReason
+}
+
+func convergenceStopReasonForMode(mode worker.BrainMode, budget service.TaskConvergenceBudget) string {
+	if mode != worker.BrainHarness {
+		return convergenceStopReason(budget)
+	}
+	if budget.NoProgress {
+		return "no_progress"
+	}
+	if budget.RemainingActiveExecution == 0 {
+		return "active_execution_limit"
+	}
+	if budget.RemainingAttempts == 0 {
+		return "attempt_limit"
+	}
+	return ""
 }
 
 func boundedAgentConfig(base agent.Config, budget service.TaskConvergenceBudget) agent.Config {
