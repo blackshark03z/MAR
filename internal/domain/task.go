@@ -23,6 +23,44 @@ const (
 	TaskCancelled        TaskState = "CANCELLED"
 )
 
+type LifecycleStatus string
+
+const (
+	LifecycleQueued      LifecycleStatus = "QUEUED"
+	LifecycleRunning     LifecycleStatus = "RUNNING"
+	LifecycleNeedsInput  LifecycleStatus = "NEEDS_INPUT"
+	LifecycleBlocked     LifecycleStatus = "BLOCKED"
+	LifecycleSucceeded   LifecycleStatus = "SUCCEEDED"
+	LifecycleFailed      LifecycleStatus = "FAILED"
+	LifecycleCancelled   LifecycleStatus = "CANCELLED"
+)
+
+type LifecycleProjection struct {
+	Status LifecycleStatus `json:"status"`
+	Phase  TaskState       `json:"phase"`
+}
+
+func ProjectTaskLifecycle(state TaskState) LifecycleProjection {
+	projection := LifecycleProjection{Phase: state}
+	switch state {
+	case TaskSubmitted, TaskPreflight, TaskWaitingResource, TaskWorkspaceReady, TaskRetryWait:
+		projection.Status = LifecycleQueued
+	case TaskRunning, TaskVerifying, TaskReviewing, TaskReadyToIntegrate, TaskIntegrating, TaskVerified:
+		projection.Status = LifecycleRunning
+	case TaskInputRequired:
+		projection.Status = LifecycleNeedsInput
+	case TaskBlocked:
+		projection.Status = LifecycleBlocked
+	case TaskComplete:
+		projection.Status = LifecycleSucceeded
+	case TaskFailed:
+		projection.Status = LifecycleFailed
+	case TaskCancelled:
+		projection.Status = LifecycleCancelled
+	}
+	return projection
+}
+
 type AttemptAuthorityState string
 
 const (

@@ -32,6 +32,57 @@ type fakeOwnerMCP struct {
 	args map[string]any
 }
 
+func TestOwnerTaskViewExposesLifecycleProjectionAlongsideLegacyState(t *testing.T) {
+	tests := []struct {
+		state  domain.TaskState
+		status domain.LifecycleStatus
+	}{
+		{domain.TaskSubmitted, domain.LifecycleQueued},
+		{domain.TaskPreflight, domain.LifecycleQueued},
+		{domain.TaskWaitingResource, domain.LifecycleQueued},
+		{domain.TaskWorkspaceReady, domain.LifecycleQueued},
+		{domain.TaskRetryWait, domain.LifecycleQueued},
+		{domain.TaskRunning, domain.LifecycleRunning},
+		{domain.TaskVerifying, domain.LifecycleRunning},
+		{domain.TaskReviewing, domain.LifecycleRunning},
+		{domain.TaskReadyToIntegrate, domain.LifecycleRunning},
+		{domain.TaskIntegrating, domain.LifecycleRunning},
+		{domain.TaskVerified, domain.LifecycleRunning},
+		{domain.TaskInputRequired, domain.LifecycleNeedsInput},
+		{domain.TaskBlocked, domain.LifecycleBlocked},
+		{domain.TaskComplete, domain.LifecycleSucceeded},
+		{domain.TaskFailed, domain.LifecycleFailed},
+		{domain.TaskCancelled, domain.LifecycleCancelled},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.state), func(t *testing.T) {
+			projection := domain.ProjectTaskLifecycle(tt.state)
+			if projection.Status != tt.status || projection.Phase != tt.state {
+				t.Fatalf("projection=%+v want status=%s phase=%s", projection, tt.status, tt.state)
+			}
+		})
+	}
+
+	projection := domain.ProjectTaskLifecycle(domain.TaskVerifying)
+	view := ownerTaskView{
+		ID:     "task-projection",
+		State:  domain.TaskVerifying,
+		Status: projection.Status,
+		Phase:  projection.Phase,
+	}
+	data, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["state"] != "VERIFYING" || got["status"] != "RUNNING" || got["phase"] != "VERIFYING" {
+		t.Fatalf("unexpected lifecycle projection JSON: %s", data)
+	}
+}
+
 func (f *fakeOwnerMCP) CallTool(_ context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	f.name = params.Name
 	args, ok := params.Arguments.(map[string]any)

@@ -70,6 +70,8 @@ Create isolated workspace on first mutation intent, not task submission.
 
 **Acceptance:** read-only and no-change representative tasks allocate zero mutable task worktrees.
 
+**2026-09-22 evidence:** Phase 3B was VERIFIED + INTEGRATED at `94c92e8f25722daeee48c46f5ee8537c0f8fbbc8`. Post-phase stop-rule measurement observed `.mar/w` at ~2.146 GiB versus the ~7.04 GiB pressure-point baseline, a reduction of about 69.5%. The integrated path reuses immutable detached read-only snapshots while preserving distinct durable workspace records and the existing mutable path for mutation-capable tasks.
+
 ## Phase 4 — Lifecycle simplification
 
 Introduce a backward-compatible projection:
@@ -81,6 +83,8 @@ with optional diagnostic `phase`.
 Move VERIFIED/integration truth to their existing evidence/result/integration facts.
 
 Migrate consumers gradually, stop writing obsolete states only after compatibility coverage proves equivalent recovery behavior.
+
+**Phase 4A (2026-09-22):** projection-only compatibility slice. Add the seven-status projection plus diagnostic legacy phase to owner task/status views while preserving all existing durable TaskState writes and recovery behavior. Implementation status in this revision: implemented for qualification; authoritative completion remains the MAR VERIFIED + INTEGRATED result for the exact candidate revision.
 
 ## Phase 5 — Decouple authority from resource capacity
 
