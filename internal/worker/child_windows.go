@@ -179,10 +179,10 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	harness := start.HarnessConfig()
-	if harness.Provider.Mode() == BrainHarness {
-		return runExternalHarnessChild(ctx, start, harness, encoder)
+	if start.Provider.Mode() == BrainHarness {
+		return runExternalHarnessChild(ctx, start, encoder)
 	}
+	harness := start.HarnessConfig()
 
 	rpc := &rpcClient{decoder: decoder, encoder: encoder}
 	repository, err := contextengine.NewGitRepository(8 << 20)
@@ -297,7 +297,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 	return nil
 }
 
-func runExternalHarnessChild(ctx context.Context, start StartRequest, harness HarnessConfig, encoder *json.Encoder) error {
+func runExternalHarnessChild(ctx context.Context, start StartRequest, encoder *json.Encoder) error {
 	input, err := start.ExternalHarnessInput()
 	if err != nil {
 		_ = sendChildError(encoder, err)
@@ -347,8 +347,8 @@ func runExternalHarnessChild(ctx context.Context, start StartRequest, harness Ha
 	defer cancel()
 	result, err := executor.Run(runCtx, start.Task.ID, aci.ExecSpec{
 		OperationID:    "external-harness",
-		Path:           harness.Executable,
-		Args:           append([]string(nil), harness.Arguments...),
+		Path:           start.HarnessExecutable,
+		Args:           append([]string(nil), start.HarnessArguments...),
 		Dir:            start.WorkspacePath,
 		Env:            externalHarnessEnvironment(inputPath),
 		MaxOutputBytes: 64 << 10,

@@ -71,8 +71,6 @@ type HarnessConfig struct {
 	Provider     ProviderConfig
 	AgentProfile agent.Profile
 	AgentConfig  agent.Config
-	Executable   string
-	Arguments    []string
 }
 
 // ExecutionConfig contains the governed worker execution boundary that remains
@@ -111,7 +109,6 @@ type StartRequest struct {
 func (r StartRequest) HarnessConfig() HarnessConfig {
 	return HarnessConfig{
 		Provider: r.Provider, AgentProfile: r.AgentProfile, AgentConfig: r.AgentConfig,
-		Executable: r.HarnessExecutable, Arguments: append([]string(nil), r.HarnessArguments...),
 	}
 }
 
@@ -172,7 +169,7 @@ func (r StartRequest) Validate() error {
 			return errors.New("worker start requires agent base instructions")
 		}
 	case BrainHarness:
-		if strings.TrimSpace(harness.Executable) == "" || !filepath.IsAbs(harness.Executable) {
+		if strings.TrimSpace(r.HarnessExecutable) == "" || !filepath.IsAbs(r.HarnessExecutable) {
 			return errors.New("external harness mode requires an absolute executable path")
 		}
 	default:

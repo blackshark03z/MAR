@@ -25,6 +25,7 @@ These are bounded post-freeze responsibility-delegation slices, not architecture
 - Web/Harness worker start no longer carries unused provider URL/API-key-name/request-timeout configuration; Provider mode remains unchanged. Evidence: `docs/research/046_NON_PROVIDER_WORKER_PROVIDER_CONFIG_DELEGATION.md`.
 - Worker cognition config is now mode-scoped: Provider keeps full compatibility profile/config; Web keeps only base instructions plus active fail-closed budgets; Harness receives zero MAR AgentProfile/AgentConfig. Evidence: `docs/research/047_WORKER_COGNITION_CONFIG_MODE_SCOPING.md`.
 - External Harness no longer inherits MAR compatibility-cognition convergence ceilings (model decisions/tool calls/tokens), while semantic no-progress, cumulative execution time and attempt limits remain fail-closed. Evidence: `docs/research/048_EXTERNAL_HARNESS_CONVERGENCE_BUDGET_DECOUPLING.md`.
+- External Harness execution no longer depends on the mixed compatibility HarnessConfig cognition projection; executable/arguments are consumed directly from StartRequest while the legacy wire shape remains unchanged. Evidence: `docs/research/049_EXTERNAL_HARNESS_CONFIG_DECOUPLING.md`.
 
 Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
 

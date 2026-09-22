@@ -41,6 +41,23 @@ func TestExternalHarnessInputBindsDurableTaskIntent(t *testing.T) {
 	}
 }
 
+func TestHarnessConfigContainsOnlyCompatibilityCognition(t *testing.T) {
+	req := StartRequest{
+		Provider:          ProviderConfig{BrainMode: BrainHarness},
+		AgentProfile:      agent.Profile{Model: "legacy-model", BaseInstructions: "legacy"},
+		AgentConfig:       agent.Config{MaxTurns: 3},
+		HarnessExecutable: `C:\tools\harness.exe`,
+		HarnessArguments:  []string{"--run"},
+	}
+	harness := req.HarnessConfig()
+	if harness.Provider.BrainMode != BrainHarness || harness.AgentProfile.Model != "legacy-model" || harness.AgentConfig.MaxTurns != 3 {
+		t.Fatalf("compatibility cognition projection changed: %+v", harness)
+	}
+	if reflect.TypeOf(harness).NumField() != 3 {
+		t.Fatalf("HarnessConfig regained external execution fields: %+v", harness)
+	}
+}
+
 func TestStartRequestBoundaryProjectionPreservesLegacyWireShape(t *testing.T) {
 	req := StartRequest{
 		Task:          domain.Task{ID: "task-boundary"},
