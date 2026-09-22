@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,6 +54,8 @@ type TaskRunnerConfig struct {
 	Provider              worker.ProviderConfig
 	AgentProfile          agent.Profile
 	AgentConfig           agent.Config
+	HarnessExecutable     string
+	HarnessArguments      []string
 	SandboxReadPaths      []string
 	GoModuleCache         string
 	GoBuildCache          string
@@ -73,12 +76,19 @@ func (c TaskRunnerConfig) validate() error {
 		if strings.TrimSpace(c.Provider.BaseURL) == "" || strings.TrimSpace(c.Provider.APIKeyEnv) == "" {
 			return errors.New("provider brain mode requires model provider configuration")
 		}
+		if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
+			return errors.New("task runner requires agent profile")
+		}
 	case worker.BrainWeb:
+		if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
+			return errors.New("task runner requires agent profile")
+		}
+	case worker.BrainHarness:
+		if strings.TrimSpace(c.HarnessExecutable) == "" || !filepath.IsAbs(c.HarnessExecutable) {
+			return errors.New("task runner external harness requires an absolute executable path")
+		}
 	default:
-		return errors.New("task runner brain mode must be provider or web")
-	}
-	if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
-		return errors.New("task runner requires agent profile")
+		return errors.New("task runner brain mode must be provider, web, or harness")
 	}
 	if c.FinalizationTimeout <= 0 {
 		return errors.New("task runner finalization timeout must be positive")
@@ -174,6 +184,8 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 		Provider:              r.cfg.Provider,
 		AgentProfile:          r.cfg.AgentProfile,
 		AgentConfig:           boundedAgentConfig(r.cfg.AgentConfig, budget),
+		HarnessExecutable:     r.cfg.HarnessExecutable,
+		HarnessArguments:      append([]string(nil), r.cfg.HarnessArguments...),
 		SandboxReadPaths:      append([]string{}, r.cfg.SandboxReadPaths...),
 		GoModuleCache:         r.cfg.GoModuleCache,
 		GoBuildCache:          r.cfg.GoBuildCache,

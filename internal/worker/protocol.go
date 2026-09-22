@@ -30,6 +30,7 @@ type BrainMode string
 const (
 	BrainProvider BrainMode = "provider"
 	BrainWeb      BrainMode = "web"
+	BrainHarness  BrainMode = "harness"
 )
 
 type ProviderConfig struct {
@@ -52,6 +53,8 @@ type HarnessConfig struct {
 	Provider     ProviderConfig
 	AgentProfile agent.Profile
 	AgentConfig  agent.Config
+	Executable   string
+	Arguments    []string
 }
 
 // ExecutionConfig contains the governed worker execution boundary that remains
@@ -75,6 +78,8 @@ type StartRequest struct {
 	Provider              ProviderConfig          `json:"provider"`
 	AgentProfile          agent.Profile           `json:"agent_profile"`
 	AgentConfig           agent.Config            `json:"agent_config"`
+	HarnessExecutable     string                  `json:"harness_executable,omitempty"`
+	HarnessArguments      []string                `json:"harness_arguments,omitempty"`
 	SandboxReadPaths      []string                `json:"sandbox_read_paths,omitempty"`
 	GoModuleCache         string                  `json:"go_module_cache,omitempty"`
 	GoBuildCache          string                  `json:"go_build_cache,omitempty"`
@@ -86,7 +91,10 @@ type StartRequest struct {
 // HarnessConfig projects the legacy flat wire contract onto the replaceable
 // cognition/harness boundary without changing JSON compatibility.
 func (r StartRequest) HarnessConfig() HarnessConfig {
-	return HarnessConfig{Provider: r.Provider, AgentProfile: r.AgentProfile, AgentConfig: r.AgentConfig}
+	return HarnessConfig{
+		Provider: r.Provider, AgentProfile: r.AgentProfile, AgentConfig: r.AgentConfig,
+		Executable: r.HarnessExecutable, Arguments: append([]string(nil), r.HarnessArguments...),
+	}
 }
 
 // ExecutionConfig projects the legacy flat wire contract onto the governed
@@ -120,12 +128,19 @@ func (r StartRequest) Validate() error {
 		if strings.TrimSpace(harness.Provider.BaseURL) == "" || strings.TrimSpace(harness.Provider.APIKeyEnv) == "" {
 			return errors.New("provider brain mode requires model provider base URL and API key environment name")
 		}
+		if strings.TrimSpace(harness.AgentProfile.Model) == "" || strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
+			return errors.New("worker start requires agent model profile")
+		}
 	case BrainWeb:
+		if strings.TrimSpace(harness.AgentProfile.Model) == "" || strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
+			return errors.New("worker start requires agent model profile")
+		}
+	case BrainHarness:
+		if strings.TrimSpace(harness.Executable) == "" || !filepath.IsAbs(harness.Executable) {
+			return errors.New("external harness mode requires an absolute executable path")
+		}
 	default:
-		return errors.New("worker brain mode must be provider or web")
-	}
-	if strings.TrimSpace(harness.AgentProfile.Model) == "" || strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
-		return errors.New("worker start requires agent model profile")
+		return errors.New("worker brain mode must be provider, web, or harness")
 	}
 	for _, readPath := range r.SandboxReadPaths {
 		readPath = strings.TrimSpace(readPath)

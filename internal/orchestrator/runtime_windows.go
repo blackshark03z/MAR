@@ -32,6 +32,8 @@ type RuntimeConfig struct {
 	Provider             worker.ProviderConfig
 	AgentProfile         agent.Profile
 	AgentConfig          agent.Config
+	HarnessExecutable    string
+	HarnessArguments     []string
 	VerificationProfiles []verification.Profile
 	SandboxReadPaths     []string
 	WorkerPathEntries    []string
@@ -224,6 +226,8 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 		Provider:              cfg.Provider,
 		AgentProfile:          cfg.AgentProfile,
 		AgentConfig:           cfg.AgentConfig,
+		HarnessExecutable:     cfg.HarnessExecutable,
+		HarnessArguments:      append([]string(nil), cfg.HarnessArguments...),
 		SandboxReadPaths:      append([]string{}, readPaths...),
 		GoModuleCache:         goModuleCache,
 		GoBuildCache:          goBuildCache,

@@ -210,6 +210,22 @@ func TestTaskRunnerConfigAllowsWebBrainWithoutProviderCredentials(t *testing.T) 
 	}
 }
 
+func TestTaskRunnerConfigAllowsExternalHarnessWithoutAgentProfile(t *testing.T) {
+	cfg := TaskRunnerConfig{
+		WorkerID: "worker-runtime", SupervisorID: "supervisor-runtime", LeaseDuration: time.Minute,
+		FinalizationTimeout: 5 * time.Second,
+		Provider:            worker.ProviderConfig{BrainMode: worker.BrainHarness},
+		HarnessExecutable:   `C:\tools\harness.exe`,
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("external harness should not require MAR agent profile/provider credentials: %v", err)
+	}
+	cfg.HarnessExecutable = "relative-harness.exe"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("external harness executable must be absolute")
+	}
+}
+
 func readyTaskAndWorkspace() (domain.Task, domain.Workspace) {
 	task := domain.Task{ID: "task-1", State: domain.TaskWorkspaceReady, RunEpoch: 0}
 	workspace := domain.Workspace{ID: "workspace-1", TaskID: task.ID, State: domain.WorkspaceReady, Path: `D:\MAR\test-workspace`}

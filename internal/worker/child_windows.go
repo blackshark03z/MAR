@@ -178,6 +178,10 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
+	harness := start.HarnessConfig()
+	if harness.Provider.Mode() == BrainHarness {
+		return runExternalHarnessChild(ctx, start, harness, encoder)
+	}
 
 	rpc := &rpcClient{decoder: decoder, encoder: encoder}
 	repository, err := contextengine.NewGitRepository(8 << 20)
@@ -242,7 +246,6 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	harness := start.HarnessConfig()
 	var provider model.Provider
 	switch harness.Provider.Mode() {
 	case BrainWeb:
@@ -291,6 +294,76 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		return fmt.Errorf("send worker result: %w", err)
 	}
 	return nil
+}
+
+func runExternalHarnessChild(ctx context.Context, start StartRequest, harness HarnessConfig, encoder *json.Encoder) error {
+	var (
+		executor *aci.WindowsSandboxExecutor
+		err      error
+	)
+	if !start.Task.Contract.Authority.LocalFileWrite && !start.Task.Contract.Authority.LocalGitWrite {
+		executor, err = aci.NewWindowsReadOnlySandboxExecutorWithWritePaths(start.WorkspacePath, nil, start.SandboxReadPaths...)
+	} else {
+		executor, err = aci.NewWindowsSandboxExecutor(start.WorkspacePath, start.SandboxReadPaths...)
+	}
+	if err != nil {
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	if executor.IsolationLevel() != aci.IsolationEnforcedSandbox {
+		err := errors.New("external harness requires enforced sandbox isolation")
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	runCtx := ctx
+	cancel := func() {}
+	if start.CommandTimeout > 0 {
+		runCtx, cancel = context.WithTimeout(ctx, start.CommandTimeout)
+	}
+	defer cancel()
+	result, err := executor.Run(runCtx, start.Task.ID, aci.ExecSpec{
+		OperationID:    "external-harness",
+		Path:           harness.Executable,
+		Args:           append([]string(nil), harness.Arguments...),
+		Dir:            start.WorkspacePath,
+		Env:            externalHarnessEnvironment(),
+		MaxOutputBytes: 64 << 10,
+	})
+	if err != nil {
+		err = fmt.Errorf("external harness failed: %w", err)
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	summary := strings.TrimSpace(result.Output)
+	if summary == "" {
+		summary = "external harness completed"
+	}
+	const maxSummaryBytes = 4 << 10
+	if len(summary) > maxSummaryBytes {
+		summary = summary[:maxSummaryBytes]
+	}
+	terminal, err := marshalFrame(frameResult, 0, "", agent.Result{
+		Status:  agent.StatusCompletedCandidate,
+		Summary: summary,
+	}, "")
+	if err != nil {
+		return err
+	}
+	if err := encoder.Encode(terminal); err != nil {
+		return fmt.Errorf("send external harness result: %w", err)
+	}
+	return nil
+}
+
+func externalHarnessEnvironment() []string {
+	keys := []string{"SystemRoot", "WINDIR", "ComSpec", "PATH", "PATHEXT", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "TEMP", "TMP", "ProgramFiles", "ProgramData"}
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
 }
 
 func (c *rpcClient) AttemptAuthoritative(ctx context.Context, taskID, attemptID string, epoch int64) (bool, error) {
