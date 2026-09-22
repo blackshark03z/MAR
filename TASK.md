@@ -22,6 +22,7 @@ These are bounded post-freeze responsibility-delegation slices, not architecture
 - External harness kernel seam is E2E-proven without MAR model/Web cognition (zero agent/model usage); evidence: `docs/research/043_EXTERNAL_HARNESS_KERNEL_E2E.md`.
 - Harness-neutral per-task intent handoff is now E2E-proven through a read-only ephemeral Goal Contract envelope bound to task/attempt/run-epoch/hash; evidence: `docs/research/044_EXTERNAL_HARNESS_TASK_INTENT_HANDOFF.md`. Real vendor/harness qualification remains separate.
 - External harness network authority is now OS- and worker-proven: default deny remains intact, while `BrainHarness` maps explicit `NetworkAllowed=true` to LPAC outbound `internetClient` only; evidence: `docs/research/045_EXTERNAL_HARNESS_NETWORK_AUTHORITY.md`. Authentication/credential handoff remains separate and unresolved.
+- Web/Harness worker start no longer carries unused provider URL/API-key-name/request-timeout configuration; Provider mode remains unchanged. Evidence: `docs/research/046_NON_PROVIDER_WORKER_PROVIDER_CONFIG_DELEGATION.md`.
 
 Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
 

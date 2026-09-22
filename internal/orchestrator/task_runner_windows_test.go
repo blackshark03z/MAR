@@ -194,6 +194,25 @@ func testRunner(t *testing.T, svc *fakeTaskService, workerProcess *fakeWorkerPro
 	return runner
 }
 
+func TestWorkerProviderConfigStripsProviderOnlyFieldsOutsideProviderMode(t *testing.T) {
+	provider := worker.ProviderConfig{
+		BrainMode: worker.BrainProvider, BaseURL: "https://provider.invalid/v1",
+		APIKeyEnv: "MAR_PROVIDER_SECRET", RequestTimeout: 17 * time.Second,
+	}
+	if got := workerProviderConfig(provider); !reflect.DeepEqual(got, provider) {
+		t.Fatalf("provider mode lost compatibility config: got=%+v want=%+v", got, provider)
+	}
+
+	for _, mode := range []worker.BrainMode{worker.BrainWeb, worker.BrainHarness} {
+		input := provider
+		input.BrainMode = mode
+		got := workerProviderConfig(input)
+		if got.BrainMode != mode || got.BaseURL != "" || got.APIKeyEnv != "" || got.RequestTimeout != 0 {
+			t.Fatalf("%s worker retained provider-only configuration: %+v", mode, got)
+		}
+	}
+}
+
 func TestTaskRunnerConfigAllowsWebBrainWithoutProviderCredentials(t *testing.T) {
 	cfg := TaskRunnerConfig{
 		WorkerID: "worker-runtime", SupervisorID: "supervisor-runtime", LeaseDuration: time.Minute,

@@ -103,6 +103,13 @@ type RunOutcome struct {
 	Integration  *domain.TaskResult `json:"integration,omitempty"`
 }
 
+func workerProviderConfig(provider worker.ProviderConfig) worker.ProviderConfig {
+	if provider.Mode() == worker.BrainProvider {
+		return provider
+	}
+	return worker.ProviderConfig{BrainMode: provider.Mode()}
+}
+
 type TaskRunner struct {
 	service     taskService
 	worker      workerProcess
@@ -181,7 +188,7 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 		Task:                  task,
 		Attempt:               attempt,
 		WorkspacePath:         workspace.Path,
-		Provider:              r.cfg.Provider,
+		Provider:              workerProviderConfig(r.cfg.Provider),
 		AgentProfile:          r.cfg.AgentProfile,
 		AgentConfig:           boundedAgentConfig(r.cfg.AgentConfig, budget),
 		HarnessExecutable:     r.cfg.HarnessExecutable,
