@@ -32,8 +32,10 @@ type VerificationCommandEvidence struct {
 	ExitCode     int      `json:"exit_code"`
 	Passed       bool     `json:"passed"`
 	DurationMS   int64    `json:"duration_ms"`
-	OutputSHA256 string   `json:"output_sha256"`
-	OutputPrefix string   `json:"output_prefix,omitempty"`
+	OutputSHA256         string   `json:"output_sha256"`
+	OutputPrefix         string   `json:"output_prefix,omitempty"`
+	Reused               bool     `json:"reused,omitempty"`
+	ReusedFromEvidenceID string   `json:"reused_from_evidence_id,omitempty"`
 }
 
 type AcceptanceEvidence struct {
@@ -111,6 +113,13 @@ func (e VerificationEvidence) ValidateIdentity() error {
 		}
 		if command.Passed != (command.ExitCode == 0) {
 			return errors.New("verification command pass flag and exit code disagree")
+		}
+		if command.Reused {
+			if strings.TrimSpace(command.ReusedFromEvidenceID) == "" || command.DurationMS != 0 {
+				return errors.New("reused verification command requires source evidence and zero execution duration")
+			}
+		} else if strings.TrimSpace(command.ReusedFromEvidenceID) != "" {
+			return errors.New("non-reused verification command must not claim reuse provenance")
 		}
 		allCommandsPassed = allCommandsPassed && command.Passed
 	}

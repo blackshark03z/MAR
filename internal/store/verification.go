@@ -295,3 +295,36 @@ FROM verification_evidence WHERE evidence_id = ?`, evidenceID)
 	}
 	return evidence, nil
 }
+
+// FindReusableVerificationEvidence returns the newest integrity-valid PASS
+// evidence in the same project whose command-verification identity matches.
+func (s *SQLite) FindReusableVerificationEvidence(ctx context.Context, projectID, excludeTaskID, candidateRevision, profileID, profileHash, environmentHash string) (domain.VerificationEvidence, bool, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT e.evidence_id, e.task_id, e.attempt_id, e.run_epoch, e.goal_hash, e.base_revision, e.candidate_revision,
+       e.profile_id, e.profile_hash, e.environment_json, e.environment_hash, e.commands_json, e.acceptance_json,
+       e.verdict, e.integrity_hash, e.created_at
+FROM verification_evidence e
+JOIN tasks t ON t.id = e.task_id
+WHERE t.project_id = ? AND e.task_id <> ? AND e.candidate_revision = ? AND e.profile_id = ? AND e.profile_hash = ?
+  AND e.environment_hash = ? AND e.verdict = ?
+ORDER BY e.created_at DESC
+LIMIT 32`, projectID, excludeTaskID, candidateRevision, profileID, profileHash, environmentHash, string(domain.VerificationPass))
+	if err != nil { return domain.VerificationEvidence{}, false, err }
+	defer rows.Close()
+	for rows.Next() {
+		var evidence domain.VerificationEvidence
+		var commandsJSON, acceptanceJSON []byte
+		var verdict, created string
+		if err := rows.Scan(&evidence.ID, &evidence.TaskID, &evidence.AttemptID, &evidence.RunEpoch, &evidence.GoalHash, &evidence.BaseRevision, &evidence.CandidateRevision, &evidence.ProfileID, &evidence.ProfileHash, &evidence.EnvironmentJSON, &evidence.EnvironmentHash, &commandsJSON, &acceptanceJSON, &verdict, &evidence.IntegrityHash, &created); err != nil { return domain.VerificationEvidence{}, false, err }
+		if json.Unmarshal(commandsJSON, &evidence.Commands) != nil || json.Unmarshal(acceptanceJSON, &evidence.Acceptance) != nil { continue }
+		evidence.Verdict = domain.VerificationVerdict(verdict)
+		createdAt, parseErr := time.Parse(time.RFC3339Nano, created); if parseErr != nil { continue }
+		evidence.CreatedAt = createdAt
+		if !evidence.IntegrityValid() || evidence.Verdict != domain.VerificationPass { continue }
+		allPassed := true
+		for _, command := range evidence.Commands { if !command.Passed { allPassed = false; break } }
+		if allPassed { return evidence, true, nil }
+	}
+	if err := rows.Err(); err != nil { return domain.VerificationEvidence{}, false, err }
+	return domain.VerificationEvidence{}, false, nil
+}

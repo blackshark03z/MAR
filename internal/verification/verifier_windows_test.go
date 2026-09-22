@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mar/internal/aci"
 	"mar/internal/domain"
@@ -79,6 +80,74 @@ func prepareVerifierCandidate(t *testing.T, h sealerHarness) {
 	if err := os.WriteFile(filepath.Join(h.root, "main.go"), []byte("package main\nfunc main() { println(\"verified\") }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func addNoChangeVerifierTask(t *testing.T, h sealerHarness, suffix string, checks []domain.AcceptanceCheck) (domain.Task, domain.ExecutionAttempt, string) {
+	t.Helper()
+	ctx := context.Background()
+	parent := t.TempDir()
+	root := filepath.Join(parent, "workspace-"+suffix)
+	runVerificationGit(t, parent, "clone", "--quiet", h.root, root)
+	runVerificationGit(t, root, "checkout", "--quiet", h.base)
+	contract := h.task.Contract
+	contract.Goal = "no-change verifier task " + suffix
+	contract.AcceptanceChecks = append([]domain.AcceptanceCheck(nil), checks...)
+	task, _, err := h.service.Submit(ctx, "no-change-"+suffix, contract)
+	if err != nil { t.Fatal(err) }
+	for _, state := range []domain.TaskState{domain.TaskPreflight, domain.TaskWaitingResource} {
+		if err := h.service.AdvancePreExecution(ctx, task.ID, state); err != nil { t.Fatal(err) }
+	}
+	workspace := domain.Workspace{ID: "workspace-" + suffix, TaskID: task.ID, ProjectID: contract.ProjectID, Path: root, BaseRevision: h.base, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	workspace, _, err = h.store.BeginWorkspace(ctx, workspace)
+	if err != nil { t.Fatal(err) }
+	if err := h.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, h.base, time.Now().UTC()); err != nil { t.Fatal(err) }
+	attempt, err := h.service.BeginAttempt(ctx, task.ID, "worker-"+suffix, "supervisor-"+suffix, time.Minute)
+	if err != nil { t.Fatal(err) }
+	return task, attempt, root
+}
+
+func TestVerifierNoChangeReusesCommandsAcrossTasks(t *testing.T) {
+	check := domain.AcceptanceCheck{CriterionIndex: 1, Scenario: "inspect current candidate file", Oracle: "file_contains:main.go:package main"}
+	h := newSealerHarnessForProfile(t, true, "test", []domain.AcceptanceCheck{check})
+	profile := verifierProfile()
+	verifier := verifierForHarness(t, h, profile)
+
+	priorTask, priorAttempt, priorRoot := addNoChangeVerifierTask(t, h, "prior-reuse", []domain.AcceptanceCheck{check})
+	priorRuntime := &fakeVerificationRuntime{root: priorRoot, results: []aci.ExecResult{{Output: "ok test", ExitCode: 0}, {Output: "ok vet", ExitCode: 0}}}
+	priorResult, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: priorTask.ID, AttemptID: priorAttempt.ID, RunEpoch: priorAttempt.RunEpoch, Runtime: priorRuntime})
+	if err != nil || priorResult.Verdict != domain.ResultVerified { t.Fatalf("seed verification failed: result=%+v err=%v", priorResult, err) }
+
+	reuseRuntime := &fakeVerificationRuntime{root: h.root}
+	started := time.Now()
+	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: reuseRuntime})
+	reuseDuration := time.Since(started)
+	if err != nil || result.Verdict != domain.ResultVerified { t.Fatalf("reused verification failed: result=%+v err=%v", result, err) }
+	if len(reuseRuntime.calls) != 0 { t.Fatalf("reuse executed commands again: %+v", reuseRuntime.calls) }
+	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
+	if err != nil { t.Fatal(err) }
+	for _, command := range evidence.Commands {
+		if !command.Reused || command.ReusedFromEvidenceID != priorResult.EvidenceID || command.DurationMS != 0 { t.Fatalf("invalid reuse provenance: %+v", command) }
+	}
+	if len(evidence.Acceptance) != 1 || evidence.Acceptance[0].EffectiveStatus() != domain.AcceptancePass || len(evidence.Acceptance[0].EvidenceRefs) == 0 || !strings.HasPrefix(evidence.Acceptance[0].EvidenceRefs[0], "file:") {
+		t.Fatalf("acceptance was not freshly observed: %+v", evidence.Acceptance)
+	}
+	t.Logf("measured_reuse_overhead_ms=%d", reuseDuration.Milliseconds())
+}
+
+func TestVerifierNoChangeReuseFallsBackForOutputDependentAcceptance(t *testing.T) {
+	h := newSealerHarness(t, true)
+	profile := verifierProfile()
+	verifier := verifierForHarness(t, h, profile)
+	seedTask, seedAttempt, seedRoot := addNoChangeVerifierTask(t, h, "output-seed", h.task.Contract.AcceptanceChecks)
+	seedRuntime := &fakeVerificationRuntime{root: seedRoot, results: []aci.ExecResult{{Output: "ok test"}, {Output: "ok vet"}}}
+	if _, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: seedTask.ID, AttemptID: seedAttempt.ID, RunEpoch: seedAttempt.RunEpoch, Runtime: seedRuntime}); err != nil { t.Fatal(err) }
+	currentRuntime := &fakeVerificationRuntime{root: h.root, results: []aci.ExecResult{{Output: "ok test"}, {Output: "ok vet"}}}
+	result, err := verifier.Verify(context.Background(), VerifyRequest{TaskID: h.task.ID, AttemptID: h.attempt.ID, RunEpoch: h.attempt.RunEpoch, Runtime: currentRuntime})
+	if err != nil { t.Fatal(err) }
+	if len(currentRuntime.calls) != len(profile.Commands) { t.Fatalf("expected fresh commands, got %d", len(currentRuntime.calls)) }
+	evidence, err := h.store.GetVerificationEvidence(context.Background(), result.EvidenceID)
+	if err != nil { t.Fatal(err) }
+	if evidence.Commands[0].Reused { t.Fatal("output-dependent acceptance reused command evidence") }
 }
 
 func TestVerifierPassPersistsRevisionBoundEvidenceAndVerifiedState(t *testing.T) {

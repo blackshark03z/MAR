@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -130,7 +131,20 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	commandEvidence := make([]domain.VerificationCommandEvidence, 0, len(executionProfile.Commands))
 	commandOutputs := make([]string, 0, len(executionProfile.Commands))
 	allCommandsPassed := true
-	for _, command := range executionProfile.Commands {
+	reusedCommands := false
+	if len(candidate.ChangedPaths) == 0 && acceptanceAllowsCommandReuse(task.Contract.AcceptanceChecks) {
+		prior, reusable, lookupErr := v.store.FindReusableVerificationEvidence(ctx, task.Contract.ProjectID, task.ID, candidate.Revision, profile.ID, profileHash, startEnvironmentHash)
+		if lookupErr != nil { return domain.TaskResult{}, fmt.Errorf("lookup reusable verification evidence: %w", lookupErr) }
+		if reusable && reusableCommandsMatchProfile(prior.Commands, executionProfile.Commands) {
+			reusedCommands = true
+			for _, priorCommand := range prior.Commands {
+				command := priorCommand; command.DurationMS = 0; command.Reused = true; command.ReusedFromEvidenceID = prior.ID
+				commandEvidence = append(commandEvidence, command); commandOutputs = append(commandOutputs, "")
+			}
+		}
+	}
+	if !reusedCommands {
+		for _, command := range executionProfile.Commands {
 		if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
 			return domain.TaskResult{}, err
 		}
@@ -171,8 +185,7 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 			OutputSHA256: hex.EncodeToString(sum[:]),
 			OutputPrefix: boundVerificationText(observed, 4096),
 		})
-		if !passed {
-			break
+			if !passed { break }
 		}
 	}
 	if err := v.store.ValidateAttemptAuthority(ctx, req.TaskID, req.AttemptID, req.RunEpoch); err != nil {
@@ -297,11 +310,13 @@ func (v *Verifier) Verify(ctx context.Context, req VerifyRequest) (domain.TaskRe
 	passFailEvidence := make([]string, 0, len(commandEvidence)+len(acceptance)+1)
 	passFailEvidence = append(passFailEvidence, "verification_evidence:"+evidence.ID)
 	for i, command := range commandEvidence {
-		status := "FAIL"
-		if command.Passed {
-			status = "PASS"
+		status := "FAIL"; if command.Passed { status = "PASS" }
+		formatted := formatVerificationCommand(command.Name, command.Args)
+		if command.Reused {
+			verificationExecuted = append(verificationExecuted, fmt.Sprintf("REUSED[%s] %s", command.ReusedFromEvidenceID, formatted))
+			passFailEvidence = append(passFailEvidence, fmt.Sprintf("command:%d:PASS_REUSED:%s:source=%s", i+1, command.OutputSHA256, command.ReusedFromEvidenceID)); continue
 		}
-		verificationExecuted = append(verificationExecuted, formatVerificationCommand(command.Name, command.Args))
+		verificationExecuted = append(verificationExecuted, formatted)
 		passFailEvidence = append(passFailEvidence, fmt.Sprintf("command:%d:%s:%s", i+1, status, command.OutputSHA256))
 	}
 	for i, criterion := range acceptance {
@@ -599,6 +614,21 @@ func (v *Verifier) observeAcceptanceOracle(root string, check domain.AcceptanceC
 		return domain.AcceptancePass, fmt.Sprintf("required literal observed in candidate file %q", filepath.ToSlash(rel)), []string{ref}
 	}
 	return domain.AcceptanceUnverified, "oracle is not machine-verifiable by MAR V1", []string{}
+}
+
+func reusableCommandsMatchProfile(evidence []domain.VerificationCommandEvidence, commands []Command) bool {
+	if len(evidence) != len(commands) { return false }
+	for i := range commands {
+		if strings.TrimSpace(evidence[i].Name) != strings.TrimSpace(commands[i].Name) || !slices.Equal(evidence[i].Args, commands[i].Args) || filepath.ToSlash(filepath.Clean(evidence[i].Cwd)) != filepath.ToSlash(filepath.Clean(commands[i].Cwd)) { return false }
+	}
+	return true
+}
+
+func acceptanceAllowsCommandReuse(checks []domain.AcceptanceCheck) bool {
+	for _, check := range checks {
+		if len(check.CommandIndexes) != 0 || strings.HasPrefix(strings.TrimSpace(check.Oracle), "output_contains:") { return false }
+	}
+	return true
 }
 
 func formatVerificationCommand(name string, args []string) string {
