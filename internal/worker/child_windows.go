@@ -242,15 +242,16 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
+	harness := start.HarnessConfig()
 	var provider model.Provider
-	switch start.Provider.Mode() {
+	switch harness.Provider.Mode() {
 	case BrainWeb:
 		provider = &webBrainProvider{rpc: rpc, taskID: start.Task.ID, attemptID: start.Attempt.ID, runEpoch: start.Attempt.RunEpoch}
 	case BrainProvider:
 		provider, err = openaichat.New(openaichat.Config{
-			BaseURL:        start.Provider.BaseURL,
-			APIKeyEnv:      start.Provider.APIKeyEnv,
-			RequestTimeout: start.Provider.RequestTimeout,
+			BaseURL:        harness.Provider.BaseURL,
+			APIKeyEnv:      harness.Provider.APIKeyEnv,
+			RequestTimeout: harness.Provider.RequestTimeout,
 		})
 		if err != nil {
 			_ = sendChildError(encoder, err)
@@ -264,7 +265,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	loop, err := agent.New(gateway, codingRuntime, agentContext, rpc, rpc, start.AgentProfile, start.AgentConfig)
+	loop, err := agent.New(gateway, codingRuntime, agentContext, rpc, rpc, harness.AgentProfile, harness.AgentConfig)
 	if err != nil {
 		_ = sendChildError(encoder, err)
 		return err

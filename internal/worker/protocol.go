@@ -46,6 +46,28 @@ func (c ProviderConfig) Mode() BrainMode {
 	return c.BrainMode
 }
 
+// HarnessConfig contains replaceable coding-harness cognition mechanics.
+// It is compatibility configuration, not durable MAR execution authority.
+type HarnessConfig struct {
+	Provider     ProviderConfig
+	AgentProfile agent.Profile
+	AgentConfig  agent.Config
+}
+
+// ExecutionConfig contains the governed worker execution boundary that remains
+// meaningful independently of the selected coding harness.
+type ExecutionConfig struct {
+	Task                  domain.Task
+	Attempt               domain.ExecutionAttempt
+	WorkspacePath         string
+	SandboxReadPaths      []string
+	GoModuleCache         string
+	GoBuildCache          string
+	CommandTimeout        time.Duration
+	MemoryPressurePercent float64
+	Capacity              WaitCapacity
+}
+
 type StartRequest struct {
 	Task                  domain.Task             `json:"task"`
 	Attempt               domain.ExecutionAttempt `json:"attempt"`
@@ -61,6 +83,24 @@ type StartRequest struct {
 	Capacity              WaitCapacity            `json:"-"`
 }
 
+// HarnessConfig projects the legacy flat wire contract onto the replaceable
+// cognition/harness boundary without changing JSON compatibility.
+func (r StartRequest) HarnessConfig() HarnessConfig {
+	return HarnessConfig{Provider: r.Provider, AgentProfile: r.AgentProfile, AgentConfig: r.AgentConfig}
+}
+
+// ExecutionConfig projects the legacy flat wire contract onto the governed
+// execution boundary. Returned path slices are caller-owned.
+func (r StartRequest) ExecutionConfig() ExecutionConfig {
+	return ExecutionConfig{
+		Task: r.Task, Attempt: r.Attempt, WorkspacePath: r.WorkspacePath,
+		SandboxReadPaths: append([]string(nil), r.SandboxReadPaths...),
+		GoModuleCache:    r.GoModuleCache, GoBuildCache: r.GoBuildCache,
+		CommandTimeout: r.CommandTimeout, MemoryPressurePercent: r.MemoryPressurePercent,
+		Capacity: r.Capacity,
+	}
+}
+
 func (r StartRequest) Validate() error {
 	if strings.TrimSpace(r.Task.ID) == "" || strings.TrimSpace(r.Attempt.ID) == "" || r.Attempt.RunEpoch <= 0 {
 		return errors.New("worker start requires task and attempt identity")
@@ -74,16 +114,17 @@ func (r StartRequest) Validate() error {
 	if strings.TrimSpace(r.WorkspacePath) == "" {
 		return errors.New("worker start requires workspace path")
 	}
-	switch r.Provider.Mode() {
+	harness := r.HarnessConfig()
+	switch harness.Provider.Mode() {
 	case BrainProvider:
-		if strings.TrimSpace(r.Provider.BaseURL) == "" || strings.TrimSpace(r.Provider.APIKeyEnv) == "" {
+		if strings.TrimSpace(harness.Provider.BaseURL) == "" || strings.TrimSpace(harness.Provider.APIKeyEnv) == "" {
 			return errors.New("provider brain mode requires model provider base URL and API key environment name")
 		}
 	case BrainWeb:
 	default:
 		return errors.New("worker brain mode must be provider or web")
 	}
-	if strings.TrimSpace(r.AgentProfile.Model) == "" || strings.TrimSpace(r.AgentProfile.BaseInstructions) == "" {
+	if strings.TrimSpace(harness.AgentProfile.Model) == "" || strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
 		return errors.New("worker start requires agent model profile")
 	}
 	for _, readPath := range r.SandboxReadPaths {
