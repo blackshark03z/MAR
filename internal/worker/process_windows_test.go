@@ -21,6 +21,9 @@ import (
 	"mar/internal/processctl"
 )
 
+type kernelOnlyBackend struct{ KernelControlBackend }
+type harnessOnlyBackend struct{ HarnessCognitionBackend }
+
 type fakeControlBackend struct {
 	mu                  sync.Mutex
 	authorityCalls      int
@@ -158,7 +161,7 @@ func TestWebTurnResponseWaitsForCapacityReacquireBeforeReturningToWorker(t *test
 		turn:               domain.WebTurn{ID: "turn-capacity", TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch, RequestID: "request-capacity", CreatedAt: time.Now().UTC()},
 		response:           model.TurnResponse{ProviderResponseID: "web:turn-capacity", Model: "gpt-5.6-sol", Message: model.Message{Role: model.RoleAssistant, Content: "resume"}, FinishReason: "stop"},
 	}
-	runner := &ProcessRunner{backend: backend, cfg: ProcessConfig{LeaseDuration: time.Minute}}
+	runner := &ProcessRunner{kernel: backend, harness: backend, cfg: ProcessConfig{LeaseDuration: time.Minute}}
 	type result struct {
 		response model.TurnResponse
 		err      error
@@ -205,7 +208,7 @@ func TestWebTurnCapacityReacquireKeepsAttemptLeaseAlive(t *testing.T) {
 		turn:               domain.WebTurn{ID: "turn-capacity-heartbeat", TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch, RequestID: "request-capacity-heartbeat", CreatedAt: time.Now().UTC()},
 		response:           model.TurnResponse{ProviderResponseID: "web:turn-capacity-heartbeat", Model: "gpt-5.6-sol", Message: model.Message{Role: model.RoleAssistant, Content: "resume"}, FinishReason: "stop"},
 	}
-	runner := &ProcessRunner{backend: backend, cfg: ProcessConfig{LeaseDuration: 3 * time.Second}}
+	runner := &ProcessRunner{kernel: backend, harness: backend, cfg: ProcessConfig{LeaseDuration: 3 * time.Second}}
 	type result struct {
 		response model.TurnResponse
 		err      error
@@ -400,6 +403,25 @@ func TestDecisionProjectionResponseFrameOwnsPayloadAcrossRepeatedOuterDecoding(t
 		if len(roundTrip.State.Controls) != 1 || string(roundTrip.State.Controls[0].Payload) != string(control.Payload) {
 			t.Fatalf("frame %d control payload changed across framing", i)
 		}
+	}
+}
+
+func TestProcessRunnerAcceptsSeparateKernelAndHarnessBackends(t *testing.T) {
+	backend := &fakeControlBackend{authoritative: true}
+	_, err := NewProcessRunnerWithBackends(
+		kernelOnlyBackend{KernelControlBackend: backend},
+		harnessOnlyBackend{HarnessCognitionBackend: backend},
+		processctl.NewSupervisor(),
+		ProcessConfig{Executable: os.Args[0], LeaseDuration: time.Minute, StopTimeout: time.Second},
+	)
+	if err != nil {
+		t.Fatalf("separate worker backends rejected: %v", err)
+	}
+	if _, err := NewProcessRunnerWithBackends(nil, harnessOnlyBackend{HarnessCognitionBackend: backend}, processctl.NewSupervisor(), ProcessConfig{Executable: os.Args[0]}); err == nil {
+		t.Fatal("nil kernel backend must be rejected")
+	}
+	if _, err := NewProcessRunnerWithBackends(kernelOnlyBackend{KernelControlBackend: backend}, nil, processctl.NewSupervisor(), ProcessConfig{Executable: os.Args[0]}); err == nil {
+		t.Fatal("nil harness backend must be rejected")
 	}
 }
 

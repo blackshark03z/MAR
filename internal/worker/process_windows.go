@@ -20,7 +20,9 @@ import (
 	"mar/internal/processctl"
 )
 
-type ControlBackend interface {
+// KernelControlBackend is the governed execution/control surface. It remains
+// meaningful independently of the selected coding harness.
+type KernelControlBackend interface {
 	AttemptAuthoritative(context.Context, string, string, int64) (bool, error)
 	HeartbeatAttempt(context.Context, string, string, int64, time.Duration) error
 	LatestValidCheckpoint(context.Context, string) (domain.SemanticCheckpoint, bool, error)
@@ -28,9 +30,22 @@ type ControlBackend interface {
 	ControlsSince(context.Context, string, int64, int) ([]domain.TaskControl, error)
 	RequestInputForAttempt(context.Context, string, string, int64) error
 	PersistObservation(context.Context, string, string, int64, string, string, string, int64, bool) (domain.ObservationArtifact, error)
+}
+
+// HarnessCognitionBackend is compatibility cognition plumbing for the current
+// MAR-owned agent/Web-brain loop. It is intentionally separate from execution
+// authority so a future external harness can replace it without redefining the
+// kernel control contract.
+type HarnessCognitionBackend interface {
 	DecisionProjectionState(context.Context, string, string, int64) (contextengine.DecisionProjectionState, error)
 	RequestWebTurnForAttempt(context.Context, string, string, int64, model.TurnRequest) (domain.WebTurn, bool, error)
 	WebTurnResponse(context.Context, string) (model.TurnResponse, bool, error)
+}
+
+// ControlBackend preserves the existing constructor contract for compatibility.
+type ControlBackend interface {
+	KernelControlBackend
+	HarnessCognitionBackend
 }
 
 type ProcessConfig struct {
@@ -43,7 +58,8 @@ type ProcessConfig struct {
 }
 
 type ProcessRunner struct {
-	backend    ControlBackend
+	kernel     KernelControlBackend
+	harness    HarnessCognitionBackend
 	supervisor *processctl.Supervisor
 	cfg        ProcessConfig
 }
@@ -61,8 +77,17 @@ func (r *ProcessRunner) RecoverAttemptTermination(ctx context.Context, attempt d
 }
 
 func NewProcessRunner(backend ControlBackend, supervisor *processctl.Supervisor, cfg ProcessConfig) (*ProcessRunner, error) {
-	if backend == nil || supervisor == nil {
+	if backend == nil {
 		return nil, errors.New("worker process runner requires backend and supervisor")
+	}
+	return NewProcessRunnerWithBackends(backend, backend, supervisor, cfg)
+}
+
+// NewProcessRunnerWithBackends exposes the kernel/harness seam while preserving
+// the existing NewProcessRunner API for current callers.
+func NewProcessRunnerWithBackends(kernel KernelControlBackend, harness HarnessCognitionBackend, supervisor *processctl.Supervisor, cfg ProcessConfig) (*ProcessRunner, error) {
+	if kernel == nil || harness == nil || supervisor == nil {
+		return nil, errors.New("worker process runner requires kernel backend, harness backend and supervisor")
 	}
 	if strings.TrimSpace(cfg.Executable) == "" {
 		return nil, errors.New("worker process executable is required")
@@ -78,7 +103,7 @@ func NewProcessRunner(backend ControlBackend, supervisor *processctl.Supervisor,
 	} else {
 		cfg.Arguments = append([]string{}, cfg.Arguments...)
 	}
-	return &ProcessRunner{backend: backend, supervisor: supervisor, cfg: cfg}, nil
+	return &ProcessRunner{kernel: kernel, harness: harness, supervisor: supervisor, cfg: cfg}, nil
 }
 
 func (r *ProcessRunner) Run(ctx context.Context, start StartRequest) (agent.Result, processctl.TerminationProof, error) {
@@ -156,7 +181,7 @@ func (r *ProcessRunner) Run(ctx context.Context, start StartRequest) (agent.Resu
 			proof, stopErr := r.terminate(tree)
 			return agent.Result{}, proof, errors.Join(ctx.Err(), stopErr)
 		case <-ticker.C:
-			if err := r.backend.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
+			if err := r.kernel.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
 				proof, stopErr := r.terminate(tree)
 				return agent.Result{}, proof, errors.Join(fmt.Errorf("worker heartbeat failed: %w", err), stopErr)
 			}
@@ -229,7 +254,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
 			return respond(nil, errors.New("worker authority request escaped assigned attempt"))
 		}
-		authoritative, err := r.backend.AttemptAuthoritative(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch)
+		authoritative, err := r.kernel.AttemptAuthoritative(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch)
 		return respond(authorityResponse{Authoritative: authoritative}, err)
 	case methodLatestCheckpoint:
 		var payload latestCheckpointRequest
@@ -239,7 +264,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID {
 			return respond(nil, errors.New("worker checkpoint request escaped assigned task"))
 		}
-		checkpoint, available, err := r.backend.LatestValidCheckpoint(ctx, payload.TaskID)
+		checkpoint, available, err := r.kernel.LatestValidCheckpoint(ctx, payload.TaskID)
 		return respond(latestCheckpointResponse{Checkpoint: checkpoint, Available: available}, err)
 	case methodPublishCheckpoint:
 		var payload publishCheckpointRequest
@@ -249,7 +274,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
 			return respond(nil, errors.New("worker checkpoint publish escaped assigned attempt"))
 		}
-		checkpoint, err := r.backend.PublishCheckpoint(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.CurrentRevision, payload.Payload)
+		checkpoint, err := r.kernel.PublishCheckpoint(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.CurrentRevision, payload.Payload)
 		return respond(publishCheckpointResponse{Checkpoint: checkpoint}, err)
 	case methodControlsSince:
 		var payload controlsSinceRequest
@@ -259,7 +284,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AfterVersion < 0 || payload.Limit <= 0 || payload.Limit > 32 {
 			return respond(nil, errors.New("worker controls request escaped assigned task or exceeded bounds"))
 		}
-		controls, err := r.backend.ControlsSince(ctx, payload.TaskID, payload.AfterVersion, payload.Limit)
+		controls, err := r.kernel.ControlsSince(ctx, payload.TaskID, payload.AfterVersion, payload.Limit)
 		return respond(controlsSinceResponse{Controls: controls}, err)
 	case methodEnterInputRequired:
 		var payload inputRequiredRequest
@@ -269,7 +294,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
 			return respond(nil, errors.New("worker input request escaped assigned attempt"))
 		}
-		return respond(nil, r.backend.RequestInputForAttempt(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch))
+		return respond(nil, r.kernel.RequestInputForAttempt(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch))
 	case methodPersistObservation:
 		var payload persistObservationRequest
 		if err := json.Unmarshal(request.Payload, &payload); err != nil {
@@ -278,7 +303,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
 			return respond(nil, errors.New("worker observation persistence escaped assigned attempt"))
 		}
-		artifact, err := r.backend.PersistObservation(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.ToolCallID, payload.Kind, payload.Raw, payload.SourceBytes, payload.SourceComplete)
+		artifact, err := r.kernel.PersistObservation(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch, payload.ToolCallID, payload.Kind, payload.Raw, payload.SourceBytes, payload.SourceComplete)
 		return respond(persistObservationResponse{Artifact: artifact}, err)
 	case methodDecisionProjection:
 		var payload authorityRequest
@@ -288,7 +313,7 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 		if payload.TaskID != start.Task.ID || payload.AttemptID != start.Attempt.ID || payload.RunEpoch != start.Attempt.RunEpoch {
 			return respond(nil, errors.New("worker decision projection request escaped assigned attempt"))
 		}
-		state, err := r.backend.DecisionProjectionState(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch)
+		state, err := r.harness.DecisionProjectionState(ctx, payload.TaskID, payload.AttemptID, payload.RunEpoch)
 		return respond(decisionProjectionResponse{State: state}, err)
 	case methodWebTurn:
 		var payload webTurnRequest
@@ -306,11 +331,11 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 }
 
 func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, request webTurnRequest) (model.TurnResponse, error) {
-	turn, _, err := r.backend.RequestWebTurnForAttempt(ctx, request.TaskID, request.AttemptID, request.RunEpoch, request.Request)
+	turn, _, err := r.harness.RequestWebTurnForAttempt(ctx, request.TaskID, request.AttemptID, request.RunEpoch, request.Request)
 	if err != nil {
 		return model.TurnResponse{}, err
 	}
-	if response, available, err := r.backend.WebTurnResponse(ctx, turn.ID); err != nil || available {
+	if response, available, err := r.harness.WebTurnResponse(ctx, turn.ID); err != nil || available {
 		return response, err
 	}
 	capacityReleased := false
@@ -342,11 +367,11 @@ func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, 
 		case <-timer.C:
 			return model.TurnResponse{}, errors.New("web brain turn timed out waiting for ChatGPT response")
 		case <-heartbeat.C:
-			if err := r.backend.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
+			if err := r.kernel.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
 				return model.TurnResponse{}, fmt.Errorf("web brain wait heartbeat failed: %w", err)
 			}
 		case <-poll.C:
-			response, available, err := r.backend.WebTurnResponse(ctx, turn.ID)
+			response, available, err := r.harness.WebTurnResponse(ctx, turn.ID)
 			if err != nil {
 				return model.TurnResponse{}, err
 			}
@@ -386,7 +411,7 @@ func (r *ProcessRunner) resumeWebTurnCapacity(ctx context.Context, start StartRe
 		case err := <-done:
 			return err
 		case <-heartbeat.C:
-			if err := r.backend.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
+			if err := r.kernel.HeartbeatAttempt(ctx, start.Task.ID, start.Attempt.ID, start.Attempt.RunEpoch, r.cfg.LeaseDuration); err != nil {
 				return fmt.Errorf("capacity reacquire heartbeat failed: %w", err)
 			}
 		}
