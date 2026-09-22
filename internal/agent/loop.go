@@ -244,24 +244,29 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 
 	loopCtx, cancel := context.WithTimeout(ctx, l.cfg.MaxDuration)
 	defer cancel()
-	pack, err := l.context.Build(loopCtx, contextengine.Request{Root: req.Root, Contract: req.Contract, ExpectedRevision: req.ExpectedRevision})
-	if err != nil {
-		if terminal := contextTerminal(ctx, loopCtx); terminal != "" {
-			return Result{Status: terminal, Blocker: contextBlocker(terminal)}, nil
-		}
-		return Result{}, fmt.Errorf("build agent context: %w", err)
-	}
+	projectionMode := l.decisionProjection != nil
 	expectedGoalHash, err := req.Contract.Hash()
 	if err != nil {
 		return Result{}, err
 	}
-	if !strings.EqualFold(strings.TrimSpace(pack.Revision), strings.TrimSpace(req.ExpectedRevision)) {
-		return Result{}, fmt.Errorf("context builder returned unexpected revision: expected=%s actual=%s", req.ExpectedRevision, pack.Revision)
+	result := Result{ContextRevision: req.ExpectedRevision, GoalHash: expectedGoalHash}
+	var pack contextengine.Pack
+	if !projectionMode {
+		pack, err = l.context.Build(loopCtx, contextengine.Request{Root: req.Root, Contract: req.Contract, ExpectedRevision: req.ExpectedRevision})
+		if err != nil {
+			if terminal := contextTerminal(ctx, loopCtx); terminal != "" {
+				return Result{Status: terminal, Blocker: contextBlocker(terminal)}, nil
+			}
+			return Result{}, fmt.Errorf("build agent context: %w", err)
+		}
+		if !strings.EqualFold(strings.TrimSpace(pack.Revision), strings.TrimSpace(req.ExpectedRevision)) {
+			return Result{}, fmt.Errorf("context builder returned unexpected revision: expected=%s actual=%s", req.ExpectedRevision, pack.Revision)
+		}
+		if pack.GoalHash != expectedGoalHash {
+			return Result{}, fmt.Errorf("context builder returned unexpected Goal Contract hash")
+		}
+		result.ContextRevision = pack.Revision
 	}
-	if pack.GoalHash != expectedGoalHash {
-		return Result{}, fmt.Errorf("context builder returned unexpected Goal Contract hash")
-	}
-	result := Result{ContextRevision: pack.Revision, GoalHash: pack.GoalHash}
 	resumeJSON := []byte("null")
 	checkpoint, hasCheckpoint, err := l.checkpoints.LatestValidCheckpoint(loopCtx, req.TaskID)
 	if err != nil {
@@ -285,28 +290,30 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		result.ResumeCheckpointID = checkpoint.ID
 		result.ResumeCheckpointVersion = checkpoint.Version
 	}
-	contextJSON, err := json.Marshal(pack)
-	if err != nil {
-		return Result{}, fmt.Errorf("encode agent context pack: %w", err)
-	}
-	if len(contextJSON) > l.cfg.MaxContextBytes {
-		result.Status = StatusBudgetExhausted
-		result.Blocker = fmt.Sprintf("context pack exceeds agent bound: %d > %d bytes", len(contextJSON), l.cfg.MaxContextBytes)
-		return result, nil
-	}
-	contractJSON, err := req.Contract.CanonicalJSON()
-	if err != nil {
-		return Result{}, err
-	}
 	pinnedTools, allowedTools, err := pinToolDefinitions(l.tools.ToolDefinitions(), req.Contract.Authority)
 	if err != nil {
 		return Result{}, err
 	}
-	messages := []model.Message{
-		{Role: model.RoleSystem, Content: systemInstructions(l.profile.BaseInstructions)},
-		{Role: model.RoleUser, Content: initialTaskMessage(req.TaskID, contractJSON, resumeJSON, contextJSON)},
+	messages := []model.Message(nil)
+	if !projectionMode {
+		contextJSON, encodeErr := json.Marshal(pack)
+		if encodeErr != nil {
+			return Result{}, fmt.Errorf("encode agent context pack: %w", encodeErr)
+		}
+		if len(contextJSON) > l.cfg.MaxContextBytes {
+			result.Status = StatusBudgetExhausted
+			result.Blocker = fmt.Sprintf("context pack exceeds agent bound: %d > %d bytes", len(contextJSON), l.cfg.MaxContextBytes)
+			return result, nil
+		}
+		contractJSON, encodeErr := req.Contract.CanonicalJSON()
+		if encodeErr != nil {
+			return Result{}, encodeErr
+		}
+		messages = []model.Message{
+			{Role: model.RoleSystem, Content: systemInstructions(l.profile.BaseInstructions)},
+			{Role: model.RoleUser, Content: initialTaskMessage(req.TaskID, contractJSON, resumeJSON, contextJSON)},
+		}
 	}
-	projectionMode := l.decisionProjection != nil
 	protocolTail := []model.Message(nil)
 	recentEvidence := []contextengine.DecisionProjectionEvent(nil)
 	controlVersion := int64(0)

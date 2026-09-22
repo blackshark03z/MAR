@@ -18,6 +18,7 @@ Current simplification progress:
 - Provider compatibility still requires an explicit provider model and may carry explicit provider reasoning configuration.
 
 These are bounded post-freeze responsibility-delegation slices, not architecture changes.
+- DecisionProjection keeps its safety role, but the unused pre-loop repository context build before turn 1 is removed; evidence: `docs/research/042_FIRST_DECISION_PROJECTION_CONTEXT_BUILD_REMOVAL.md`. No worktree/revision cache was added.
 
 Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
 

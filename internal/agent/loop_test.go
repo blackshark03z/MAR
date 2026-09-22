@@ -112,6 +112,16 @@ type fakeContextBuilder struct {
 	err  error
 }
 
+type countingContextBuilder struct {
+	inner ContextBuilder
+	calls int
+}
+
+func (b *countingContextBuilder) Build(ctx context.Context, req contextengine.Request) (contextengine.Pack, error) {
+	b.calls++
+	return b.inner.Build(ctx, req)
+}
+
 type fakeAttemptAuthority struct {
 	calls int
 	fn    func(int, string, string, int64) (bool, error)
@@ -887,6 +897,82 @@ func decisionProjectionStateForRequest(t *testing.T, req RunRequest) contextengi
 		TaskID: req.TaskID, GoalHash: hash, TaskState: domain.TaskRunning, ProjectID: req.Contract.ProjectID,
 		WorkspaceID: "workspace-test", WorkspaceState: domain.WorkspaceReady, BaseRevision: req.Contract.BaseRevision, CurrentRevision: req.ExpectedRevision,
 		AttemptID: req.AttemptID, RunEpoch: req.RunEpoch, AttemptAuthority: domain.AttemptActive, CreatedAt: time.Now().UTC(),
+	}
+}
+
+func TestDecisionProjectionBuildsRepositoryContextOnceBeforeFirstTurn(t *testing.T) {
+	req := testRunRequest(false)
+	source := &fakeDecisionProjectionSource{state: decisionProjectionStateForRequest(t, req)}
+	builder := &countingContextBuilder{inner: fakeContextBuilder{pack: contextengine.Pack{
+		Revision: req.ExpectedRevision,
+		Terms:    []string{"repair"},
+		Entries:  []contextengine.Entry{{Path: "worker.go", SHA256: strings.Repeat("a", 64), Text: "package worker\n"}},
+		Bytes:    128,
+	}}}
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(10, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{
+			ID: "finish-single-build", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"single fresh projection build"}`,
+		}}}),
+	}}
+	loop, err := New(gateway, newFakeTools(true), builder, &fakeAttemptAuthority{}, &fakeCheckpointStore{},
+		Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop.WithDecisionProjectionSource(source)
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || builder.calls != 1 || len(gateway.requests) != 1 {
+		t.Fatalf("projection first turn must use one fresh context build: result=%+v builds=%d requests=%d", result, builder.calls, len(gateway.requests))
+	}
+}
+
+func TestDecisionProjectionStaleRevisionStillFailsClosedBeforeModelTurn(t *testing.T) {
+	req := testRunRequest(false)
+	state := decisionProjectionStateForRequest(t, req)
+	state.CurrentRevision = "rev-newer"
+	source := &fakeDecisionProjectionSource{state: state}
+	builder := &countingContextBuilder{inner: fakeContextBuilder{pack: contextengine.Pack{Revision: req.ExpectedRevision}}}
+	gateway := &scriptedGateway{}
+	loop, err := New(gateway, newFakeTools(true), builder, &fakeAttemptAuthority{}, &fakeCheckpointStore{},
+		Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	loop.WithDecisionProjectionSource(source)
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusBlocked || !strings.Contains(result.Blocker, "repository identity changed") {
+		t.Fatalf("stale projection revision did not fail closed: %+v", result)
+	}
+	if builder.calls != 1 || len(gateway.requests) != 0 {
+		t.Fatalf("stale revision escaped freshness gate: builds=%d model_requests=%d", builder.calls, len(gateway.requests))
+	}
+}
+
+func TestLegacyLoopRetainsInitialContextBuild(t *testing.T) {
+	req := testRunRequest(false)
+	builder := &countingContextBuilder{inner: fakeContextBuilder{pack: contextengine.Pack{Revision: req.ExpectedRevision}}}
+	gateway := &scriptedGateway{responses: []model.TurnResponse{
+		assistantResponse(10, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{
+			ID: "finish-legacy-build", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"legacy context"}`,
+		}}}),
+	}}
+	loop, err := New(gateway, newFakeTools(true), builder, &fakeAttemptAuthority{}, &fakeCheckpointStore{},
+		Profile{Model: "test-model", BaseInstructions: "trusted"}, testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := loop.Run(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate || builder.calls != 1 || len(gateway.requests) != 1 {
+		t.Fatalf("legacy loop changed initial context behavior: result=%+v builds=%d requests=%d", result, builder.calls, len(gateway.requests))
 	}
 }
 
