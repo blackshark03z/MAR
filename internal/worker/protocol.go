@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -189,20 +190,21 @@ const (
 )
 
 func marshalFrame(kind string, id uint64, method string, payload any, errText string) (frame, error) {
-	var raw []byte
+	var raw framePayload
 	if payload != nil {
-		encoded, err := json.Marshal(payload)
-		if err != nil {
+		// Encode into caller-owned storage before validation. Go 1.27's JSON v2
+		// implementation has exhibited pooled-buffer aliasing in live worker RPC;
+		// validating a slice returned directly by json.Marshal can therefore race
+		// with reuse before we have taken ownership of the bytes.
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(payload); err != nil {
 			return frame{}, err
 		}
-		if !json.Valid(encoded) {
+		encoded := bytes.TrimSpace(buf.Bytes())
+		raw = append(framePayload(nil), encoded...)
+		if !json.Valid(raw) {
 			return frame{}, errors.New("worker frame payload marshal produced invalid JSON")
 		}
-		// Own the inner bytes before the outer frame encoder sees them. framePayload
-		// keeps the same base64 JSON string wire shape as []byte, but its explicit
-		// decoder copies out of the outer decoder instead of using the JSON v2 []byte
-		// special case that has produced NUL-prefixed live RPC payloads.
-		raw = append(framePayload(nil), encoded...)
 	}
 	return frame{Version: protocolVersion, Type: kind, ID: id, Method: method, Payload: raw, Error: errText}, nil
 }

@@ -280,6 +280,39 @@ func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {
 	}
 }
 
+func TestWorkerStartFramePayloadRemainsValidUnderConcurrentMarshalLoad(t *testing.T) {
+	start := workerProcessTestStart()
+	start.Task.Contract.Goal = strings.Repeat("concurrent-large-goal-", 1024)
+	start.Task.Contract.Acceptance = []string{strings.Repeat("concurrent-acceptance-", 512)}
+
+	const goroutines = 16
+	const iterations = 128
+	errCh := make(chan error, goroutines)
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				f, err := marshalFrame(frameStart, 0, "", start, "")
+				if err != nil {
+					errCh <- err
+					return
+				}
+				if !json.Valid(f.Payload) || len(f.Payload) == 0 || f.Payload[0] == 0 {
+					errCh <- errors.New("concurrent worker start frame payload became invalid JSON")
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		t.Fatal(err)
+	}
+}
+
 func TestDecisionProjectionResponseFrameOwnsPayloadAcrossRepeatedOuterDecoding(t *testing.T) {
 	now := time.Unix(1_800_000_000, 123).UTC()
 	checkpoint := domain.SemanticCheckpoint{
