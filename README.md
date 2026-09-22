@@ -1,18 +1,26 @@
 # MAR
 
-MAR is a single-owner, single-machine **durable local execution kernel for external cognition**. MCP is a primary control/cognition adapter, not the durable task authority.
+MAR is a single-owner, single-machine **optional governed execution kernel**. It is used when a Goal requires durable isolation/recovery/fencing/resource/integration properties that a direct coding harness does not supply. MCP and current cognition surfaces are adapters, not durable task authority and not a reason to route every coding task through MAR.
 
-The accepted V1 safety architecture remains frozen under `docs/architecture/MAR_V1_Architecture_FROZEN/`. Forward architecture evolution is governed by `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md` and `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`. The next bounded development line is `docs/roadmap/MAR_V1_3_PERFORMANCE_AND_SIMPLICITY.md`.
+The accepted V1 safety architecture remains frozen under `docs/architecture/MAR_V1_Architecture_FROZEN/`. Forward architecture evolution is governed by `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`, `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`, and the conditional-entry amendment `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
 
-## V1 execution goal
+## Execution boundary
+
+Normal CADS development may execute directly:
+
+`CADS Design -> direct harness -> candidate -> Product Acceptance`
+
+When explicit runtime properties require governance:
+
+`CADS Design -> MAR -> replaceable harness -> revision-bound verification/integration -> Product Acceptance`
+
+Inside MAR, the V1 governed execution goal remains:
 
 `Goal -> Durable Task -> Isolated Worker -> Verification -> Crash-safe Integration -> Result`
 
-The intended owner experience is:
+MAR task/attempt/workspace/resource states apply only after a task enters this governed path. A normal direct task does not need a MAR task ID or lifecycle state.
 
-`Owner -> CADS/Tech Lead -> External Cognition -> MAR -> verified/integrated result -> Owner feedback`
-
-Current Web clients such as ChatGPT/Claude are external-cognition adapters, not MAR task authority. Future provider-managed agent sessions may use the same boundary. The owner may be non-technical. Normal flow should not require the owner to author Goal Contract fields, Git/base revisions, verification profiles, run epochs, or engineering oracles. CADS/Tech Lead owns requirement framing and acceptance policy; external cognition owns reasoning; MAR owns durable execution, sandboxing, resource control, criterion-bound evidence, recovery and integration authority.
+Current Web clients such as ChatGPT/Claude and provider mode remain compatibility execution adapters. CADS/Tech Lead owns product framing and acceptance; the harness owns coding mechanics; MAR owns only the governed execution properties it actually enforces. New provider/model/session/cognition functionality is not forward kernel scope by default.
 
 ## First self-hosting run
 

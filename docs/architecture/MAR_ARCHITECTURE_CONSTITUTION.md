@@ -413,7 +413,9 @@ Prefer changes that let stronger cognition produce fewer turns and more verified
 
 MAR V1.3 B-D is the completed bounded performance/simplicity optimization set; later E/F work remains closed under its stop rule.
 
-The next architecture program is **MAR V2 — Hybrid Simplification**, governed by `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md` and `docs/roadmap/MAR_V2_HYBRID_SIMPLIFICATION.md`.
+The next architecture program is **MAR V2 — Hybrid Simplification**, governed by `docs/architecture/MAR_HYBRID_SIMPLIFICATION_DECISION.md`, `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`, and `docs/roadmap/MAR_V2_HYBRID_SIMPLIFICATION.md`.
+
+MAR is no longer the mandatory coding path. Its lifecycle begins only for work routed into governed execution because the Goal requires runtime isolation, durable recovery, fencing, durable authority, resource governance or crash-safe integration. Provider/model/session/cognition mechanics are replaceable harness concerns; current implementations remain compatibility surfaces but are closed to forward expansion unless a kernel invariant demonstrably requires it.
 
 This is an incremental simplification migration, **not a from-scratch V2 rewrite**. Priority order:
 

@@ -13,6 +13,14 @@ Primary optimization objective:
 
 > reliable verified software delivery with less durable machinery.
 
+## Entry rule — governance is conditional
+
+This roadmap applies only after CADS/Tech Lead has identified governed runtime properties that justify MAR. Ordinary bounded coding takes the direct harness path and creates no MAR task lifecycle.
+
+Forward MAR work therefore optimizes only the governed classes: isolation, recovery, concurrent/stale-writer fencing, durable execution authority, shared resource governance and crash-safe integration. Existing provider/model/Web-brain/session/context machinery is compatibility surface, not a reason to expand the kernel. Before adding a harness adapter or cognition subsystem, prove it enables retirement of equivalent MAR-owned responsibility.
+
+Track block/cancel/resource-denial frequency only within the governed population; do not compare it to direct tasks as though both required the same runtime.
+
 ## Phase 0 — Baseline and migration guardrails
 
 Measure the current authoritative system before behavior changes:
@@ -149,8 +157,8 @@ It must have:
 
 ## Immediate authorized scope
 
-The first implementation scope is **Phase 0 + Phase 1 only**.
+Phases 0–4 have already produced evidence/implementation slices recorded above. Do not open the next phase merely because it exists in this roadmap.
 
-Phases 2–7 are architecturally accepted targets but must be opened one at a time after the previous phase has representative evidence.
+Before further runtime expansion, perform a responsibility inventory against the conditional kernel boundary: classify current MAR code as kernel, compatibility harness, or removable/replaceable. The next implementation slice should delete/delegate measured harness responsibility or reduce governed-runtime friction; adding another cognition/session layer is not authorized by default.
 
-The existing activation-process-stop patch may be treated only as a bounded compatibility hotfix for the legacy activation path; do not expand it into the long-term solution in place of Phase 6.
+The existing activation-process-stop patch remains only a bounded compatibility hotfix for the legacy activation path; do not expand it into the long-term solution in place of Phase 6.

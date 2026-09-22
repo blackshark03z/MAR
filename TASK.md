@@ -1,4 +1,14 @@
-# Current SoT — 2026-09-21
+# Current SoT — 2026-09-22
+
+## Conditional execution boundary — forward precedence
+
+CADS DR-0013 is now implemented on the canonical CADS line: ordinary coding defaults to a direct compatible harness; MAR is selected only when the accepted Goal requires governed runtime properties. MAR's matching architecture authority is `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
+
+Forward rule: **MAR lifecycle is scoped to governed tasks, not to CADS development as a whole.** Current provider mode, Web-brain relay, Project Brain/cognition projection and session surfaces remain supported compatibility behavior; do not extend them as kernel responsibilities by default. Provider/model/session/subagent/context/LSP-style coding mechanics belong to replaceable harnesses unless evidence proves a MAR safety invariant cannot be enforced without kernel ownership.
+
+The next MAR implementation step is not another cognition optimization or an OMP integration by accretion. First inventory current responsibility into `KERNEL | COMPAT_HARNESS | REMOVE/DELEGATE`, measure block/cancel/latency/code-path contribution for governed tasks, then open only a deletion/delegation slice with safety evidence. Any harness adapter must let MAR retire equivalent responsibility rather than add another lifecycle.
+
+Historical V1/V1.3 product journeys below remain exact historical/release context for MAR-governed work; where they show every CADS Goal passing through MAR, this 2026-09-22 boundary supersedes that forward-looking routing assumption.
 
 ## Architecture simplification decision
 

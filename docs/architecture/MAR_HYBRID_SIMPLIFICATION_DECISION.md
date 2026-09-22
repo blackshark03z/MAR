@@ -11,13 +11,15 @@ MAR is **over-engineered in representation/lifecycle machinery for the current s
 
 The accepted target is:
 
-> **Hybrid MAR — a compact durable safety kernel whose persistent state is proportional to active or irreproducible work, not to the number and age of historical tasks.**
+> **Hybrid MAR — an optional compact durable safety kernel whose persistent state is proportional to active or irreproducible governed work, not to the number and age of historical tasks.**
 
 Canonical simplification principle:
 
 > **Persist facts and irreproducible intent; reconstruct execution materializations.**
 
 This decision does not authorize removal of safety guarantees merely to reduce code or disk. It changes how those guarantees are represented.
+
+The 2026-09-22 conditional-entry amendment in `MAR_CONDITIONAL_EXECUTION_KERNEL.md` further narrows where these guarantees must be instantiated: ordinary CADS coding may bypass MAR; this durable lifecycle applies only when the accepted Goal requires governed runtime properties. Existing cognition/provider/session surfaces are compatibility behavior, not target kernel ownership.
 
 ## 2. Evidence that triggered the amendment
 
