@@ -96,3 +96,29 @@ Acceptance for the next step:
 - external harness code remains replaceable and outside MAR cognition packages.
 
 If that passes, retire one compatibility cognition responsibility at a time. If it requires adding another durable session lifecycle to MAR, reject the adapter design.
+
+## Live OMP binary follow-up
+
+Post-commit live probe on 2026-09-22:
+
+- Installed OMP v18.2.6 Windows x64 from the upstream GitHub release asset.
+- Verified SHA-256 before execution:
+  `1fbff31df4bba1ec8a48d74b392e4b4c8c12de0a7f53cf62c6e5436fdfebda28`.
+- Host `omp --version`: `omp/18.2.6`.
+- A temporary, non-committed worker test executed that real `omp.exe --version` through the MAR `BrainHarness` LPAC path.
+- Result: PASS; the real third-party executable returned through `completed_candidate` in ~1.33s.
+- The temporary local-install-dependent test was removed after evidence capture; repository returned clean.
+
+A real OMP coding turn is currently blocked outside MAR by provider authentication/model configuration:
+- no supported API-key environment variable was present;
+- OMP had no stored auth/model state;
+- one-shot `omp -p --no-session` reported that no models were available.
+
+Existing `.codex`, `.claude`, and `.gemini` directories are not treated as credential authority for this integration. MAR does not read/copy those credentials. OMP's own supported auth flow must establish its credential store before a governed coding-task benchmark.
+
+Therefore the current conclusion is stronger but still bounded:
+
+1. MAR external-harness execution is technically compatible with the real OMP binary under LPAC.
+2. MAR-owned cognition is not required to launch OMP.
+3. Credential onboarding is now the only known blocker to a real OMP mutation/verification/integration trial.
+4. Legacy MAR cognition remains compatibility code until that authenticated real-task trial passes.
