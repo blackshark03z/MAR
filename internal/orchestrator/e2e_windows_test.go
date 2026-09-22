@@ -430,6 +430,163 @@ func TestMarkerAcceptance(t *testing.T) {
 	}
 }
 
+func TestRuntimeE2EExternalHarnessWorkerVerifyIntegrate(t *testing.T) {
+	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
+		t.Skip("worker helper process")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	projectRoot := filepath.Join(t.TempDir(), "harness-project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "go.mod"), []byte("module example.com/mar-harness-e2e\n\ngo 1.27\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, "main.go"), []byte("package smoke\n\nfunc Value() int { return 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeMarkerOracleTest(t, projectRoot, "MAR HARNESS OK\n", "MAR_ACCEPTANCE_HARNESS_E2E_MARKER")
+	runGitTest(t, projectRoot, "init", "-b", "main")
+	runGitTest(t, projectRoot, "config", "user.name", "MAR Harness E2E")
+	runGitTest(t, projectRoot, "config", "user.email", "mar-harness-e2e@local.invalid")
+	runGitTest(t, projectRoot, "config", "core.autocrlf", "false")
+	runGitTest(t, projectRoot, "add", "-A")
+	runGitTest(t, projectRoot, "commit", "-m", "baseline")
+	baseRevision := strings.TrimSpace(runGitTest(t, projectRoot, "rev-parse", "HEAD"))
+
+	t.Setenv("MAR_RUNTIME_E2E_WORKER", "1")
+	goExe := findPortableGo(t)
+	goRoot := filepath.Dir(filepath.Dir(goExe))
+	goBin := filepath.Dir(goExe)
+	harnessExe, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	harnessReadRoot := filepath.Dir(harnessExe)
+	dataRoot := filepath.Join(t.TempDir(), "mar-harness-data")
+	sharedModCache := filepath.Join(dataRoot, "runtime", "gomodcache")
+	if err := os.MkdirAll(sharedModCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := store.Open(filepath.Join(dataRoot, "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	runtime, err := NewRuntime(s, RuntimeConfig{
+		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		Provider:          worker.ProviderConfig{BrainMode: worker.BrainHarness},
+		HarnessExecutable: harnessExe,
+		HarnessArguments:  []string{"-test.run=^TestRuntimeE2EExternalHarnessHelper$"},
+		VerificationProfiles: []verification.Profile{{ID: "harness-go", Commands: []verification.Command{
+			{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
+		}}},
+		SandboxReadPaths: []string{goRoot, sharedModCache, harnessReadRoot}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
+		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,
+		ResourceGovernor: resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 2, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1},
+		Scheduler:        scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
+		Daemon:           DaemonConfig{PollInterval: 25 * time.Millisecond, ControlPollInterval: 25 * time.Millisecond, MaxConcurrentWorkers: 1, MaxPreflightPerTick: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runtime.Service.RegisterProject(ctx, "harness-e2e-project", projectRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	daemonCtx, stopDaemon := context.WithCancel(ctx)
+	daemonDone := make(chan error, 1)
+	go func() { daemonDone <- runtime.Daemon.Run(daemonCtx) }()
+	defer func() {
+		stopDaemon()
+		if err := <-daemonDone; err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("daemon shutdown: %v", err)
+		}
+	}()
+
+	task, _, err := runtime.Service.Submit(ctx, "harness-e2e-submit-1", domain.GoalContract{
+		Goal:       "Create marker.txt containing MAR HARNESS OK.",
+		Acceptance: []string{"marker.txt exists in the authoritative project with the requested content"},
+		AcceptanceChecks: []domain.AcceptanceCheck{{
+			CriterionIndex: 1,
+			Scenario:       "run the project acceptance test against the sealed candidate",
+			Oracle:         "output_contains:MAR_ACCEPTANCE_HARNESS_E2E_MARKER",
+			CommandIndexes: []int{1},
+		}},
+		Boundaries: []string{"Only create marker.txt; do not change existing source files."},
+		NonGoals:   []string{"No remote Git writes or deployment."},
+		ProjectID:  "harness-e2e-project", BaseRevision: baseRevision,
+		Authority:           domain.Authority{LocalFileWrite: true, LocalGitWrite: true, NetworkAllowed: false, RemoteGitWrite: false, DeployAllowed: false},
+		VerificationProfile: "harness-go", Priority: "P2",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var final domain.Task
+	deadline := time.Now().Add(75 * time.Second)
+	for time.Now().Before(deadline) {
+		final, err = runtime.Service.Status(ctx, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if final.State == domain.TaskComplete {
+			break
+		}
+		if final.State == domain.TaskBlocked || final.State == domain.TaskFailed || final.State == domain.TaskCancelled {
+			inspection, _ := runtime.Service.Inspect(context.Background(), task.ID)
+			t.Fatalf("external harness task reached terminal failure %s: %+v", final.State, inspection)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if final.State != domain.TaskComplete {
+		inspection, _ := runtime.Service.Inspect(context.Background(), task.ID)
+		t.Fatalf("external harness task did not complete: task=%+v inspection=%+v", final, inspection)
+	}
+
+	marker, err := os.ReadFile(filepath.Join(projectRoot, "marker.txt"))
+	if err != nil || string(marker) != "MAR HARNESS OK\n" {
+		t.Fatalf("unexpected authoritative harness marker: content=%q err=%v", marker, err)
+	}
+	if got := strings.TrimSpace(runGitTest(t, projectRoot, "rev-parse", "HEAD")); got == baseRevision {
+		t.Fatal("external harness verified candidate was not integrated")
+	}
+	result, available, err := runtime.Service.Result(ctx, task.ID)
+	if err != nil || !available || result.IntegrationStatus != "INTEGRATED" || result.Verdict != domain.ResultVerified {
+		t.Fatalf("external harness result mismatch: result=%+v available=%v err=%v", result, available, err)
+	}
+	if result.ResourceSummary.AgentTurns != 0 || result.ResourceSummary.AgentToolCalls != 0 || result.ResourceSummary.ModelTotalTokens != 0 {
+		t.Fatalf("external harness unexpectedly consumed MAR cognition budget: %+v", result.ResourceSummary)
+	}
+	inspection, err := runtime.Service.Inspect(ctx, task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.Attempt == nil || inspection.Attempt.RunEpoch != 1 || inspection.Attempt.AuthorityState != domain.AttemptPhysicallyTerminated || inspection.BrainTurn != nil {
+		t.Fatalf("external harness final authority/cognition state mismatch: %+v", inspection)
+	}
+}
+
+func TestRuntimeE2EExternalHarnessHelper(t *testing.T) {
+	exactRun := false
+	for _, arg := range os.Args {
+		if arg == "-test.run=^TestRuntimeE2EExternalHarnessHelper$" {
+			exactRun = true
+			break
+		}
+	}
+	if !exactRun {
+		t.Skip("not running as external harness helper")
+	}
+	if err := os.WriteFile("marker.txt", []byte("MAR HARNESS OK\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("MAR external harness helper completed")
+}
+
 func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	if os.Getenv("MAR_RUNTIME_E2E_WORKER") == "1" {
 		t.Skip("worker helper process")
