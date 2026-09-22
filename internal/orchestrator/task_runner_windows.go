@@ -297,7 +297,7 @@ func (r *TaskRunner) verifyAndIntegrate(ctx context.Context, outcome RunOutcome,
 	if verified.Verdict != domain.ResultVerified {
 		return outcome, nil
 	}
-	_, integrated, err := r.integration.Integrate(ctx, attempt.TaskID)
+	_, integrated, err := r.integration.Integrate(finalCtx, attempt.TaskID)
 	if err != nil {
 		return outcome, err
 	}

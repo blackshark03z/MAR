@@ -26,6 +26,7 @@ type fakeTaskService struct {
 	events                 []string
 	terminalStatus         string
 	rejectCancelledContext bool
+	onConfirm              func()
 }
 
 func (s *fakeTaskService) Status(context.Context, string) (domain.Task, error) { return s.task, nil }
@@ -101,6 +102,9 @@ func (s *fakeTaskService) ConfirmAttemptProcessTermination(ctx context.Context, 
 	s.events = append(s.events, "confirm")
 	s.attempt.AuthorityState = domain.AttemptPhysicallyTerminated
 	s.terminalStatus = terminalStatus
+	if s.onConfirm != nil {
+		s.onConfirm()
+	}
 	return nil
 }
 
@@ -145,11 +149,15 @@ func (v *fakeVerifier) Verify(_ context.Context, request verification.VerifyRequ
 }
 
 type fakeIntegrator struct {
-	service *fakeTaskService
-	called  bool
+	service                *fakeTaskService
+	called                 bool
+	rejectCancelledContext bool
 }
 
-func (i *fakeIntegrator) Integrate(context.Context, string) (domain.IntegrationAttempt, domain.TaskResult, error) {
+func (i *fakeIntegrator) Integrate(ctx context.Context, _ string) (domain.IntegrationAttempt, domain.TaskResult, error) {
+	if i.rejectCancelledContext && ctx.Err() != nil {
+		return domain.IntegrationAttempt{}, domain.TaskResult{}, errors.New("cancelled parent context reached integration")
+	}
 	i.service.events = append(i.service.events, "integrate")
 	if i.service.attempt.AuthorityState != domain.AttemptPhysicallyTerminated {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, errors.New("integration began before physical termination was durably recorded")
@@ -229,6 +237,29 @@ func TestCompletedCandidateVerifiesBeforeRecordingTerminationAndIntegratesAfter(
 	}
 	if got := verifier.request.ResourceSummary; got.AgentTurns != 3 || got.AgentToolCalls != 5 || got.ModelInputTokens != 80 || got.ModelOutputTokens != 64 || got.ModelTotalTokens != 144 {
 		t.Fatalf("agent resource summary was not bound into verification result: %+v", got)
+	}
+}
+
+func TestCompletedCandidateIntegratesAfterParentContextCancellationDuringFinalization(t *testing.T) {
+	task, workspace := readyTaskAndWorkspace()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	svc := &fakeTaskService{task: task, onConfirm: cancel}
+	workerProcess := &fakeWorkerProcess{service: svc, result: agent.Result{Status: agent.StatusCompletedCandidate}}
+	verifier := &fakeVerifier{service: svc, result: domain.TaskResult{Verdict: domain.ResultVerified}}
+	integrator := &fakeIntegrator{service: svc, rejectCancelledContext: true}
+	runner := testRunner(t, svc, workerProcess, verifier, integrator)
+
+	outcome, err := runner.RunWorkspaceReady(ctx, task.ID, workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Verification == nil || outcome.Integration == nil || !integrator.called {
+		t.Fatalf("expected verified candidate to integrate after parent cancellation: %+v", outcome)
+	}
+	want := []string{"begin", "worker", "verify", "confirm", "integrate"}
+	if !reflect.DeepEqual(svc.events, want) {
+		t.Fatalf("unexpected finalization ordering: got=%v want=%v", svc.events, want)
 	}
 }
 
