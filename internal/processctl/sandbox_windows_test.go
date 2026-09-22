@@ -624,8 +624,8 @@ func TestAppContainerSandboxReadOnlyWorkspaceAllowsReadDeniesWriteAndKeepsExplic
 		Path:              probe,
 		Args:              []string{"-test.run=TestSandboxProbeHelper"},
 		Dir:               workspace,
-		Env:                probeEnvironment("read-only-root", rootWrite, auxWritePath, readPath, "", ""),
-		MaxOutputBytes:     32 << 10,
+		Env:               probeEnvironment("read-only-root", rootWrite, auxWritePath, readPath, "", ""),
+		MaxOutputBytes:    32 << 10,
 	})
 	if err != nil {
 		t.Fatalf("read-only workspace probe failed: %v output=%s", err, result.Output)
@@ -697,6 +697,38 @@ func TestAppContainerSandboxTimeoutKillsDescendantTree(t *testing.T) {
 	}
 }
 
+func TestSandboxExplicitInternetClientAllowsPublicOutbound(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	const target = "example.com:443"
+	hostConn, err := net.DialTimeout("tcp", target, 3*time.Second)
+	if err != nil {
+		t.Skipf("host public Internet probe unavailable: %v", err)
+	}
+	_ = hostConn.Close()
+
+	workspace := t.TempDir()
+	probe := copySandboxProbe(t, workspace)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	result, err := RunSandboxedCommand(ctx, SandboxCommandSpec{
+		TaskID:         "sandbox-internet-client",
+		OperationID:    "internet-client",
+		WorkspaceRoot:  workspace,
+		NetworkAllowed: true,
+		Path:           probe,
+		Args:           []string{"-test.run=TestSandboxProbeHelper"},
+		Dir:            workspace,
+		Env:            probeEnvironment("internet-client", "", "", "", target, ""),
+		MaxOutputBytes: 32 << 10,
+	})
+	if err != nil {
+		t.Fatalf("internetClient sandbox command failed: %v output=%s", err, result.Output)
+	}
+	if result.ExitCode != 0 || !strings.Contains(result.Output, "SANDBOX_INTERNET_CLIENT_OK") {
+		t.Fatalf("internetClient capability did not permit public outbound TCP: %+v", result)
+	}
+}
+
 func TestSandboxProbeHelper(t *testing.T) {
 	mode := os.Getenv("MAR_SANDBOX_PROBE")
 	if mode == "" {
@@ -718,6 +750,14 @@ func TestSandboxProbeHelper(t *testing.T) {
 			t.Fatalf("explicit auxiliary write failed: %v", err)
 		}
 		fmt.Println("SANDBOX_READ_ONLY_ROOT_OK")
+	case "internet-client":
+		address := os.Getenv("MAR_PROBE_ADDRESS")
+		conn, err := net.DialTimeout("tcp", address, 3*time.Second)
+		if err != nil {
+			t.Fatalf("explicit internetClient outbound TCP denied: %v", err)
+		}
+		_ = conn.Close()
+		fmt.Println("SANDBOX_INTERNET_CLIENT_OK")
 	case "authority":
 		inside := os.Getenv("MAR_PROBE_INSIDE")
 		outside := os.Getenv("MAR_PROBE_OUTSIDE")

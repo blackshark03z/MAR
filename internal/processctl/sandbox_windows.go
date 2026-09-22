@@ -37,12 +37,13 @@ type SandboxCommandSpec struct {
 	WorkspaceWritable *bool
 	ReadPaths         []string
 	WritePaths        []string
-	Path           string
-	Args           []string
-	Dir            string
-	Env            []string
-	MaxOutputBytes int
-	Limits         Limits
+	NetworkAllowed    bool
+	Path              string
+	Args              []string
+	Dir               string
+	Env               []string
+	MaxOutputBytes    int
+	Limits            Limits
 }
 
 type SandboxCommandResult struct {
@@ -204,6 +205,15 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 		return SandboxCommandResult{ExitCode: -1}, err
 	}
 	defer releaseRegistryRead()
+	capabilitySIDs := []*windows.SID{capabilitySID, registryReadSID}
+	if spec.NetworkAllowed {
+		internetClientSID, releaseInternetClient, deriveErr := deriveCapabilitySID("internetClient", "outbound Internet client")
+		if deriveErr != nil {
+			return SandboxCommandResult{ExitCode: -1}, deriveErr
+		}
+		defer releaseInternetClient()
+		capabilitySIDs = append(capabilitySIDs, internetClientSID)
+	}
 
 	workspaceWritable := true
 	if spec.WorkspaceWritable != nil {
@@ -277,7 +287,7 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 		restores = append(restores, restore)
 	}
 
-	return launchAppContainerCommand(ctx, profileName, sid, []*windows.SID{capabilitySID, registryReadSID}, spec, workspace, dir)
+	return launchAppContainerCommand(ctx, profileName, sid, capabilitySIDs, spec, workspace, dir)
 }
 
 func launchAppContainerCommand(ctx context.Context, profileName string, sid *windows.SID, capabilitySIDs []*windows.SID, spec SandboxCommandSpec, workspace, dir string) (SandboxCommandResult, error) {

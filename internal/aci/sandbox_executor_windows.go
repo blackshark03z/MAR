@@ -20,9 +20,10 @@ type WindowsSandboxExecutor struct {
 	readPaths    []string
 	// writePaths may include a task-scoped Temp materialization directory for
 	// generated executables; each path is still granted explicitly to LPAC.
-	writePaths []string
-	limits     processctl.Limits
-	readyErr   error
+	writePaths     []string
+	networkAllowed bool
+	limits         processctl.Limits
+	readyErr       error
 }
 
 func NewWindowsSandboxExecutor(root string, readPaths ...string) (*WindowsSandboxExecutor, error) {
@@ -31,6 +32,17 @@ func NewWindowsSandboxExecutor(root string, readPaths ...string) (*WindowsSandbo
 
 func NewWindowsSandboxExecutorWithWritePaths(root string, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
 	return newWindowsSandboxExecutor(root, true, processctl.Limits{}, writePaths, readPaths...)
+}
+
+// NewWindowsSandboxExecutorWithNetwork creates a writable LPAC executor with
+// outbound Internet access only when networkAllowed is explicitly true.
+func NewWindowsSandboxExecutorWithNetwork(root string, networkAllowed bool, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	executor, err := newWindowsSandboxExecutor(root, true, processctl.Limits{}, nil, readPaths...)
+	if err != nil {
+		return nil, err
+	}
+	executor.networkAllowed = networkAllowed
+	return executor, nil
 }
 
 func NewWindowsSandboxExecutorWithLimits(root string, limits processctl.Limits, readPaths ...string) (*WindowsSandboxExecutor, error) {
@@ -46,6 +58,18 @@ func NewWindowsSandboxExecutorWithLimitsAndWritePaths(root string, limits proces
 // write paths such as task-scoped Go temp/build caches.
 func NewWindowsReadOnlySandboxExecutorWithWritePaths(root string, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
 	return newWindowsSandboxExecutor(root, false, processctl.Limits{}, writePaths, readPaths...)
+}
+
+// NewWindowsReadOnlySandboxExecutorWithNetworkAndWritePaths creates a read-only
+// root LPAC executor while permitting explicit auxiliary write paths and optional
+// outbound Internet access.
+func NewWindowsReadOnlySandboxExecutorWithNetworkAndWritePaths(root string, networkAllowed bool, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	executor, err := newWindowsSandboxExecutor(root, false, processctl.Limits{}, writePaths, readPaths...)
+	if err != nil {
+		return nil, err
+	}
+	executor.networkAllowed = networkAllowed
+	return executor, nil
 }
 
 func NewWindowsReadOnlySandboxExecutorWithLimitsAndWritePaths(root string, limits processctl.Limits, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
@@ -64,8 +88,8 @@ func newWindowsSandboxExecutor(root string, rootWritable bool, limits processctl
 		root:         filepath.Clean(abs),
 		rootWritable: rootWritable,
 		readPaths:    append([]string(nil), readPaths...),
-		writePaths: append([]string(nil), writePaths...),
-		limits:     limits,
+		writePaths:   append([]string(nil), writePaths...),
+		limits:       limits,
 	}
 	executor.readyErr = processctl.CheckSandboxHostReady(context.Background(), executor.root)
 	return executor, nil
@@ -93,14 +117,15 @@ func (e *WindowsSandboxExecutor) Run(ctx context.Context, taskID string, spec Ex
 		OperationID:       spec.OperationID,
 		WorkspaceRoot:     e.root,
 		WorkspaceWritable: &rootWritable,
-		ReadPaths:      append([]string(nil), e.readPaths...),
-		WritePaths:     append([]string(nil), e.writePaths...),
-		Path:           spec.Path,
-		Args:           spec.Args,
-		Dir:            spec.Dir,
-		Env:            spec.Env,
-		MaxOutputBytes: spec.MaxOutputBytes,
-		Limits:         e.limits,
+		ReadPaths:         append([]string(nil), e.readPaths...),
+		WritePaths:        append([]string(nil), e.writePaths...),
+		NetworkAllowed:    e.networkAllowed,
+		Path:              spec.Path,
+		Args:              spec.Args,
+		Dir:               spec.Dir,
+		Env:               spec.Env,
+		MaxOutputBytes:    spec.MaxOutputBytes,
+		Limits:            e.limits,
 	})
 	return ExecResult{Output: result.Output, ExitCode: result.ExitCode, OutputTruncated: result.OutputTruncated, CapturedBytes: result.CapturedBytes, TotalBytes: result.TotalBytes}, err
 }

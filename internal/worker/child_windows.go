@@ -326,9 +326,9 @@ func runExternalHarnessChild(ctx context.Context, start StartRequest, harness Ha
 
 	var executor *aci.WindowsSandboxExecutor
 	if !start.Task.Contract.Authority.LocalFileWrite && !start.Task.Contract.Authority.LocalGitWrite {
-		executor, err = aci.NewWindowsReadOnlySandboxExecutorWithWritePaths(start.WorkspacePath, nil, readPaths...)
+		executor, err = aci.NewWindowsReadOnlySandboxExecutorWithNetworkAndWritePaths(start.WorkspacePath, start.Task.Contract.Authority.NetworkAllowed, nil, readPaths...)
 	} else {
-		executor, err = aci.NewWindowsSandboxExecutor(start.WorkspacePath, readPaths...)
+		executor, err = aci.NewWindowsSandboxExecutorWithNetwork(start.WorkspacePath, start.Task.Contract.Authority.NetworkAllowed, readPaths...)
 	}
 	if err != nil {
 		_ = sendChildError(encoder, err)
