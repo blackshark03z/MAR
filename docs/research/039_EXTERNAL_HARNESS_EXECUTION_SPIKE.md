@@ -1,7 +1,9 @@
 # External Harness Execution Spike
 
 Date: 2026-09-22
-Status: VERIFIED SPIKE
+Status: VERIFIED SPIKE — CLOSED FOR DEFAULT-PATH EXPANSION
+
+> Forward note: `docs/architecture/MAR_ARCHITECTURE_STABILITY_POLICY.md` supersedes the earlier suggestion to continue OMP authentication as the next default step. The OMP probe remains evidence that a real third-party executable can run under MAR containment. Further AI-harness/model work requires an explicit delegated-worker Goal.
 Architecture authority: docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md
 Baseline: docs/research/038_CONDITIONAL_KERNEL_RESPONSIBILITY_INVENTORY.md
 

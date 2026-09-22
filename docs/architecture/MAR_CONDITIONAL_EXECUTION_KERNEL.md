@@ -43,7 +43,11 @@ Long-term MAR core is limited to governed-runtime responsibilities:
 
 ## Harness responsibilities
 
-The coding harness is a replaceable, non-authoritative executor. Provider/model selection, credentials, reasoning/session topology, context management, subagents, coding-tool ergonomics, LSP/DAP and similar agent mechanics are not target MAR-kernel responsibilities.
+The default owner workflow has one primary cognition layer: **ChatWeb**. MAR must not insert another AI reasoning layer by default.
+
+The coding harness is a replaceable, non-authoritative executor. In the normal ChatWeb-led architecture this means deterministic tools/executors beneath the accepted execution intent. Provider/model selection, credentials, reasoning/session topology, context management, subagents, coding-tool ergonomics, LSP/DAP and similar agent mechanics are not target MAR-kernel responsibilities.
+
+An external AI-agent harness may exist only as an explicitly delegated-worker mode. Its existence does not change the default ChatWeb-brain architecture and must not cause MAR to regain provider/model/session ownership.
 
 Existing provider mode, Web-brain relay, Project Brain/cognition projection and related session surfaces remain supported compatibility behavior for current releases. This amendment does **not** authorize their immediate deletion. It closes them to expansion by default.
 

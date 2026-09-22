@@ -1,14 +1,18 @@
 # Current SoT — 2026-09-22
 
-## Conditional execution boundary — forward precedence
+## Forward architecture — FROZEN
 
-CADS DR-0013 is now implemented on the canonical CADS line: ordinary coding defaults to a direct compatible harness; MAR is selected only when the accepted Goal requires governed runtime properties. MAR's matching architecture authority is `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
+Canonical stability authority: `docs/architecture/MAR_ARCHITECTURE_STABILITY_POLICY.md`. Canonical kernel boundary: `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
 
-Forward rule: **MAR lifecycle is scoped to governed tasks, not to CADS development as a whole.** Current provider mode, Web-brain relay, Project Brain/cognition projection and session surfaces remain supported compatibility behavior; do not extend them as kernel responsibilities by default. Provider/model/session/subagent/context/LSP-style coding mechanics belong to replaceable harnesses unless evidence proves a MAR safety invariant cannot be enforced without kernel ownership.
+Forward architecture is frozen as: **ChatWeb = default cognition/brain; CADS = intent/design/acceptance authority; direct ChatCode-like execution = default path; MAR = optional governed execution kernel only when accepted runtime properties require it.**
 
-The next MAR implementation step is not another cognition optimization or an OMP integration by accretion. First inventory current responsibility into `KERNEL | COMPAT_HARNESS | REMOVE/DELEGATE`, measure block/cancel/latency/code-path contribution for governed tasks, then open only a deletion/delegation slice with safety evidence. Any harness adapter must let MAR retire equivalent responsibility rather than add another lifecycle.
+Normal development is not a MAR lifecycle. Ordinary bounded work may execute directly with no MAR task/workspace/run-epoch/checkpoint. MAR is entered only for governed properties such as isolated mutation, durable recovery, concurrent-writer fencing, durable execution authority, resource governance, or crash-safe integration.
 
-Historical V1/V1.3 product journeys below remain exact historical/release context for MAR-governed work; where they show every CADS Goal passing through MAR, this 2026-09-22 boundary supersedes that forward-looking routing assumption.
+MAR must not grow another default model/provider/planner/session layer. Current provider mode, Web-brain relay, Project Brain/cognition projection and related session surfaces are compatibility behavior only. The external executable seam proved at `c94d359` is retained as a replaceable execution seam; it is **not** authority to make OMP/Codex/Claude/Gemini a second default brain beneath ChatWeb. OMP auth/model integration is therefore closed unless an explicit delegated-worker Goal reopens it.
+
+Architecture improvement now follows only: `measure -> one bounded deficit -> patch/delete -> verify -> benchmark -> keep/revert`. Research by itself does not reopen the top-level architecture. Prefer deletion and lifecycle reduction over adapters or new orchestration.
+
+Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
 
 ## Architecture simplification decision
 
