@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 16
+const latestSchemaVersion = 17
 
 func SupportedSchemaVersion() int { return latestSchemaVersion }
 
@@ -451,6 +451,8 @@ CREATE TABLE workspace_checkpoints (
 CREATE INDEX idx_workspace_checkpoints_task_version ON workspace_checkpoints(task_id, version DESC);
 CREATE INDEX idx_workspace_checkpoints_state ON workspace_checkpoints(state, created_at);
 `
+	case 17:
+		return s.applyWorkspacePathSharingMigration(ctx)
 	default:
 		return fmt.Errorf("unknown migration version %d", version)
 	}
@@ -469,6 +471,52 @@ CREATE INDEX idx_workspace_checkpoints_state ON workspace_checkpoints(state, cre
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration %d: %w", version, err)
 	}
+	return nil
+}
+
+func (s *SQLite) applyWorkspacePathSharingMigration(ctx context.Context) (retErr error) {
+	if _, err := s.db.ExecContext(ctx, "PRAGMA foreign_keys=OFF;"); err != nil {
+		return fmt.Errorf("disable foreign keys for migration 17: %w", err)
+	}
+	defer func() {
+		if _, err := s.db.ExecContext(context.Background(), "PRAGMA foreign_keys=ON;"); err != nil && retErr == nil {
+			retErr = fmt.Errorf("restore foreign keys after migration 17: %w", err)
+		}
+	}()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil { return fmt.Errorf("begin migration 17: %w", err) }
+	defer tx.Rollback()
+	const script = `
+CREATE TABLE workspaces_v17 (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL UNIQUE,
+    project_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    base_revision TEXT NOT NULL,
+    head_revision TEXT NOT NULL DEFAULT '',
+    state TEXT NOT NULL,
+    failure TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    removed_at TEXT,
+    FOREIGN KEY(task_id) REFERENCES tasks(id),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+INSERT INTO workspaces_v17(id,task_id,project_id,path,base_revision,head_revision,state,failure,created_at,updated_at,removed_at)
+SELECT id,task_id,project_id,path,base_revision,head_revision,state,failure,created_at,updated_at,removed_at FROM workspaces;
+DROP TABLE workspaces;
+ALTER TABLE workspaces_v17 RENAME TO workspaces;
+CREATE INDEX idx_workspaces_project_state ON workspaces(project_id, state);
+`
+	if _, err := tx.ExecContext(ctx, script); err != nil { return fmt.Errorf("apply migration 17: %w", err) }
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=17;"); err != nil { return fmt.Errorf("mark migration 17: %w", err) }
+	if err := tx.Commit(); err != nil { return fmt.Errorf("commit migration 17: %w", err) }
+	if _, err := s.db.ExecContext(ctx, "PRAGMA foreign_keys=ON;"); err != nil { return fmt.Errorf("restore foreign keys after migration 17: %w", err) }
+	rows, err := s.db.QueryContext(ctx, "PRAGMA foreign_key_check;")
+	if err != nil { return fmt.Errorf("foreign key check after migration 17: %w", err) }
+	defer rows.Close()
+	if rows.Next() { return errors.New("migration 17 produced foreign-key violations") }
+	if err := rows.Err(); err != nil { return fmt.Errorf("foreign key check after migration 17: %w", err) }
 	return nil
 }
 

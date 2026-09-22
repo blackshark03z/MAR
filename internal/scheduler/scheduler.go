@@ -16,6 +16,7 @@ import (
 
 type WorkspaceProvisioner interface {
 	EnsureMutable(context.Context, string) (domain.Workspace, error)
+	EnsureReadOnly(context.Context, string) (domain.Workspace, error)
 }
 
 type terminalWorkspaceReclaimer interface {
@@ -238,7 +239,12 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	}
 	defer lease.Release()
 
-	workspace, err := s.workspace.EnsureMutable(ctx, task.ID)
+	var workspace domain.Workspace
+	if !task.Contract.Authority.LocalFileWrite && !task.Contract.Authority.LocalGitWrite {
+		workspace, err = s.workspace.EnsureReadOnly(ctx, task.ID)
+	} else {
+		workspace, err = s.workspace.EnsureMutable(ctx, task.ID)
+	}
 	if err != nil {
 		current, statusErr := s.store.GetTask(ctx, task.ID)
 		if statusErr == nil && current.State == domain.TaskWaitingResource {

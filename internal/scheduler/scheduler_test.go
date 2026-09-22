@@ -29,6 +29,7 @@ type fakeWorkspace struct {
 	store              *store.SQLite
 	mu                 sync.Mutex
 	calls              []string
+	readOnlyCalls      []string
 	err                error
 	terminalCalls      int
 	terminalWorkspaces int
@@ -59,6 +60,24 @@ func (f *fakeWorkspace) EnsureMutable(ctx context.Context, taskID string) (domai
 		return domain.Workspace{}, err
 	}
 	return domain.Workspace{ID: "fake-" + taskID, TaskID: taskID, ProjectID: task.Contract.ProjectID, State: domain.WorkspaceReady}, nil
+}
+
+func (f *fakeWorkspace) EnsureReadOnly(ctx context.Context, taskID string) (domain.Workspace, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, taskID)
+	f.readOnlyCalls = append(f.readOnlyCalls, taskID)
+	f.mu.Unlock()
+	if f.err != nil {
+		return domain.Workspace{}, f.err
+	}
+	if err := f.store.OrchestratorTransition(ctx, taskID, domain.TaskWaitingResource, domain.TaskWorkspaceReady, time.Now().UTC()); err != nil {
+		return domain.Workspace{}, err
+	}
+	task, err := f.store.GetTask(ctx, taskID)
+	if err != nil {
+		return domain.Workspace{}, err
+	}
+	return domain.Workspace{ID: "fake-readonly-" + taskID, TaskID: taskID, ProjectID: task.Contract.ProjectID, State: domain.WorkspaceReady}, nil
 }
 
 func (f *fakeWorkspace) ReclaimTerminal(context.Context, int) (int, error) {
@@ -146,6 +165,11 @@ func schedulerHarness(t *testing.T, snapshot resourcegov.Snapshot) (*store.SQLit
 
 func queueTask(t *testing.T, svc *service.TaskService, projectID, key, priority string) domain.Task {
 	t.Helper()
+	return queueTaskWithAuthority(t, svc, projectID, key, priority, domain.Authority{})
+}
+
+func queueTaskWithAuthority(t *testing.T, svc *service.TaskService, projectID, key, priority string, authority domain.Authority) domain.Task {
+	t.Helper()
 	ctx := context.Background()
 	root := filepath.Join(t.TempDir(), projectID)
 	if _, _, err := svc.RegisterProject(ctx, projectID, root); err != nil {
@@ -160,6 +184,7 @@ func queueTask(t *testing.T, svc *service.TaskService, projectID, key, priority 
 		BaseRevision:        "abc",
 		VerificationProfile: "test",
 		Priority:            priority,
+		Authority:           authority,
 	}
 	task, _, err := svc.Submit(ctx, key, contract)
 	if err != nil {
@@ -176,6 +201,51 @@ func queueTask(t *testing.T, svc *service.TaskService, projectID, key, priority 
 		t.Fatal(err)
 	}
 	return got
+}
+
+func TestSchedulerRoutesWorkspaceByMutationAuthority(t *testing.T) {
+	t.Run("strict read-only uses shared snapshot provisioner", func(t *testing.T) {
+		s, svc, sch, workspace := schedulerHarness(t, healthyHost())
+		defer s.Close()
+		task := queueTaskWithAuthority(t, svc, "route-readonly", "route-readonly", "P2", domain.Authority{})
+
+		result, err := sch.Step(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TaskID != task.ID || result.Action != ActionWorkspaceReady {
+			t.Fatalf("unexpected scheduler result: %+v", result)
+		}
+
+		workspace.mu.Lock()
+		defer workspace.mu.Unlock()
+		if len(workspace.readOnlyCalls) != 1 || workspace.readOnlyCalls[0] != task.ID {
+			t.Fatalf("strict read-only task did not use EnsureReadOnly: %+v", workspace.readOnlyCalls)
+		}
+	})
+
+	t.Run("file-write authority stays on mutable provisioner", func(t *testing.T) {
+		s, svc, sch, workspace := schedulerHarness(t, healthyHost())
+		defer s.Close()
+		task := queueTaskWithAuthority(t, svc, "route-mutable", "route-mutable", "P2", domain.Authority{LocalFileWrite: true})
+
+		result, err := sch.Step(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.TaskID != task.ID || result.Action != ActionWorkspaceReady {
+			t.Fatalf("unexpected scheduler result: %+v", result)
+		}
+
+		workspace.mu.Lock()
+		defer workspace.mu.Unlock()
+		if len(workspace.readOnlyCalls) != 0 {
+			t.Fatalf("mutation-capable task unexpectedly used EnsureReadOnly: %+v", workspace.readOnlyCalls)
+		}
+		if len(workspace.calls) != 1 || workspace.calls[0] != task.ID {
+			t.Fatalf("mutation-capable task did not use EnsureMutable: %+v", workspace.calls)
+		}
+	})
 }
 
 func TestSelectTaskPreservesInputOrderWhenAllSchedulingKeysTie(t *testing.T) {

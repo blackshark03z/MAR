@@ -849,6 +849,81 @@ func TestUnregisteredPreexistingWorkspacePathIsNotOverwritten(t *testing.T) {
 	}
 }
 
+func TestReadOnlySharedSnapshotReusesPhysicalWorktree(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+	projectID := "project-read-only-shared"
+	taskA := waitingReadOnlyTaskForProject(t, svc, "read-only-a", projectID, repo, base)
+	taskB := waitingReadOnlyTaskForProject(t, svc, "read-only-b", projectID, repo, base)
+
+	wsA, err := manager.EnsureReadOnly(ctx, taskA.ID)
+	if err != nil { t.Fatal(err) }
+	wsB, err := manager.EnsureReadOnly(ctx, taskB.ID)
+	if err != nil { t.Fatal(err) }
+	if wsA.ID == wsB.ID {
+		t.Fatalf("read-only tasks must retain distinct durable workspace records: %s", wsA.ID)
+	}
+	if !strings.EqualFold(filepath.Clean(wsA.Path), filepath.Clean(wsB.Path)) {
+		t.Fatalf("read-only tasks at same revision did not reuse exact snapshot path: %q vs %q", wsA.Path, wsB.Path)
+	}
+	if wsA.State != domain.WorkspaceReady || wsB.State != domain.WorkspaceReady {
+		t.Fatalf("shared read-only workspaces not READY: a=%+v b=%+v", wsA, wsB)
+	}
+	dataRoot := filepath.Dir(filepath.Dir(filepath.Dir(wsA.Path)))
+	if !workspace.IsReadOnlySnapshotPath(dataRoot, wsA.Path) {
+		t.Fatalf("shared snapshot path is not recognized as managed read-only path: %s", wsA.Path)
+	}
+	if got := gitOut(t, wsA.Path, "rev-parse", "HEAD"); got != base {
+		t.Fatalf("shared snapshot head=%s want=%s", got, base)
+	}
+	if got := strings.TrimSpace(gitOut(t, wsA.Path, "status", "--porcelain")); got != "" {
+		t.Fatalf("shared snapshot is dirty: %q", got)
+	}
+	if got := countWorktrees(t, repo); got != 2 {
+		t.Fatalf("two read-only tasks should create one shared physical snapshot plus main worktree, got %d worktrees", got)
+	}
+}
+
+func TestReadOnlySharedSnapshotCleanupRetainsPhysicalSnapshotAndCheckpointIsUnsafe(t *testing.T) {
+	ctx := context.Background()
+	repo, base := makeRepo(t)
+	s, svc, manager := workspaceHarness(t, repo)
+	defer s.Close()
+	projectID := "project-read-only-retention"
+	taskA := waitingReadOnlyTaskForProject(t, svc, "read-only-retain-a", projectID, repo, base)
+	taskB := waitingReadOnlyTaskForProject(t, svc, "read-only-retain-b", projectID, repo, base)
+	wsA, err := manager.EnsureReadOnly(ctx, taskA.ID)
+	if err != nil { t.Fatal(err) }
+	wsB, err := manager.EnsureReadOnly(ctx, taskB.ID)
+	if err != nil { t.Fatal(err) }
+	if !strings.EqualFold(filepath.Clean(wsA.Path), filepath.Clean(wsB.Path)) {
+		t.Fatal("test precondition failed: read-only tasks did not share snapshot")
+	}
+	if _, _, err := manager.CheckpointBlocked(ctx, taskA.ID); !errors.Is(err, workspace.ErrCheckpointUnsafe) {
+		t.Fatalf("shared read-only snapshot must never be checkpoint-compacted, got %v", err)
+	}
+	if err := svc.CancelBeforeAttempt(ctx, taskA.ID); err != nil { t.Fatal(err) }
+	if err := manager.RemoveTerminal(ctx, taskA.ID); err != nil { t.Fatal(err) }
+	storedA, err := s.GetWorkspaceByTask(ctx, taskA.ID)
+	if err != nil { t.Fatal(err) }
+	if storedA.State != domain.WorkspaceRemoved || storedA.RemovedAt == nil {
+		t.Fatalf("terminal read-only workspace record was not removed: %+v", storedA)
+	}
+	if _, err := os.Stat(wsA.Path); err != nil {
+		t.Fatalf("per-task cleanup deleted shared physical snapshot: %v", err)
+	}
+	storedB, err := s.GetWorkspaceByTask(ctx, taskB.ID)
+	if err != nil { t.Fatal(err) }
+	if storedB.State != domain.WorkspaceReady {
+		t.Fatalf("cleanup of one task disturbed another shared snapshot record: %+v", storedB)
+	}
+	if got := countWorktrees(t, repo); got != 2 {
+		t.Fatalf("shared physical snapshot should remain registered after one task cleanup, got %d worktrees", got)
+	}
+}
+
 func TestInvalidBaseDoesNotCreateWorkspace(t *testing.T) {
 	ctx := context.Background()
 	repo, _ := makeRepo(t)
@@ -908,6 +983,28 @@ func waitingTaskForProject(t *testing.T, svc *service.TaskService, key, projectI
 	if err := svc.AdvancePreExecution(ctx, task.ID, domain.TaskWaitingResource); err != nil {
 		t.Fatal(err)
 	}
+	return task
+}
+
+func waitingReadOnlyTaskForProject(t *testing.T, svc *service.TaskService, key, projectID, repo, base string) domain.Task {
+	t.Helper()
+	ctx := context.Background()
+	if _, _, err := svc.RegisterProject(ctx, projectID, repo); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "read-only workspace test",
+		Acceptance:          []string{"shared immutable snapshot"},
+		ProjectID:           projectID,
+		BaseRevision:        base,
+		VerificationProfile: "test",
+		Priority:            "P2",
+		Authority:           domain.Authority{},
+	}
+	task, _, err := svc.Submit(ctx, key, contract)
+	if err != nil { t.Fatal(err) }
+	if err := svc.AdvancePreExecution(ctx, task.ID, domain.TaskPreflight); err != nil { t.Fatal(err) }
+	if err := svc.AdvancePreExecution(ctx, task.ID, domain.TaskWaitingResource); err != nil { t.Fatal(err) }
 	return task
 }
 

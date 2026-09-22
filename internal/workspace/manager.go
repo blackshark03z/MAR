@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mar/internal/domain"
+	"mar/internal/pathidentity"
 	"mar/internal/processctl"
 	"mar/internal/retention"
 	"mar/internal/store"
@@ -168,6 +169,62 @@ func (m *Manager) EnsureMutable(ctx context.Context, taskID string) (domain.Work
 	return m.store.GetWorkspaceByTask(ctx, task.ID)
 }
 
+func (m *Manager) EnsureReadOnly(ctx context.Context, taskID string) (domain.Workspace, error) {
+	task, err := m.store.GetTask(ctx, taskID)
+	if err != nil { return domain.Workspace{}, err }
+	if task.Contract.Authority.LocalFileWrite || task.Contract.Authority.LocalGitWrite { return domain.Workspace{}, errors.New("read-only workspace requires local file and Git write authority to be disabled") }
+	project, err := m.store.GetProject(ctx, task.Contract.ProjectID)
+	if err != nil { return domain.Workspace{}, err }
+	lock := m.projectLock(project.ID); lock.Lock(); defer lock.Unlock()
+	repoRoot, err := m.gitTopLevel(ctx, task.ID, project.Root)
+	if err != nil { return domain.Workspace{}, err }
+	if !samePathFold(repoRoot, project.Root) { return domain.Workspace{}, fmt.Errorf("registered project root %q is not Git toplevel %q", project.Root, repoRoot) }
+	resolvedBase, err := m.resolveCommit(ctx, task.ID, repoRoot, task.Contract.BaseRevision)
+	if err != nil { return domain.Workspace{}, err }
+	expectedPath := m.readOnlySnapshotPath(project.ID, resolvedBase)
+	workspace := domain.Workspace{ID:deterministicID("workspace", task.ID), TaskID:task.ID, ProjectID:project.ID, Path:expectedPath, BaseRevision:resolvedBase, State:domain.WorkspacePreparing, CreatedAt:m.now().UTC(), UpdatedAt:m.now().UTC()}
+	if err := m.ensureManagedPath(expectedPath); err != nil { return domain.Workspace{}, err }
+	existing, _, err := m.store.BeginWorkspace(ctx, workspace)
+	if err != nil {
+		if errors.Is(err, store.ErrStateConflict) {
+			if ready, getErr := m.store.GetWorkspaceByTask(ctx, task.ID); getErr == nil && ready.State == domain.WorkspaceReady {
+				if verifyErr := m.verifyReadOnlySnapshot(ctx, task.ID, repoRoot, ready, resolvedBase); verifyErr != nil { return domain.Workspace{}, verifyErr }
+				return ready, nil
+			}
+		}
+		return domain.Workspace{}, err
+	}
+	workspace = existing
+	if !samePathFold(workspace.Path, expectedPath) || workspace.BaseRevision != resolvedBase { return domain.Workspace{}, errors.New("durable read-only workspace identity differs from resolved snapshot identity") }
+	if workspace.State == domain.WorkspaceReady {
+		if err := m.verifyReadOnlySnapshot(ctx, task.ID, repoRoot, workspace, resolvedBase); err != nil { return domain.Workspace{}, err }
+		return workspace, nil
+	}
+	if workspace.State != domain.WorkspacePreparing { return domain.Workspace{}, fmt.Errorf("read-only workspace %s is not creatable from state %s", workspace.ID, workspace.State) }
+	registered, head, err := m.registeredWorktree(ctx, task.ID, repoRoot, expectedPath)
+	if err != nil { return domain.Workspace{}, err }
+	if !registered {
+		if _, statErr := os.Lstat(expectedPath); statErr == nil { return domain.Workspace{}, fmt.Errorf("shared read-only snapshot path exists but is not a registered worktree: %s", expectedPath) } else if !os.IsNotExist(statErr) { return domain.Workspace{}, statErr }
+		if err := m.createWorktree(ctx, task.ID, repoRoot, expectedPath, resolvedBase); err != nil { _ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, err.Error(), m.now().UTC()); return domain.Workspace{}, err }
+		registered, head, err = m.registeredWorktree(ctx, task.ID, repoRoot, expectedPath); if err != nil { return domain.Workspace{}, err }
+	}
+	if !registered || head != resolvedBase { failure := fmt.Sprintf("shared read-only snapshot verification failed: registered=%v head=%s expected=%s", registered, head, resolvedBase); _ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, failure, m.now().UTC()); return domain.Workspace{}, errors.New(failure) }
+	if err := m.verifyReadOnlySnapshot(ctx, task.ID, repoRoot, workspace, resolvedBase); err != nil { _ = m.store.MarkWorkspaceFailed(ctx, workspace.ID, task.ID, err.Error(), m.now().UTC()); return domain.Workspace{}, err }
+	if err := m.store.MarkWorkspaceReady(ctx, workspace.ID, task.ID, resolvedBase, m.now().UTC()); err != nil { return domain.Workspace{}, err }
+	return m.store.GetWorkspaceByTask(ctx, task.ID)
+}
+
+func (m *Manager) verifyReadOnlySnapshot(ctx context.Context, taskID, repoRoot string, workspace domain.Workspace, revision string) error {
+	resolvedPath, err := pathidentity.ResolveExisting(workspace.Path)
+	if err != nil { return fmt.Errorf("resolve shared read-only snapshot path: %w", err) }
+	if !samePathFold(resolvedPath, workspace.Path) { return fmt.Errorf("shared read-only snapshot resolves away from managed path: %s -> %s", workspace.Path, resolvedPath) }
+	registered, head, err := m.registeredWorktree(ctx, taskID, repoRoot, workspace.Path)
+	if err != nil { return err }
+	if !registered || head != revision { return fmt.Errorf("shared read-only snapshot Git truth mismatch: registered=%v head=%s expected=%s", registered, head, revision) }
+	check := workspace; check.BaseRevision = revision
+	return m.requireCleanBaseline(ctx, taskID, check)
+}
+
 func (m *Manager) markWorkspaceReady(ctx context.Context, workspace domain.Workspace, head string) error {
 	checkpoint, ok, err := m.store.LatestWorkspaceCheckpoint(ctx, workspace.TaskID)
 	if err != nil {
@@ -205,12 +262,9 @@ func (m *Manager) ReconcileCheckpointTransactions(ctx context.Context, limit int
 
 func (m *Manager) reconcileCheckpointTransaction(ctx context.Context, taskID string) error {
 	workspace, err := m.store.GetWorkspaceByTask(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if workspace.State != domain.WorkspaceCheckpointing {
-		return nil
-	}
+	if err != nil { return err }
+	if workspace.State != domain.WorkspaceCheckpointing { return nil }
+	if IsReadOnlySnapshotPath(m.dataRoot, workspace.Path) { return m.store.AbortWorkspaceCheckpoint(ctx, taskID, m.now().UTC()) }
 	project, err := m.store.GetProject(ctx, workspace.ProjectID)
 	if err != nil {
 		return err
@@ -350,6 +404,9 @@ func isRebuildableTaskLocalIgnoredPath(rel string) bool {
 }
 
 func (m *Manager) CheckpointBlocked(ctx context.Context, taskID string) (domain.WorkspaceCheckpoint, int64, error) {
+	current, err := m.store.GetWorkspaceByTask(ctx, taskID)
+	if err != nil { return domain.WorkspaceCheckpoint{}, 0, err }
+	if IsReadOnlySnapshotPath(m.dataRoot, current.Path) { return domain.WorkspaceCheckpoint{}, 0, ErrCheckpointUnsafe }
 	workspace, err := m.store.BeginWorkspaceCheckpoint(ctx, taskID, m.now().UTC())
 	if err != nil {
 		return domain.WorkspaceCheckpoint{}, 0, err
@@ -500,8 +557,9 @@ func (m *Manager) RemoveTerminal(ctx context.Context, taskID string) error {
 	if workspace.State == domain.WorkspaceRemoved {
 		return nil
 	}
-	if err := m.ensureManagedPath(workspace.Path); err != nil {
-		return err
+	if err := m.ensureManagedPath(workspace.Path); err != nil { return err }
+	if IsReadOnlySnapshotPath(m.dataRoot, workspace.Path) {
+		return m.store.FinishWorkspaceRemoval(ctx, workspace.ID, deterministicID("result-workspace-removed", workspace.TaskID), m.now().UTC())
 	}
 	project, err := m.store.GetProject(ctx, workspace.ProjectID)
 	if err != nil {
@@ -675,8 +733,22 @@ func (m *Manager) requireCleanBaseline(ctx context.Context, taskID string, works
 	return nil
 }
 
-func (m *Manager) workspacePath(taskID string) string {
-	return filepath.Join(m.dataRoot, "w", workspacePathKey(taskID))
+func (m *Manager) workspacePath(taskID string) string { return filepath.Join(m.dataRoot, "w", workspacePathKey(taskID)) }
+
+func (m *Manager) readOnlySnapshotPath(projectID, revision string) string {
+	return filepath.Join(m.dataRoot, "r", shortHash(projectID), strings.ToLower(strings.TrimSpace(revision)))
+}
+
+func IsReadOnlySnapshotPath(dataRoot, path string) bool {
+	root, err := filepath.Abs(dataRoot); if err != nil { return false }
+	candidate, err := filepath.Abs(path); if err != nil { return false }
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(candidate))
+	if err != nil || filepath.IsAbs(rel) || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) { return false }
+	parts := strings.Split(filepath.Clean(rel), string(os.PathSeparator))
+	if len(parts) != 3 || !strings.EqualFold(parts[0], "r") || len(parts[1]) != 16 || len(parts[2]) < 40 || len(parts[2])%2 != 0 { return false }
+	if _, err := hex.DecodeString(parts[1]); err != nil { return false }
+	if _, err := hex.DecodeString(parts[2]); err != nil { return false }
+	return true
 }
 
 func workspacePathKey(taskID string) string {

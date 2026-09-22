@@ -48,6 +48,10 @@ func NewWindowsReadOnlySandboxExecutorWithWritePaths(root string, writePaths []s
 	return newWindowsSandboxExecutor(root, false, processctl.Limits{}, writePaths, readPaths...)
 }
 
+func NewWindowsReadOnlySandboxExecutorWithLimitsAndWritePaths(root string, limits processctl.Limits, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
+	return newWindowsSandboxExecutor(root, false, limits, writePaths, readPaths...)
+}
+
 func newWindowsSandboxExecutor(root string, rootWritable bool, limits processctl.Limits, writePaths []string, readPaths ...string) (*WindowsSandboxExecutor, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
