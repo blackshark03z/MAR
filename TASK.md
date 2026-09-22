@@ -12,7 +12,12 @@ MAR must not grow another default model/provider/planner/session layer. Current 
 
 Architecture improvement now follows only: `measure -> one bounded deficit -> patch/delete -> verify -> benchmark -> keep/revert`. Research by itself does not reopen the top-level architecture. Prefer deletion and lifecycle reduction over adapters or new orchestration.
 
-Current simplification progress: Web cognition no longer requires or persists a specific model identity; evidence is in `docs/research/040_WEB_MODEL_IDENTITY_DELEGATION.md`. Provider compatibility still requires an explicit provider model. This is the first post-freeze responsibility delegation slice.
+Current simplification progress:
+- Web cognition no longer requires or persists a specific model identity; evidence: `docs/research/040_WEB_MODEL_IDENTITY_DELEGATION.md`.
+- Web cognition no longer pins a model-specific reasoning effort; evidence: `docs/research/041_WEB_REASONING_CONFIGURATION_DELEGATION.md`.
+- Provider compatibility still requires an explicit provider model and may carry explicit provider reasoning configuration.
+
+These are bounded post-freeze responsibility-delegation slices, not architecture changes.
 
 Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
 

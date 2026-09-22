@@ -13,6 +13,22 @@ import (
 	"testing"
 )
 
+func TestWebStdioArgsDoNotPinModelOrReasoning(t *testing.T) {
+	backend := &ownerUIBackend{
+		dbPath:     `D:\MAR\.mar\mar.db`,
+		dataRoot:   `D:\MAR\.mar`,
+		goPath:     `D:\Go\bin\go.exe`,
+		maxWorkers: 2,
+	}
+	args := backend.webStdioArgs()
+	joined := strings.Join(args, " ")
+	for _, forbidden := range []string{"-model", "-reasoning"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("Web stdio path must delegate model/reasoning configuration to ChatWeb: %v", args)
+		}
+	}
+}
+
 func TestBuildClaudeDesktopPackageBindsCurrentRuntimeWithoutSecrets(t *testing.T) {
 	exe := filepath.Join(t.TempDir(), "mar.exe")
 	if err := os.WriteFile(exe, []byte("MZ-test-binary"), 0o755); err != nil {
