@@ -10,6 +10,37 @@ import (
 	"mar/internal/domain"
 )
 
+func TestExternalHarnessInputBindsDurableTaskIntent(t *testing.T) {
+	contract := domain.GoalContract{
+		Goal: "implement bounded task", Acceptance: []string{"verified"},
+		ProjectID: "project-harness", BaseRevision: "base-harness",
+		VerificationProfile: "test", Priority: "P2",
+	}
+	hash, err := contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := StartRequest{
+		Task:    domain.Task{ID: "task-harness", State: domain.TaskRunning, RunEpoch: 3, Contract: contract, ContractHash: hash},
+		Attempt: domain.ExecutionAttempt{ID: "attempt-harness", TaskID: "task-harness", RunEpoch: 3},
+	}
+	input, err := req.ExternalHarnessInput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.Schema != ExternalHarnessInputSchema || input.TaskID != req.Task.ID || input.AttemptID != req.Attempt.ID || input.RunEpoch != 3 || input.ContractHash != hash {
+		t.Fatalf("external harness input identity mismatch: %+v", input)
+	}
+	if !reflect.DeepEqual(input.GoalContract, contract) {
+		t.Fatalf("external harness input changed Goal Contract: %+v", input.GoalContract)
+	}
+
+	req.Task.Contract.Goal = "tampered"
+	if _, err := req.ExternalHarnessInput(); err == nil {
+		t.Fatal("external harness input accepted a Goal Contract that no longer matches durable contract hash")
+	}
+}
+
 func TestStartRequestBoundaryProjectionPreservesLegacyWireShape(t *testing.T) {
 	req := StartRequest{
 		Task:          domain.Task{ID: "task-boundary"},

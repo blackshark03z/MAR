@@ -728,8 +728,9 @@ func workerProcessTestStart() StartRequest {
 		VerificationProfile: "go-standard",
 		Priority:            "P2",
 	}
+	contractHash, _ := contract.Hash()
 	return StartRequest{
-		Task:          domain.Task{ID: "task-worker-process", Contract: contract, ContractHash: "hash", State: domain.TaskRunning, RunEpoch: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+		Task:          domain.Task{ID: "task-worker-process", Contract: contract, ContractHash: contractHash, State: domain.TaskRunning, RunEpoch: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
 		Attempt:       domain.ExecutionAttempt{ID: "attempt-worker-process", TaskID: "task-worker-process", RunEpoch: 1, WorkerID: "worker", SupervisorID: "supervisor", AuthorityState: domain.AttemptActive, StartedAt: time.Now().UTC(), HeartbeatAt: time.Now().UTC(), LeaseDeadline: time.Now().UTC().Add(time.Minute)},
 		WorkspacePath: tWorkerWorkspacePlaceholder(),
 		Provider:      ProviderConfig{BaseURL: "https://provider.invalid/v1", APIKeyEnv: "MAR_TEST_API_KEY"},

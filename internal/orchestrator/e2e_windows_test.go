@@ -581,10 +581,41 @@ func TestRuntimeE2EExternalHarnessHelper(t *testing.T) {
 	if !exactRun {
 		t.Skip("not running as external harness helper")
 	}
-	if err := os.WriteFile("marker.txt", []byte("MAR HARNESS OK\n"), 0o644); err != nil {
+	inputPath := strings.TrimSpace(os.Getenv(worker.ExternalHarnessInputPathEnv))
+	if inputPath == "" {
+		t.Fatal("external harness input path was not supplied")
+	}
+	raw, err := os.ReadFile(inputPath)
+	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Println("MAR external harness helper completed")
+	var input worker.ExternalHarnessInput
+	if err := json.Unmarshal(raw, &input); err != nil {
+		t.Fatal(err)
+	}
+	if input.Schema != worker.ExternalHarnessInputSchema || input.TaskID == "" || input.AttemptID == "" || input.RunEpoch != 1 {
+		t.Fatalf("invalid task-bound external harness input: %+v", input)
+	}
+	hash, err := input.GoalContract.Hash()
+	if err != nil || hash != input.ContractHash {
+		t.Fatalf("external harness Goal Contract binding mismatch: hash=%q want=%q err=%v", hash, input.ContractHash, err)
+	}
+	const prefix = "Create marker.txt containing "
+	goal := strings.TrimSpace(input.GoalContract.Goal)
+	if !strings.HasPrefix(goal, prefix) || !strings.HasSuffix(goal, ".") {
+		t.Fatalf("external harness did not receive actionable task intent: %q", goal)
+	}
+	content := strings.TrimSuffix(strings.TrimPrefix(goal, prefix), ".")
+	if content == "" {
+		t.Fatal("external harness task intent contained empty marker content")
+	}
+	if err := os.WriteFile(inputPath, []byte("{}"), 0o600); err == nil {
+		t.Fatal("external harness input must be read-only inside the sandbox")
+	}
+	if err := os.WriteFile("marker.txt", []byte(content+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("MAR external harness completed task=%s attempt=%s epoch=%d\n", input.TaskID, input.AttemptID, input.RunEpoch)
 }
 
 func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {

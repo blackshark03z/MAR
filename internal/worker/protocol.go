@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,23 @@ const (
 	BrainWeb      BrainMode = "web"
 	BrainHarness  BrainMode = "harness"
 )
+
+const (
+	ExternalHarnessInputSchema  = "mar-external-harness-input-v1"
+	ExternalHarnessInputPathEnv = "MAR_HARNESS_INPUT"
+)
+
+// ExternalHarnessInput is an ephemeral, task-bound projection for replaceable
+// coding harnesses. It is rebuilt from durable worker-start truth for each
+// attempt and is not a second authority source.
+type ExternalHarnessInput struct {
+	Schema       string              `json:"schema"`
+	TaskID       string              `json:"task_id"`
+	AttemptID    string              `json:"attempt_id"`
+	RunEpoch     int64               `json:"run_epoch"`
+	ContractHash string              `json:"contract_hash"`
+	GoalContract domain.GoalContract `json:"goal_contract"`
+}
 
 type ProviderConfig struct {
 	BrainMode      BrainMode     `json:"brain_mode,omitempty"`
@@ -107,6 +125,24 @@ func (r StartRequest) ExecutionConfig() ExecutionConfig {
 		CommandTimeout: r.CommandTimeout, MemoryPressurePercent: r.MemoryPressurePercent,
 		Capacity: r.Capacity,
 	}
+}
+
+func (r StartRequest) ExternalHarnessInput() (ExternalHarnessInput, error) {
+	contractHash, err := r.Task.Contract.Hash()
+	if err != nil {
+		return ExternalHarnessInput{}, fmt.Errorf("hash external harness Goal Contract: %w", err)
+	}
+	if stored := strings.TrimSpace(r.Task.ContractHash); stored != "" && !strings.EqualFold(stored, contractHash) {
+		return ExternalHarnessInput{}, errors.New("external harness Goal Contract hash mismatch")
+	}
+	return ExternalHarnessInput{
+		Schema:       ExternalHarnessInputSchema,
+		TaskID:       r.Task.ID,
+		AttemptID:    r.Attempt.ID,
+		RunEpoch:     r.Attempt.RunEpoch,
+		ContractHash: contractHash,
+		GoalContract: r.Task.Contract,
+	}, nil
 }
 
 func (r StartRequest) Validate() error {

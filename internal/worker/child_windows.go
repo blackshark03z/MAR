@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -297,14 +298,37 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 }
 
 func runExternalHarnessChild(ctx context.Context, start StartRequest, harness HarnessConfig, encoder *json.Encoder) error {
-	var (
-		executor *aci.WindowsSandboxExecutor
-		err      error
-	)
+	input, err := start.ExternalHarnessInput()
+	if err != nil {
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	inputDir, err := os.MkdirTemp("", "mar-harness-input-")
+	if err != nil {
+		err = fmt.Errorf("create external harness input directory: %w", err)
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	defer os.RemoveAll(inputDir)
+	inputPath := filepath.Join(inputDir, "input.json")
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		err = fmt.Errorf("encode external harness input: %w", err)
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	if err := os.WriteFile(inputPath, inputJSON, 0o600); err != nil {
+		err = fmt.Errorf("write external harness input: %w", err)
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	readPaths := append(append([]string(nil), start.SandboxReadPaths...), inputDir)
+
+	var executor *aci.WindowsSandboxExecutor
 	if !start.Task.Contract.Authority.LocalFileWrite && !start.Task.Contract.Authority.LocalGitWrite {
-		executor, err = aci.NewWindowsReadOnlySandboxExecutorWithWritePaths(start.WorkspacePath, nil, start.SandboxReadPaths...)
+		executor, err = aci.NewWindowsReadOnlySandboxExecutorWithWritePaths(start.WorkspacePath, nil, readPaths...)
 	} else {
-		executor, err = aci.NewWindowsSandboxExecutor(start.WorkspacePath, start.SandboxReadPaths...)
+		executor, err = aci.NewWindowsSandboxExecutor(start.WorkspacePath, readPaths...)
 	}
 	if err != nil {
 		_ = sendChildError(encoder, err)
@@ -326,7 +350,7 @@ func runExternalHarnessChild(ctx context.Context, start StartRequest, harness Ha
 		Path:           harness.Executable,
 		Args:           append([]string(nil), harness.Arguments...),
 		Dir:            start.WorkspacePath,
-		Env:            externalHarnessEnvironment(),
+		Env:            externalHarnessEnvironment(inputPath),
 		MaxOutputBytes: 64 << 10,
 	})
 	if err != nil {
@@ -355,14 +379,15 @@ func runExternalHarnessChild(ctx context.Context, start StartRequest, harness Ha
 	return nil
 }
 
-func externalHarnessEnvironment() []string {
+func externalHarnessEnvironment(inputPath string) []string {
 	keys := []string{"SystemRoot", "WINDIR", "ComSpec", "PATH", "PATHEXT", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "TEMP", "TMP", "ProgramFiles", "ProgramData"}
-	env := make([]string, 0, len(keys))
+	env := make([]string, 0, len(keys)+1)
 	for _, key := range keys {
 		if value := os.Getenv(key); value != "" {
 			env = append(env, key+"="+value)
 		}
 	}
+	env = append(env, ExternalHarnessInputPathEnv+"="+inputPath)
 	return env
 }
 
