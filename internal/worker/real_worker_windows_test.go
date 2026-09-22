@@ -104,8 +104,11 @@ func TestProcessRunnerRealWorkerReturnsAfterFailingGoTool(t *testing.T) {
 	goRoot := filepath.Dir(filepath.Dir(goExe))
 	goBin := filepath.Dir(goExe)
 	sharedCache := filepath.Join(dataRoot, "runtime", "gomodcache")
-	if err := os.MkdirAll(sharedCache, 0o755); err != nil {
-		t.Fatal(err)
+	goBuildCache := filepath.Join(dataRoot, "runtime", "gobuildcache")
+	for _, dir := range []string{sharedCache, goBuildCache} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	const apiKeyEnv = "MAR_REAL_WORKER_FAIL_API_KEY"
 	t.Setenv(apiKeyEnv, "worker-key")
@@ -139,7 +142,7 @@ func TestProcessRunnerRealWorkerReturnsAfterFailingGoTool(t *testing.T) {
 		Provider:         ProviderConfig{BaseURL: provider.URL + "/v1", APIKeyEnv: apiKeyEnv, RequestTimeout: 10 * time.Second},
 		AgentProfile:     agent.Profile{Model: "worker-test-model", ReasoningEffort: "high", BaseInstructions: "Execute only the bounded worker diagnostic goal."},
 		AgentConfig:      agent.Config{MaxTurns: 4, MaxToolCalls: 4, MaxToolCallsPerTurn: 1, MaxTotalTokens: 1000, MaxOutputTokensPerTurn: 200, MaxContextBytes: 96 << 10, MaxResumeBytes: 96 << 10, MaxRequestBytes: 512 << 10, MaxAssistantBytes: 96 << 10, MaxObservationBytes: 48 << 10, MaxDuration: 150 * time.Second},
-		SandboxReadPaths: []string{goRoot, sharedCache}, GoModuleCache: sharedCache,
+		SandboxReadPaths: []string{goRoot, sharedCache}, GoModuleCache: sharedCache, GoBuildCache: goBuildCache,
 	}
 	t.Setenv("MAR_REAL_WORKER_FAIL_HELPER", "1")
 	t.Setenv("PATH", goBin+string(os.PathListSeparator)+os.Getenv("PATH"))

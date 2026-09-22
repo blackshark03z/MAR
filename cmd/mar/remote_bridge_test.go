@@ -78,8 +78,17 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 6 {
+	expectedTools := map[string]struct{}{
+		"brain_respond": {}, "brain_turn": {}, "brain_turn_fast": {},
+		"control": {}, "project": {}, "submit": {}, "task": {},
+	}
+	if len(listed.Tools) != len(expectedTools) {
 		t.Fatalf("remote bridge leaked or lost MCP tools: count=%d", len(listed.Tools))
+	}
+	for _, tool := range listed.Tools {
+		if _, ok := expectedTools[tool.Name]; !ok {
+			t.Fatalf("remote bridge exposed unexpected MCP tool %q", tool.Name)
+		}
 	}
 
 	state = manager.State()
@@ -105,8 +114,13 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(gptListed.Tools) != 6 {
+	if len(gptListed.Tools) != len(expectedTools) {
 		t.Fatalf("GPT link leaked or lost MCP tools: count=%d", len(gptListed.Tools))
+	}
+	for _, tool := range gptListed.Tools {
+		if _, ok := expectedTools[tool.Name]; !ok {
+			t.Fatalf("GPT link exposed unexpected MCP tool %q", tool.Name)
+		}
 	}
 	gpt = connectorState(t, manager.State(), store.RemoteConnectorChatGPTWeb)
 	if gpt.Status != "IDLE" || !gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil || !gpt.ActiveSessionsAvailable || gpt.ActiveSessions != 0 {
