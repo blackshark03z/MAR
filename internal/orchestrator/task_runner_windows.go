@@ -110,6 +110,24 @@ func workerProviderConfig(provider worker.ProviderConfig) worker.ProviderConfig 
 	return worker.ProviderConfig{BrainMode: provider.Mode()}
 }
 
+func workerAgentProfile(mode worker.BrainMode, profile agent.Profile) agent.Profile {
+	switch mode {
+	case worker.BrainProvider:
+		return profile
+	case worker.BrainWeb:
+		return agent.Profile{BaseInstructions: profile.BaseInstructions}
+	default:
+		return agent.Profile{}
+	}
+}
+
+func workerAgentConfig(mode worker.BrainMode, config agent.Config) agent.Config {
+	if mode == worker.BrainHarness {
+		return agent.Config{}
+	}
+	return config
+}
+
 type TaskRunner struct {
 	service     taskService
 	worker      workerProcess
@@ -184,13 +202,14 @@ func (r *TaskRunner) runWorkspaceReady(ctx context.Context, taskID string, works
 		return RunOutcome{}, errors.New("task/attempt state diverged after attempt admission")
 	}
 
+	mode := r.cfg.Provider.Mode()
 	start := worker.StartRequest{
 		Task:                  task,
 		Attempt:               attempt,
 		WorkspacePath:         workspace.Path,
 		Provider:              workerProviderConfig(r.cfg.Provider),
-		AgentProfile:          r.cfg.AgentProfile,
-		AgentConfig:           boundedAgentConfig(r.cfg.AgentConfig, budget),
+		AgentProfile:          workerAgentProfile(mode, r.cfg.AgentProfile),
+		AgentConfig:           workerAgentConfig(mode, boundedAgentConfig(r.cfg.AgentConfig, budget)),
 		HarnessExecutable:     r.cfg.HarnessExecutable,
 		HarnessArguments:      append([]string(nil), r.cfg.HarnessArguments...),
 		SandboxReadPaths:      append([]string{}, r.cfg.SandboxReadPaths...),

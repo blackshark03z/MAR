@@ -213,6 +213,33 @@ func TestWorkerProviderConfigStripsProviderOnlyFieldsOutsideProviderMode(t *test
 	}
 }
 
+func TestWorkerCognitionConfigIsModeScoped(t *testing.T) {
+	profile := agent.Profile{Model: "provider-model", ReasoningEffort: "high", BaseInstructions: "bounded instructions"}
+	config := agent.Config{MaxTurns: 7, MaxToolCalls: 11, MaxTotalTokens: 9000, MaxDuration: 2 * time.Minute}
+
+	if got := workerAgentProfile(worker.BrainProvider, profile); !reflect.DeepEqual(got, profile) {
+		t.Fatalf("provider mode lost agent profile compatibility: got=%+v want=%+v", got, profile)
+	}
+	if got := workerAgentConfig(worker.BrainProvider, config); !reflect.DeepEqual(got, config) {
+		t.Fatalf("provider mode lost agent config compatibility: got=%+v want=%+v", got, config)
+	}
+
+	webProfile := workerAgentProfile(worker.BrainWeb, profile)
+	if webProfile.Model != "" || webProfile.ReasoningEffort != "" || webProfile.BaseInstructions != profile.BaseInstructions {
+		t.Fatalf("web worker retained provider-specific profile fields: %+v", webProfile)
+	}
+	if got := workerAgentConfig(worker.BrainWeb, config); !reflect.DeepEqual(got, config) {
+		t.Fatalf("web worker lost execution-budget config: got=%+v want=%+v", got, config)
+	}
+
+	if got := workerAgentProfile(worker.BrainHarness, profile); got != (agent.Profile{}) {
+		t.Fatalf("external harness retained MAR agent profile: %+v", got)
+	}
+	if got := workerAgentConfig(worker.BrainHarness, config); !reflect.DeepEqual(got, agent.Config{}) {
+		t.Fatalf("external harness retained MAR agent config: %+v", got)
+	}
+}
+
 func TestTaskRunnerConfigAllowsWebBrainWithoutProviderCredentials(t *testing.T) {
 	cfg := TaskRunnerConfig{
 		WorkerID: "worker-runtime", SupervisorID: "supervisor-runtime", LeaseDuration: time.Minute,
