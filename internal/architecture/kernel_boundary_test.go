@@ -55,6 +55,26 @@ func TestKernelPackagesDoNotDependOnCognitionPackages(t *testing.T) {
 	}
 }
 
+func TestMCPRuntimeDoesNotDefaultToProviderBrain(t *testing.T) {
+	root := repoRoot(t)
+	source, err := os.ReadFile(filepath.Join(root, "cmd", "mar", "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, forbidden := range []string{
+		`envOrDefault("MAR_BRAIN_MODE", string(worker.BrainProvider))`,
+		"brainMode = worker.BrainProvider",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("MCP runtime regressed to provider-brain default: %s", forbidden)
+		}
+	}
+	if !strings.Contains(text, `envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb))`) {
+		t.Fatal("MCP runtime no longer has an explicit Web-brain default")
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

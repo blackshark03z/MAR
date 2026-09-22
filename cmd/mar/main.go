@@ -129,7 +129,7 @@ func run(ctx context.Context, args []string) error {
 		fs := flag.NewFlagSet("mcp-stdio", flag.ContinueOnError)
 		dbPath := fs.String("db", defaultDB, "SQLite database path")
 		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
-		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainProvider)), "coding brain mode: provider or web")
+		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: web (default) or provider compatibility")
 		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
 		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
 		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
@@ -156,7 +156,7 @@ func run(ctx context.Context, args []string) error {
 		dbPath := fs.String("db", defaultDB, "SQLite database path")
 		dataRoot := fs.String("data-root", ".mar", "MAR managed data root")
 		listen := fs.String("listen", "127.0.0.1:8787", "loopback address for the local owner UI")
-		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: provider or web")
+		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: web (default) or provider compatibility")
 		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
 		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
 		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
@@ -268,7 +268,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 	}
 	brainMode := worker.BrainMode(strings.ToLower(strings.TrimSpace(opts.BrainMode)))
 	if brainMode == "" {
-		brainMode = worker.BrainProvider
+		brainMode = worker.BrainWeb
 	}
 	switch brainMode {
 	case worker.BrainProvider:

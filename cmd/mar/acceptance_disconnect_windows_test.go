@@ -210,6 +210,7 @@ func TestMain(m *testing.M) {
 		} else {
 			err = run(context.Background(), []string{
 				"mcp-stdio",
+				"-brain", "provider",
 				"-db", os.Getenv("MAR_T7_DB"),
 				"-data-root", os.Getenv("MAR_T7_DATA_ROOT"),
 				"-provider-base-url", os.Getenv("MAR_T7_PROVIDER"),
