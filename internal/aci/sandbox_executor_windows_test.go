@@ -111,6 +111,28 @@ func TestWindowsSandboxExecutorRunsNativeGoToolchain(t *testing.T) {
 	}
 }
 
+func TestWindowsReadOnlySandboxExecutorPreservesExplicitWritePaths(t *testing.T) {
+	root := t.TempDir()
+	auxWrite := t.TempDir()
+	executor, err := NewWindowsReadOnlySandboxExecutorWithWritePaths(root, []string{auxWrite})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if executor.rootWritable {
+		t.Fatal("read-only sandbox executor unexpectedly marks execution root writable")
+	}
+	if len(executor.writePaths) != 1 || !strings.EqualFold(filepath.Clean(executor.writePaths[0]), filepath.Clean(auxWrite)) {
+		t.Fatalf("explicit write paths were not preserved: %v", executor.writePaths)
+	}
+	legacy, err := NewWindowsSandboxExecutor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !legacy.rootWritable {
+		t.Fatal("legacy sandbox constructor must preserve writable execution-root semantics")
+	}
+}
+
 func TestSandboxCommandEnvironmentDoesNotInheritAmbientSecrets(t *testing.T) {
 	root := t.TempDir()
 	executor, err := NewWindowsSandboxExecutor(root)

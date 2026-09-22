@@ -603,6 +603,44 @@ func TestSandboxSharedReadPathSupportsConcurrentTasks(t *testing.T) {
 	}
 }
 
+func TestAppContainerSandboxReadOnlyWorkspaceAllowsReadDeniesWriteAndKeepsExplicitWritePath(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	workspace := t.TempDir()
+	auxWrite := t.TempDir()
+	probe := copySandboxProbe(t, workspace)
+	readPath := filepath.Join(workspace, "source.txt")
+	rootWrite := filepath.Join(workspace, "denied.txt")
+	auxWritePath := filepath.Join(auxWrite, "allowed.txt")
+	if err := os.WriteFile(readPath, []byte("read-only-root"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writable := false
+	result, err := RunSandboxedCommand(context.Background(), SandboxCommandSpec{
+		TaskID:            "sandbox-read-only-workspace",
+		OperationID:       "read-only-root",
+		WorkspaceRoot:     workspace,
+		WorkspaceWritable: &writable,
+		WritePaths:        []string{auxWrite},
+		Path:              probe,
+		Args:              []string{"-test.run=TestSandboxProbeHelper"},
+		Dir:               workspace,
+		Env:                probeEnvironment("read-only-root", rootWrite, auxWritePath, readPath, "", ""),
+		MaxOutputBytes:     32 << 10,
+	})
+	if err != nil {
+		t.Fatalf("read-only workspace probe failed: %v output=%s", err, result.Output)
+	}
+	if !strings.Contains(result.Output, "SANDBOX_READ_ONLY_ROOT_OK") {
+		t.Fatalf("unexpected read-only workspace output: %q", result.Output)
+	}
+	if _, err := os.Stat(rootWrite); !os.IsNotExist(err) {
+		t.Fatalf("read-only workspace mutation unexpectedly materialized: %v", err)
+	}
+	if got, err := os.ReadFile(auxWritePath); err != nil || string(got) != "aux-write" {
+		t.Fatalf("explicit auxiliary write path was not writable: got=%q err=%v", got, err)
+	}
+}
+
 func TestSandboxSuccessfulRootCancellationConfirmsDescendantTerminationBeforeReturn(t *testing.T) {
 	testsupport.RequireOutsideAppContainer(t)
 	workspace := t.TempDir()
@@ -665,6 +703,21 @@ func TestSandboxProbeHelper(t *testing.T) {
 		return
 	}
 	switch mode {
+	case "read-only-root":
+		rootWrite := os.Getenv("MAR_PROBE_INSIDE")
+		auxWrite := os.Getenv("MAR_PROBE_OUTSIDE")
+		readPath := os.Getenv("MAR_PROBE_SECRET")
+		got, err := os.ReadFile(readPath)
+		if err != nil || string(got) != "read-only-root" {
+			t.Fatalf("read-only root source read failed: got=%q err=%v", got, err)
+		}
+		if err := os.WriteFile(rootWrite, []byte("must-fail"), 0o644); err == nil {
+			t.Fatal("read-only workspace write unexpectedly succeeded")
+		}
+		if err := os.WriteFile(auxWrite, []byte("aux-write"), 0o644); err != nil {
+			t.Fatalf("explicit auxiliary write failed: %v", err)
+		}
+		fmt.Println("SANDBOX_READ_ONLY_ROOT_OK")
 	case "authority":
 		inside := os.Getenv("MAR_PROBE_INSIDE")
 		outside := os.Getenv("MAR_PROBE_OUTSIDE")

@@ -31,11 +31,12 @@ const (
 var ErrSandboxTerminationUnconfirmed = errors.New("sandbox process-tree termination is unconfirmed")
 
 type SandboxCommandSpec struct {
-	TaskID         string
-	OperationID    string
-	WorkspaceRoot  string
-	ReadPaths      []string
-	WritePaths     []string
+	TaskID            string
+	OperationID       string
+	WorkspaceRoot     string
+	WorkspaceWritable *bool
+	ReadPaths         []string
+	WritePaths        []string
 	Path           string
 	Args           []string
 	Dir            string
@@ -204,7 +205,11 @@ func RunSandboxedCommand(ctx context.Context, spec SandboxCommandSpec) (result S
 	}
 	defer releaseRegistryRead()
 
-	grants := map[string]bool{workspace: true}
+	workspaceWritable := true
+	if spec.WorkspaceWritable != nil {
+		workspaceWritable = *spec.WorkspaceWritable
+	}
+	grants := map[string]bool{workspace: workspaceWritable}
 	for _, readPath := range spec.ReadPaths {
 		readPath = strings.TrimSpace(readPath)
 		if readPath == "" {
