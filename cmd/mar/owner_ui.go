@@ -301,10 +301,12 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		"-db", opts.DBPath,
 		"-data-root", opts.DataRoot,
 		"-brain", opts.BrainMode,
-		"-model", opts.Model,
 		"-reasoning", opts.Reasoning,
 		"-go", opts.GoPath,
 		"-max-workers", fmt.Sprint(opts.MaxWorkers),
+	}
+	if strings.TrimSpace(opts.Model) != "" {
+		args = append(args, "-model", opts.Model)
 	}
 	if strings.TrimSpace(opts.ProviderBaseURL) != "" {
 		args = append(args, "-provider-base-url", opts.ProviderBaseURL)
@@ -543,7 +545,7 @@ func (b *ownerUIBackend) serveIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *ownerUIBackend) webStdioArgs() []string {
-	return []string{"mcp-stdio", "-db", b.dbPath, "-data-root", b.dataRoot, "-brain", "web", "-model", "gpt-5.6-sol", "-reasoning", "high", "-go", b.goPath, "-max-workers", fmt.Sprint(b.maxWorkers)}
+	return []string{"mcp-stdio", "-db", b.dbPath, "-data-root", b.dataRoot, "-brain", "web", "-reasoning", "high", "-go", b.goPath, "-max-workers", fmt.Sprint(b.maxWorkers)}
 }
 
 func (b *ownerUIBackend) downloadClaudeDesktopPackage(w http.ResponseWriter, _ *http.Request) {

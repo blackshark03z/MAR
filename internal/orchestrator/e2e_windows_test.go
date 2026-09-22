@@ -473,7 +473,7 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
 		Provider:     worker.ProviderConfig{BrainMode: worker.BrainWeb},
-		AgentProfile: agent.Profile{Model: "gpt-5.6-sol", ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		AgentProfile: agent.Profile{ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
 		VerificationProfiles: []verification.Profile{{ID: "go-standard", Commands: []verification.Command{
 			{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 			{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
@@ -582,8 +582,8 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 			if err := json.Unmarshal(envelope.Turn.Request, &req); err != nil {
 				t.Fatal(err)
 			}
-			if req.Model != "gpt-5.6-sol" || len(req.Messages) < 2 || len(req.Tools) == 0 {
-				t.Fatalf("web brain request lost model/context/tools: %+v", req)
+			if req.Model != "" || len(req.Messages) < 2 || len(req.Tools) == 0 {
+				t.Fatalf("web brain request must be model-agnostic and preserve context/tools: %+v", req)
 			}
 			brainTurns++
 			var call model.ToolCall
@@ -672,7 +672,7 @@ func TestRuntimeE2EWebWaitCapacityAllowsThirdReadyTask(t *testing.T) {
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
 		Provider:             worker.ProviderConfig{BrainMode: worker.BrainWeb},
-		AgentProfile:         agent.Profile{Model: "gpt-5.6-sol", ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		AgentProfile:         agent.Profile{ReasoningEffort: "high", BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
 		VerificationProfiles: []verification.Profile{{ID: "web-wait-noop", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
 		SandboxReadPaths:     []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
 		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,

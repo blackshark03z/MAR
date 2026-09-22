@@ -18,6 +18,22 @@ import (
 	"mar/internal/testsupport"
 )
 
+func TestClientRequiresModelIdentityForProviderCompatibility(t *testing.T) {
+	const envName = "MAR_TEST_MODEL_API_KEY_MODEL_REQUIRED"
+	t.Setenv(envName, "key")
+	client, err := openaichat.New(openaichat.Config{BaseURL: "http://127.0.0.1", APIKeyEnv: envName})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Turn(context.Background(), model.TurnRequest{
+		RequestID: "provider-turn",
+		Messages:  []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "provider model is required") {
+		t.Fatalf("provider compatibility must still require an explicit model, got %v", err)
+	}
+}
+
 func TestClientMapsToolConversationAndUsage(t *testing.T) {
 	const envName = "MAR_TEST_MODEL_API_KEY"
 	t.Setenv(envName, "secret-test-key")

@@ -127,6 +127,9 @@ type chatResponse struct {
 }
 
 func (c *Client) Turn(ctx context.Context, req model.TurnRequest) (model.TurnResponse, error) {
+	if strings.TrimSpace(req.Model) == "" {
+		return model.TurnResponse{}, errors.New("OpenAI-compatible provider model is required")
+	}
 	// Enforce MAR's request bound even when a caller injects a custom HTTP
 	// client with no timeout. A shorter caller deadline still wins.
 	turnCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)

@@ -199,7 +199,7 @@ func TestTaskRunnerConfigAllowsWebBrainWithoutProviderCredentials(t *testing.T) 
 		WorkerID: "worker-runtime", SupervisorID: "supervisor-runtime", LeaseDuration: time.Minute,
 		FinalizationTimeout: 5 * time.Second,
 		Provider:            worker.ProviderConfig{BrainMode: worker.BrainWeb},
-		AgentProfile:        agent.Profile{Model: "gpt-5.6-sol", BaseInstructions: "bounded coding worker"},
+		AgentProfile:        agent.Profile{BaseInstructions: "bounded coding worker"},
 	}
 	if err := cfg.validate(); err != nil {
 		t.Fatalf("web brain config should not require provider credentials: %v", err)

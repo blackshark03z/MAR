@@ -80,8 +80,8 @@ func (c TaskRunnerConfig) validate() error {
 			return errors.New("task runner requires agent profile")
 		}
 	case worker.BrainWeb:
-		if strings.TrimSpace(c.AgentProfile.Model) == "" || strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
-			return errors.New("task runner requires agent profile")
+		if strings.TrimSpace(c.AgentProfile.BaseInstructions) == "" {
+			return errors.New("task runner requires agent base instructions")
 		}
 	case worker.BrainHarness:
 		if strings.TrimSpace(c.HarnessExecutable) == "" || !filepath.IsAbs(c.HarnessExecutable) {

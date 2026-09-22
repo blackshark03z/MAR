@@ -132,8 +132,8 @@ func (r StartRequest) Validate() error {
 			return errors.New("worker start requires agent model profile")
 		}
 	case BrainWeb:
-		if strings.TrimSpace(harness.AgentProfile.Model) == "" || strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
-			return errors.New("worker start requires agent model profile")
+		if strings.TrimSpace(harness.AgentProfile.BaseInstructions) == "" {
+			return errors.New("worker start requires agent base instructions")
 		}
 	case BrainHarness:
 		if strings.TrimSpace(harness.Executable) == "" || !filepath.IsAbs(harness.Executable) {

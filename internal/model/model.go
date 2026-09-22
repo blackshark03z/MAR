@@ -38,7 +38,7 @@ type ToolDefinition struct {
 
 type TurnRequest struct {
 	RequestID       string           `json:"request_id"`
-	Model           string           `json:"model"`
+	Model           string           `json:"model,omitempty"`
 	Messages        []Message        `json:"messages"`
 	Tools           []ToolDefinition `json:"tools,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
@@ -54,7 +54,7 @@ type Usage struct {
 
 type TurnResponse struct {
 	ProviderResponseID string  `json:"provider_response_id"`
-	Model              string  `json:"model"`
+	Model              string  `json:"model,omitempty"`
 	Message            Message `json:"message"`
 	FinishReason       string  `json:"finish_reason"`
 	Usage              Usage   `json:"usage"`
@@ -86,9 +86,6 @@ func (g *Gateway) Turn(ctx context.Context, req TurnRequest) (TurnResponse, erro
 func ValidateTurnRequest(req TurnRequest) error {
 	if strings.TrimSpace(req.RequestID) == "" {
 		return errors.New("request_id is required")
-	}
-	if strings.TrimSpace(req.Model) == "" {
-		return errors.New("model is required")
 	}
 	if len(req.Messages) == 0 {
 		return errors.New("at least one message is required")

@@ -132,7 +132,7 @@ func run(ctx context.Context, args []string) error {
 		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: web (default) or provider compatibility")
 		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
 		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
-		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
+		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name (provider compatibility only)")
 		reasoning := fs.String("reasoning", envOrDefault("MAR_REASONING_EFFORT", "high"), "agent reasoning effort")
 		goPath := fs.String("go", defaultGoExecutable(), "Go executable used by the built-in go-standard verification profile")
 		maxWorkers := fs.Int("max-workers", 2, "maximum concurrent MAR worker processes")
@@ -159,15 +159,12 @@ func run(ctx context.Context, args []string) error {
 		brainMode := fs.String("brain", envOrDefault("MAR_BRAIN_MODE", string(worker.BrainWeb)), "coding brain mode: web (default) or provider compatibility")
 		providerBaseURL := fs.String("provider-base-url", os.Getenv("MAR_MODEL_BASE_URL"), "OpenAI-compatible model provider base URL (provider brain mode)")
 		apiKeyEnv := fs.String("api-key-env", envOrDefault("MAR_MODEL_API_KEY_ENV", "OPENAI_API_KEY"), "environment variable containing the model provider API key (provider brain mode)")
-		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name; web mode defaults to gpt-5.6-sol")
+		modelName := fs.String("model", os.Getenv("MAR_MODEL"), "agent model name (provider compatibility only)")
 		reasoning := fs.String("reasoning", envOrDefault("MAR_REASONING_EFFORT", "high"), "agent reasoning effort")
 		goPath := fs.String("go", defaultGoExecutable(), "Go executable used by built-in verification profiles")
 		maxWorkers := fs.Int("max-workers", 2, "maximum concurrent MAR worker processes")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
-		}
-		if strings.TrimSpace(*modelName) == "" && strings.EqualFold(strings.TrimSpace(*brainMode), string(worker.BrainWeb)) {
-			*modelName = "gpt-5.6-sol"
 		}
 		return runOwnerUI(ctx, ownerUIOptions{
 			DBPath:          *dbPath,
@@ -276,9 +273,7 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			return errors.New("provider brain mode requires provider-base-url, api-key-env and model")
 		}
 	case worker.BrainWeb:
-		if strings.TrimSpace(opts.Model) == "" {
-			opts.Model = "gpt-5.6-sol"
-		}
+		opts.Model = ""
 	default:
 		return errors.New("brain mode must be provider or web")
 	}

@@ -35,6 +35,16 @@ func TestGatewayValidatesBeforeProviderCall(t *testing.T) {
 	}
 }
 
+func TestGenericTurnRequestAllowsMissingModelIdentity(t *testing.T) {
+	req := model.TurnRequest{
+		RequestID: "web-turn",
+		Messages:  []model.Message{{Role: model.RoleUser, Content: "decide"}},
+	}
+	if err := model.ValidateTurnRequest(req); err != nil {
+		t.Fatalf("generic turn protocol should not own model identity: %v", err)
+	}
+}
+
 func TestValidToolConversationPassesValidation(t *testing.T) {
 	req := model.TurnRequest{
 		RequestID: "req-2",

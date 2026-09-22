@@ -148,9 +148,6 @@ func New(gateway ModelGateway, tools ToolRuntime, contextBuilder ContextBuilder,
 	if checkpoints == nil {
 		return nil, errors.New("agent semantic checkpoint store is required")
 	}
-	if strings.TrimSpace(profile.Model) == "" {
-		return nil, errors.New("agent model profile is required")
-	}
 	if strings.TrimSpace(profile.BaseInstructions) == "" {
 		return nil, errors.New("agent base instructions are required")
 	}
