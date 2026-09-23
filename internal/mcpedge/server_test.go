@@ -128,6 +128,9 @@ func (f *fakeBackend) FindProjectFiles(_ context.Context, projectID, query strin
 	}
 	return service.ProjectFindResult{ProjectID: projectID, Query: query, Matches: []service.ProjectFindMatch{{Path: "README.md", Kind: "file", Rank: 0}}}, nil
 }
+func (f *fakeBackend) BuildProjectContextBatch(_ context.Context, projectID, query string, maxResults, maxFiles, maxBytes int) (service.ProjectContextBatchResult, error) {
+	return service.ProjectContextBatchResult{ProjectID: projectID, Query: query}, nil
+}
 func (f *fakeBackend) SearchProjectText(_ context.Context, projectID, path, query string, maxResults int) (service.ProjectSearchResult, error) {
 	if projectID == "" {
 		return service.ProjectSearchResult{}, errors.New("project_id is required for project search")
@@ -687,5 +690,25 @@ func TestProjectAttachExplicitNetworkAllowed(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "\"network_allowed\":true") {
 		t.Fatalf("attach did not preserve explicit network authority: %s", raw)
+	}
+}
+func TestCallProjectContextBatch(t *testing.T) {
+	value, err := callProject(context.Background(), &fakeBackend{}, projectArgs{
+		Operation:  "context_batch",
+		ProjectID:  "mar",
+		Query:      "Project Brain",
+		MaxResults: 8,
+		MaxEntries: 6,
+		MaxBytes:   32 << 10,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := value["context_batch"].(service.ProjectContextBatchResult)
+	if !ok {
+		t.Fatalf("unexpected context_batch result type: %T", value["context_batch"])
+	}
+	if result.ProjectID != "mar" || result.Query != "Project Brain" {
+		t.Fatalf("unexpected context_batch result: %+v", result)
 	}
 }

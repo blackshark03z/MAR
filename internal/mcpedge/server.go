@@ -28,6 +28,7 @@ type Backend interface {
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
 	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
+	BuildProjectContextBatch(context.Context, string, string, int, int, int) (service.ProjectContextBatchResult, error)
 	FindProjectFiles(context.Context, string, string, int) (service.ProjectFindResult, error)
 	ProjectGitStatus(context.Context, string) (service.ProjectGitStatusResult, error)
 	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
@@ -107,7 +108,7 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation      string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
+	Operation      string             `json:"operation" jsonschema:"context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
 	ProjectID      string             `json:"project_id,omitempty"`
 	Path           string             `json:"path,omitempty"`
 	NetworkAllowed bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
@@ -117,6 +118,7 @@ type projectArgs struct {
 	Reads          []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
 	MaxEntries     int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
 	MaxResults     int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
+	MaxBytes       int                `json:"max_bytes,omitempty" jsonschema:"bounded snippet budget for context_batch"`
 }
 
 type actionChangeArgs struct {
@@ -190,7 +192,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, read, read_many, find, search, git_status, git_diff, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, build one lightweight context_batch from existing find/search/read primitives, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -257,6 +259,12 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"projects": items}, nil
+	case "context_batch":
+		result, err := backend.BuildProjectContextBatch(ctx, strings.TrimSpace(args.ProjectID), args.Query, args.MaxResults, args.MaxEntries, args.MaxBytes)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"context_batch": result}, nil
 	case "read":
 		result, err := backend.ReadProjectFile(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path))
 		if err != nil {
@@ -327,7 +335,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, read_many, find, search, git_status, git_diff, attach, detach, or list")
+		return nil, errors.New("project operation must be context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list")
 	}
 }
 
