@@ -198,7 +198,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, apply_and_verify, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callAction(ctx, backend, args)
 			if err != nil {

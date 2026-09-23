@@ -124,7 +124,7 @@ Normal `tools/list` exposes seven canonical domain tools:
 
 `project`, `action`, `submit`, `task`, `control`, `brain_turn`, `brain_respond`.
 
-`project` is the bounded discovery/attach surface. Git attach stays fail-closed by default; when trusted-owner host verification is needed, the client can set `network_allowed=true` in that same attach call. `action` is the Trusted Owner Fast Path for ordinary development: hash-guarded create/replace, exact-hash patch, argv-only bounded run, Git stage/commit, and non-force push gated by project policy, with no durable Goal/task/brain lifecycle. `submit`, `task`, and `control` retain the governed high-assurance workflow; `brain_turn` and `brain_respond` remain its external-cognition relay.
+`project` is the bounded discovery/attach surface. Git attach stays fail-closed by default; when trusted-owner host verification is needed, the client can set `network_allowed=true` in that same attach call. `action` is the Trusted Owner Fast Path for ordinary development: hash-guarded create/replace, exact-hash patch, argv-only bounded run or stop-on-failure `run_many`, Git branch/worktree helpers, stage/commit, and non-force push gated by project policy, with no durable Goal/task/brain lifecycle. `submit`, `task`, and `control` retain the governed high-assurance workflow; `brain_turn` and `brain_respond` remain its external-cognition relay.
 
 Use `action` by default for normal single-owner edit/test/commit work. Use the governed Goal path when independent candidate verification, publication authorization, or recovery guarantees are actually required.
 
