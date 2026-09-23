@@ -28,6 +28,7 @@ type Backend interface {
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
 	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
+	FindProjectFiles(context.Context, string, string, int) (service.ProjectFindResult, error)
 	ProjectGitStatus(context.Context, string) (service.ProjectGitStatusResult, error)
 	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
 	WriteProjectFile(context.Context, service.ProjectWriteRequest) (service.ProjectWriteResult, error)
@@ -100,7 +101,7 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation  string             `json:"operation" jsonschema:"context, read, read_many, search, git_status, git_diff, attach, or list"`
+	Operation  string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, or list"`
 	ProjectID  string             `json:"project_id,omitempty"`
 	Path       string             `json:"path,omitempty"`
 	Query      string             `json:"query,omitempty"`
@@ -159,7 +160,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, search text, inspect bounded Git status/diff, or list one bounded directory. Use operation=context, read, read_many, search, git_status, git_diff, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. Use operation=context, read, read_many, find, search, git_status, git_diff, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -253,6 +254,12 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			files = append(files, result)
 		}
 		return map[string]any{"files": files}, nil
+	case "find":
+		result, err := backend.FindProjectFiles(ctx, strings.TrimSpace(args.ProjectID), args.Query, args.MaxResults)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"find": result}, nil
 	case "search":
 		result, err := backend.SearchProjectText(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path), args.Query, args.MaxResults)
 		if err != nil {
@@ -284,7 +291,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, read_many, search, git_status, git_diff, attach, or list")
+		return nil, errors.New("project operation must be context, read, read_many, find, search, git_status, git_diff, attach, or list")
 	}
 }
 

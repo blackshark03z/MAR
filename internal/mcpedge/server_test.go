@@ -103,6 +103,12 @@ func (f *fakeBackend) CommitProject(_ context.Context, projectID, message string
 func (f *fakeBackend) PushProject(_ context.Context, projectID, remote string) (service.ProjectGitActionResult, error) {
 	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_push", Remote: remote, Branch: "master"}, nil
 }
+func (f *fakeBackend) FindProjectFiles(_ context.Context, projectID, query string, maxResults int) (service.ProjectFindResult, error) {
+	if projectID == "" {
+		return service.ProjectFindResult{}, errors.New("project_id is required for project find")
+	}
+	return service.ProjectFindResult{ProjectID: projectID, Query: query, Matches: []service.ProjectFindMatch{{Path: "README.md", Kind: "file", Rank: 0}}}, nil
+}
 func (f *fakeBackend) SearchProjectText(_ context.Context, projectID, path, query string, maxResults int) (service.ProjectSearchResult, error) {
 	if projectID == "" {
 		return service.ProjectSearchResult{}, errors.New("project_id is required for project search")
