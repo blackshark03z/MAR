@@ -55,6 +55,9 @@ func (s *TaskService) FindProjectFiles(ctx context.Context, projectID, query str
 	}
 	queryLower := strings.ToLower(filepath.ToSlash(query))
 	result := ProjectFindResult{ProjectID: project.ID, Query: query, Matches: []ProjectFindMatch{}}
+	if gitErr := findProjectFilesFromGit(ctx, root, queryLower, &result); gitErr == nil {
+		return finishProjectFind(result, maxResults), nil
+	}
 	errStop := errors.New("project find bound reached")
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -97,6 +100,51 @@ func (s *TaskService) FindProjectFiles(ctx context.Context, projectID, query str
 	if err != nil && !errors.Is(err, errStop) {
 		return ProjectFindResult{}, err
 	}
+	return finishProjectFind(result, maxResults), nil
+}
+
+func findProjectFilesFromGit(ctx context.Context, root, queryLower string, result *ProjectFindResult) error {
+	listing, err := runProjectGit(ctx, root, "ls-files", "-co", "--exclude-standard")
+	if err != nil {
+		return err
+	}
+	seenDirs := make(map[string]struct{})
+	for _, raw := range strings.Split(listing, "\n") {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rel := filepath.ToSlash(strings.TrimSpace(raw))
+		if rel == "" {
+			continue
+		}
+		if result.Scanned >= maxProjectFindEntries {
+			result.Truncated = true
+			break
+		}
+		result.Scanned++
+		if rank, ok := projectFindRank(rel, filepath.Base(rel), queryLower); ok {
+			result.Matches = append(result.Matches, ProjectFindMatch{Path: rel, Kind: "file", Rank: rank})
+		}
+		for dir := filepath.ToSlash(filepath.Dir(rel)); dir != "." && dir != "/" && dir != ""; dir = filepath.ToSlash(filepath.Dir(dir)) {
+			seenDirs[dir] = struct{}{}
+		}
+	}
+	if !result.Truncated {
+		for dir := range seenDirs {
+			if result.Scanned >= maxProjectFindEntries {
+				result.Truncated = true
+				break
+			}
+			result.Scanned++
+			if rank, ok := projectFindRank(dir, filepath.Base(dir), queryLower); ok {
+				result.Matches = append(result.Matches, ProjectFindMatch{Path: dir, Kind: "directory", Rank: rank})
+			}
+		}
+	}
+	return nil
+}
+
+func finishProjectFind(result ProjectFindResult, maxResults int) ProjectFindResult {
 	sort.Slice(result.Matches, func(i, j int) bool {
 		if result.Matches[i].Rank == result.Matches[j].Rank {
 			return result.Matches[i].Path < result.Matches[j].Path
@@ -107,7 +155,7 @@ func (s *TaskService) FindProjectFiles(ctx context.Context, projectID, query str
 		result.Matches = result.Matches[:maxResults]
 		result.Truncated = true
 	}
-	return result, nil
+	return result
 }
 
 func projectFindRank(rel, base, queryLower string) (int, bool) {

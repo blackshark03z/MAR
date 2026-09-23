@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("project", "submit", "task", "control", "brain_turn", "brain_respond")]
+    [ValidateSet("project", "action", "submit", "task", "control", "brain_turn", "brain_respond")]
     [string]$Tool,
 
     [string]$ArgumentsJson = "{}",
@@ -16,6 +16,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $CanonicalTools = @(
+    "action",
+    "action",
     "brain_respond",
     "brain_turn",
     "control",
@@ -24,6 +26,10 @@ $CanonicalTools = @(
     "task"
 )
 
+
+$OptionalTools = @(
+    "brain_turn_fast"
+)
 function Write-AdapterFailure {
     param(
         [string]$Code,
@@ -145,7 +151,7 @@ try {
             exit 5
         }
         $names = @($toolsProperty.Value | ForEach-Object { [string]$_.name } | Sort-Object)
-        $unexpected = @($names | Where-Object { $CanonicalTools -notcontains $_ })
+        $unexpected = @($names | Where-Object { $CanonicalTools -notcontains $_ -and $OptionalTools -notcontains $_ })
         $missing = @($CanonicalTools | Where-Object { $names -notcontains $_ })
 
         if ($unexpected.Count -gt 0 -or $missing.Count -gt 0) {
