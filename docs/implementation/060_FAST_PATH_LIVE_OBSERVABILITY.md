@@ -1,7 +1,7 @@
 # Slice 060 — Fast-Path Live Observability
 
 **Date:** 2026-09-24
-**Status:** IMPLEMENTED CANDIDATE
+**Status:** VERIFIED / ACTIVATED
 **Scope:** additive observability projection only; no authority, task lifecycle, database, or execution-path redesign.
 
 ## Problem proved before implementation
@@ -184,15 +184,12 @@ Before full release qualification:
 - Independent post-commit audit reproduced one tool-level error-classification defect: MCP `IsError=true` responses were initially recorded as `outcome=ok` because HTTP/transport success was mistaken for tool success. The candidate now classifies `CallToolResult.IsError` as `outcome=error` and carries an explicit regression for that case.
 - Production `mcpActivityBuffer` benchmark with a full 256-event buffer measured about `279.6 ns/op` on the current Ryzen 5 5500U host, so the bounded copy-on-overwrite implementation is retained instead of introducing a more complex ring structure without measured need.
 
-## Release acceptance still required
+## Release evidence
 
-1. full exact-HEAD `go test -p 1 -count=1 -timeout 300s ./...`;
-2. `go vet -p 1 ./...`;
-3. `go build -p 1 ./...`;
-4. `git diff --check`;
-5. exact HEAD unchanged and clean;
-6. activate exact candidate;
-7. from the already-connected ChatGPT path, make a read-only AutoVideoPipeline fast-path call;
-8. verify live `/api/runtime` exposes matching `start/complete` metadata for AutoVideoPipeline without creating an active durable task;
-9. verify runtime remains `HEALTHY / ALIGNED / trusted_for_release=true`;
-10. only then mark Slice 060 VERIFIED / ACTIVATED.
+Exact revision `c7f7e2922abd12af3080d9146d30954f602d5c80` completed the full release gate with `test=0`, `vet=0`, `build=0`, `diff_check=0`, unchanged HEAD before/after, and a clean tree. That exact revision was activated live and reported `HEALTHY / ALIGNED / trusted_for_release=true` with manifest `ALIGNED` and the OpenAI Secure Tunnel connected/ready/healthy.
+
+Live acceptance from the already-connected ChatGPT path then called read-only `project.context` against `local-autovideopipeline-d9b02213edc39140`. `/api/runtime` exposed the matching `start` and `complete` events with canonical tool=`project`, operation=`context`, project id, duration `39 ms`, and outcome=`ok`. The active durable AutoVideoPipeline task count remained `0`, proving fast-path work is visible without being converted into a MAR task or lifecycle.
+
+A second live `action.run` read-only proof produced matching start/complete metadata with duration and outcome while leaving the AutoVideoPipeline repository under its independent concurrent development flow. The earlier shadow proof separately demonstrated true mid-flight visibility before completion.
+
+Slice 060 is therefore VERIFIED / ACTIVATED. Architecture/kernel semantics remain frozen; this is an additive observability projection only.
