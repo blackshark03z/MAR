@@ -282,4 +282,89 @@ button:hover:not(:disabled){background:#202c39;border-color:rgba(207,220,236,.28
 .usage-bar{background:linear-gradient(180deg,#77adf7,#568ddc);box-shadow:none}.usage-bar-wrap span{color:#8d9baa}
 .modal-backdrop,.drawer-backdrop{background:rgba(3,6,10,.72)}.folder-browser-modal,.task-drawer{background:#10171f;border-color:var(--line)}.folder-browser-list{background:#0d141c;border-color:var(--line)}
 
+/* eye-comfort typography — lower luminance, less shouting, more breathing room */
+:root{
+  --text:#dbe2ea;
+  --muted:#9aa6b5;
+  --subtle:#7f8b99;
+}
+body{
+  color:var(--text);
+  font-family:"Segoe UI Variable Text","Segoe UI",Inter,system-ui,-apple-system,sans-serif;
+  font-weight:400;
+  line-height:1.48;
+  text-rendering:optimizeLegibility;
+}
+.page-header h1{color:#e8edf3;font-weight:680;letter-spacing:-.035em}
+.page-header p{color:#9ca8b6;line-height:1.55}
+.panel-title h2{color:#dfe6ed;font-weight:650;letter-spacing:-.006em}
+.panel-title small,.panel-subtitle{color:#8f9baa;line-height:1.45}
+.command-context strong,.rail-brand strong{color:#e2e8ef;font-weight:650}
+.command-context span,.rail-brand span,.rail-scope>span,.rail-foot{color:#818d9b}
+.rail-nav button{color:#99a5b4;font-weight:500}
+.rail-nav button.active{color:#e3e9ef;font-weight:600}
+.command-signal,.command-stat{color:#99a5b3;font-weight:450}
+.command-signal b{font-weight:650;letter-spacing:.08em}
+.page-kicker{
+  color:#8391a1;
+  font-size:9px;
+  font-weight:650;
+  letter-spacing:.11em;
+  text-transform:none;
+}
+.now-answer span,.overview-answer>div:last-child>span,.now-metrics span,.overview-rail span{
+  color:#8e9aa8;
+  font-weight:600;
+  letter-spacing:.045em;
+  text-transform:none;
+}
+.now-answer strong,.overview-answer h2,.now-metrics b,.overview-rail b{
+  color:#e3e9ef;
+  font-weight:650;
+}
+.now-answer p,.overview-answer p,.now-metrics small,.overview-rail small{color:#98a4b2;line-height:1.45}
+.chart-kpis span,.metric-box span{
+  color:#929eac;
+  font-weight:600;
+  letter-spacing:.035em;
+  text-transform:none;
+}
+.chart-kpis b,.metric-box b{color:#dce4ec;font-weight:620}
+.chart-legend,.activity-pulse-wrap{color:#939fac}
+.flow-row strong,.task-item-top strong{color:#dce3ea;font-weight:600}
+.flow-row small,.task-item-meta{color:#909caa;line-height:1.45}
+.operation-row{color:#bdc7d2}
+.operation-row time,.operation-row small{color:#8794a3}
+.operation-row code,.copy-row code{color:#9fb6d2}
+.status-badge,.support-chip,.connection-chip{
+  font-weight:600;
+  letter-spacing:0;
+  text-transform:none;
+}
+.provider-metrics span{
+  color:#909caa;
+  font-weight:600;
+  letter-spacing:.035em;
+  text-transform:none;
+}
+.provider-metrics b,.connection-head h2{color:#dfe6ed;font-weight:630}
+.connection-head p,.connection-summary,.connection-link>span,.connection-hint{color:#939fac;line-height:1.5}
+.workspace-title strong{color:#dfe6ed;font-weight:620}
+.workspace-card code{color:#9cacc0}.workspace-card small,.policy-checks{color:#909caa}
+.detail-head h2{color:#e1e7ed;font-weight:650;line-height:1.4}
+.detail-head code,.detail-tabs button{color:#909caa}
+.eyebrow{
+  color:#94b5e8;
+  font-weight:650;
+  letter-spacing:.045em;
+  text-transform:none;
+}
+.task-message{color:#bbc7d4;line-height:1.55}
+.empty-state{color:#84909e}.empty-state strong{color:#b8c2cd;font-weight:600}
+button,.primary-button,.danger-button{font-weight:560}
+.primary-button{color:#f1f5f8}
+table{color:#bac4cf}th{color:#939fac;font-weight:600}
+input,textarea,select{font-weight:400}
+::placeholder{color:#74808e;opacity:1}
+
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important}}
