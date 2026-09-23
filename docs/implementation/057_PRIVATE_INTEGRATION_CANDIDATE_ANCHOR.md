@@ -1,7 +1,7 @@
 # Slice 057 — Private Integration Candidate Anchor + Exact OID Revalidation
 
 **Date:** 2026-09-23  
-**Status:** IMPLEMENTED CANDIDATE  
+**Status:** VERIFIED / ACTIVATED
 **Scope:** optional governed high-assurance integration only; no fast-path change and no lifecycle/schema redesign.
 
 ## Goal
@@ -127,4 +127,10 @@ Current candidate:
 - `TestPreparedAttemptRejectsFreshResultCandidateOIDMismatch` proves exact candidate OID binding;
 - `TestPreparedCandidateAnchorIsCleanedWhenCancellationWinsBeforeDispatch` proves cancellation wins without canonical publication or private-ref leak.
 
-Full exact-HEAD test/vet/build/diff-check is still required before this slice is marked verified/activated.
+## Release evidence
+
+Exact revision `2b95bfd61ea1f198f7eed2253a69c49d9d44543a` completed the full exact-HEAD release gate with `test=0`, `vet=0`, `build=0`, `diff_check=0`, identical HEAD before/after, and a clean working tree. Local HEAD and `origin/master` matched that same revision before activation.
+
+The same exact revision was activated live. Runtime reported `HEALTHY / ALIGNED / trusted_for_release=true`; manifest identity was `ALIGNED`; the OpenAI Secure Tunnel reported connected / ready / healthy.
+
+This closes the previously listed governed-publication blockers for private non-canonical staging, fresh exact-OID verification, OID handoff/import, and CAS-at-ref publication semantics. The canonical expected-head `git update-ref` CAS was already present and was retained rather than redesigned.
