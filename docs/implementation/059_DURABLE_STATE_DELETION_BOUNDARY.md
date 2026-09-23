@@ -1,7 +1,7 @@
 # Slice 059 — Durable-State Deletion Boundary
 
 **Date:** 2026-09-24
-**Status:** IMPLEMENTED CANDIDATE
+**Status:** VERIFIED / ACTIVATED
 **Scope:** governed checkpoint/retention boundary only; no task lifecycle, SQLite schema, MCP, or Trusted Owner Fast Path expansion.
 
 ## Goal
@@ -125,4 +125,28 @@ Before this blocker may be marked closed:
 7. exact revision activated live as `HEALTHY / ALIGNED / trusted_for_release=true`;
 8. post-activation live DB shows REHYDRATED active checkpoint-ref count converging downward while COMPACTED recovery refs are preserved.
 
-Only then may MAR architecture closure be marked stable.
+## Release evidence
+
+Exact code-bearing revision `28fba4e2ff91c2d475930c75f0af172a10f6e7b9` completed the full release gate with:
+
+- `go test -p 1 -count=1 -timeout 300s ./...` — PASS;
+- `go vet -p 1 ./...` — PASS;
+- `go build -p 1 ./...` — PASS;
+- `git diff --check` — PASS;
+- identical HEAD before/after and a clean working tree;
+- local HEAD == `origin/master`.
+
+The same revision was activated live and reported `HEALTHY / ALIGNED / trusted_for_release=true`, manifest `ALIGNED`, with the OpenAI Secure Tunnel connected / ready / healthy.
+
+Live deletion-boundary acceptance after activation:
+
+- before activation: REHYDRATED active checkpoint refs = 16;
+- after activation: REHYDRATED active checkpoint refs = 0;
+- durable released receipts = 16;
+- COMPACTED active recovery refs = 134 before and 134 after;
+- physical `D:\MAR` checkpoint Git refs = 132 before and 116 after, exactly 16 released;
+- runtime remained healthy/aligned after cleanup.
+
+All 16 eligible live rows belonged to project `mar` at `D:\MAR`. No COMPACTED recovery authority was deleted.
+
+The durable-state deletion-boundary blocker is closed. Together with Slices 057 and 058, the finite kernel closure list is empty. MAR architecture closure may therefore be marked STABLE, subject to the repository's final docs-only closeout HEAD remaining exact-qualified and activated.
