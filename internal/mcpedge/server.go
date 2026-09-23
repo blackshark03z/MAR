@@ -34,6 +34,7 @@ type Backend interface {
 	WriteProjectFile(context.Context, service.ProjectWriteRequest) (service.ProjectWriteResult, error)
 	ApplyProjectPatch(context.Context, service.ProjectPatchRequest) (service.ProjectPatchResult, error)
 	RunProjectCommand(context.Context, string, string, []string, string, int, int) (service.ProjectCommandResult, error)
+	RunProjectCommands(context.Context, string, []service.ProjectVerifyCommand) (service.ProjectCommandBatchResult, error)
 	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
 	CommitProject(context.Context, string, string) (service.ProjectGitActionResult, error)
 	PushProject(context.Context, string, string) (service.ProjectGitActionResult, error)
@@ -136,7 +137,7 @@ type actionVerifyArgs struct {
 }
 
 type actionArgs struct {
-	Operation      string             `json:"operation" jsonschema:"write, patch, run, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
+	Operation      string             `json:"operation" jsonschema:"write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
 	ProjectID      string             `json:"project_id"`
 	Path           string             `json:"path,omitempty"`
 	ExpectedSHA256 string             `json:"expected_sha256,omitempty"`
@@ -157,6 +158,7 @@ type actionArgs struct {
 	Purpose        string             `json:"purpose,omitempty"`
 	Changes        []actionChangeArgs `json:"changes,omitempty"`
 	Verify         []actionVerifyArgs `json:"verify,omitempty"`
+	Commands       []actionVerifyArgs `json:"commands,omitempty"`
 }
 
 type taskDomainArgs struct {
@@ -353,6 +355,16 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 			return nil, err
 		}
 		return map[string]any{"run": result}, nil
+	case "run_many":
+		commands := make([]service.ProjectVerifyCommand, 0, len(args.Commands))
+		for _, command := range args.Commands {
+			commands = append(commands, service.ProjectVerifyCommand{Executable: command.Executable, Args: command.Args, Cwd: command.Cwd, TimeoutSeconds: command.TimeoutSeconds, MaxOutputBytes: command.MaxOutputBytes})
+		}
+		result, err := backend.RunProjectCommands(ctx, projectID, commands)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"run_many": result}, nil
 	case "apply_and_verify":
 		changes := make([]service.ProjectOwnedChange, 0, len(args.Changes))
 		for _, change := range args.Changes {
@@ -410,7 +422,7 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be write, patch, run, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
 	}
 }
 

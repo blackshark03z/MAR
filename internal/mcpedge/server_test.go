@@ -98,6 +98,9 @@ func (f *fakeBackend) ApplyProjectPatch(_ context.Context, req service.ProjectPa
 func (f *fakeBackend) RunProjectCommand(_ context.Context, projectID, executable string, args []string, cwd string, timeoutSeconds, maxOutputBytes int) (service.ProjectCommandResult, error) {
 	return service.ProjectCommandResult{ProjectID: projectID, Executable: executable, Args: args, Cwd: cwd, Output: "ok", ExitCode: 0}, nil
 }
+func (f *fakeBackend) RunProjectCommands(_ context.Context, projectID string, commands []service.ProjectVerifyCommand) (service.ProjectCommandBatchResult, error) {
+	return service.ProjectCommandBatchResult{ProjectID: projectID, Results: []service.ProjectCommandResult{}, Passed: true}, nil
+}
 func (f *fakeBackend) ApplyAndVerifyProject(_ context.Context, projectID string, changes []service.ProjectOwnedChange, verification []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error) {
 	return service.ProjectApplyVerifyResult{ProjectID: projectID, Changes: []service.ProjectChangeResult{}, Verification: []service.ProjectCommandResult{}, Passed: true}, nil
 }
