@@ -105,7 +105,12 @@ func (s *SQLite) RequestTaskCancellation(ctx context.Context, controlID, taskID,
 	if err != nil {
 		return domain.TaskControl{}, false, err
 	}
-	if state == domain.TaskComplete || state == domain.TaskFailed || state == domain.TaskCancelled {
+	// INTEGRATING is the publication linearization point. MarkIntegrationDispatched
+	// moves READY_TO_INTEGRATE -> INTEGRATING in the same SQLite transaction that
+	// marks the integration attempt DISPATCHED. Cancellation must either commit
+	// before that transaction and win, or be rejected after publication dispatch;
+	// otherwise a CANCELLED task could still advance the authoritative Git ref.
+	if state == domain.TaskComplete || state == domain.TaskFailed || state == domain.TaskCancelled || state == domain.TaskIntegrating {
 		return domain.TaskControl{}, false, ErrStateConflict
 	}
 	control, err := insertTaskControlTx(ctx, tx, controlID, taskID, idempotencyKey, domain.ControlCancel, payload, now)
