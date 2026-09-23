@@ -52,6 +52,10 @@ func (f *fakeBackend) PendingWebTurn(context.Context, string) (domain.WebTurn, b
 func (f *fakeBackend) RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error) {
 	return domain.WebTurn{}, true, nil
 }
+func (f *fakeBackend) DetachLocalProject(_ context.Context, projectID string) (service.ProjectDetachResult, error) {
+	return service.ProjectDetachResult{Schema: "mar-project-detach-v1", ProjectID: projectID, Root: "C:/repo", Detached: true}, nil
+}
+
 func (f *fakeBackend) AttachLocalPathWithNetwork(_ context.Context, path string, networkAllowed bool) (service.ProjectAttachResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return service.ProjectAttachResult{}, errors.New("local path is required")

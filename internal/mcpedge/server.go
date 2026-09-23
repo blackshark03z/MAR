@@ -43,6 +43,7 @@ type Backend interface {
 	ApplyAndVerifyProject(context.Context, string, []service.ProjectOwnedChange, []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPathWithNetwork(context.Context, string, bool) (service.ProjectAttachResult, error)
+	DetachLocalProject(context.Context, string) (service.ProjectDetachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
 }
 
@@ -105,7 +106,7 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation      string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, or list"`
+	Operation      string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
 	ProjectID      string             `json:"project_id,omitempty"`
 	Path           string             `json:"path,omitempty"`
 	NetworkAllowed bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
@@ -311,6 +312,12 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"attachment": result}, nil
+	case "detach":
+		result, err := backend.DetachLocalProject(ctx, strings.TrimSpace(args.ProjectID))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"detachment": result}, nil
 	case "list":
 		result, err := backend.ListProjectDirectory(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path), args.MaxEntries)
 		if err != nil {
@@ -318,7 +325,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, read_many, find, search, git_status, git_diff, attach, or list")
+		return nil, errors.New("project operation must be context, read, read_many, find, search, git_status, git_diff, attach, detach, or list")
 	}
 }
 

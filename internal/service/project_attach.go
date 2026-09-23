@@ -31,6 +31,31 @@ type ProjectAttachResult struct {
 	Policy           domain.ProjectPolicy `json:"policy"`
 }
 
+type ProjectDetachResult struct {
+	Schema    string `json:"schema"`
+	ProjectID string `json:"project_id"`
+	Root      string `json:"root"`
+	Detached  bool   `json:"detached"`
+}
+
+func (s *TaskService) DetachLocalProject(ctx context.Context, projectID string) (ProjectDetachResult, error) {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ProjectDetachResult{}, errors.New("project_id is required for project detach")
+	}
+	if !strings.HasPrefix(projectID, "local-") {
+		return ProjectDetachResult{}, errors.New("project detach only supports attach-generated local-* projects")
+	}
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return ProjectDetachResult{}, err
+	}
+	if err := s.store.DeleteProject(ctx, projectID); err != nil {
+		return ProjectDetachResult{}, err
+	}
+	return ProjectDetachResult{Schema: "mar-project-detach-v1", ProjectID: projectID, Root: project.Root, Detached: true}, nil
+}
+
 func (s *TaskService) AttachLocalPath(ctx context.Context, requestedPath string) (ProjectAttachResult, error) {
 	return s.AttachLocalPathWithNetwork(ctx, requestedPath, false)
 }

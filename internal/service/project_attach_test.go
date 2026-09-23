@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,5 +167,34 @@ func TestListProjectDirectoryIsBoundedAndRejectsEscape(t *testing.T) {
 	_, err = svc.ListProjectDirectory(context.Background(), project.ID, "..", 10)
 	if err == nil || !strings.Contains(err.Error(), "escapes") {
 		t.Fatalf("expected escape rejection: %v", err)
+	}
+}
+
+func TestDetachLocalProjectOnlyRemovesAttachGeneratedProject(t *testing.T) {
+	svc := newAttachService(t)
+	root := t.TempDir()
+	got, err := svc.AttachLocalPath(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got.ProjectID, "local-") {
+		t.Fatalf("expected attach-generated local project id, got %q", got.ProjectID)
+	}
+	detached, err := svc.DetachLocalProject(context.Background(), got.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !detached.Detached || detached.ProjectID != got.ProjectID {
+		t.Fatalf("unexpected detach result: %+v", detached)
+	}
+	if _, err := svc.store.GetProject(context.Background(), got.ProjectID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("expected detached project to be absent, got %v", err)
+	}
+}
+
+func TestDetachLocalProjectRejectsCanonicalProjectID(t *testing.T) {
+	svc := newAttachService(t)
+	if _, err := svc.DetachLocalProject(context.Background(), "mar"); err == nil {
+		t.Fatal("expected canonical project detach rejection")
 	}
 }

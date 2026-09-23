@@ -484,7 +484,9 @@ func (s *SQLite) applyWorkspacePathSharingMigration(ctx context.Context) (retErr
 		}
 	}()
 	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil { return fmt.Errorf("begin migration 17: %w", err) }
+	if err != nil {
+		return fmt.Errorf("begin migration 17: %w", err)
+	}
 	defer tx.Rollback()
 	const script = `
 CREATE TABLE workspaces_v17 (
@@ -508,15 +510,29 @@ DROP TABLE workspaces;
 ALTER TABLE workspaces_v17 RENAME TO workspaces;
 CREATE INDEX idx_workspaces_project_state ON workspaces(project_id, state);
 `
-	if _, err := tx.ExecContext(ctx, script); err != nil { return fmt.Errorf("apply migration 17: %w", err) }
-	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=17;"); err != nil { return fmt.Errorf("mark migration 17: %w", err) }
-	if err := tx.Commit(); err != nil { return fmt.Errorf("commit migration 17: %w", err) }
-	if _, err := s.db.ExecContext(ctx, "PRAGMA foreign_keys=ON;"); err != nil { return fmt.Errorf("restore foreign keys after migration 17: %w", err) }
+	if _, err := tx.ExecContext(ctx, script); err != nil {
+		return fmt.Errorf("apply migration 17: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "PRAGMA user_version=17;"); err != nil {
+		return fmt.Errorf("mark migration 17: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit migration 17: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "PRAGMA foreign_keys=ON;"); err != nil {
+		return fmt.Errorf("restore foreign keys after migration 17: %w", err)
+	}
 	rows, err := s.db.QueryContext(ctx, "PRAGMA foreign_key_check;")
-	if err != nil { return fmt.Errorf("foreign key check after migration 17: %w", err) }
+	if err != nil {
+		return fmt.Errorf("foreign key check after migration 17: %w", err)
+	}
 	defer rows.Close()
-	if rows.Next() { return errors.New("migration 17 produced foreign-key violations") }
-	if err := rows.Err(); err != nil { return fmt.Errorf("foreign key check after migration 17: %w", err) }
+	if rows.Next() {
+		return errors.New("migration 17 produced foreign-key violations")
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("foreign key check after migration 17: %w", err)
+	}
 	return nil
 }
 
@@ -563,6 +579,33 @@ func (s *SQLite) GetProject(ctx context.Context, id string) (domain.Project, err
 		return domain.Project{}, fmt.Errorf("parse project created_at: %w", err)
 	}
 	return p, nil
+}
+
+func (s *SQLite) DeleteProject(ctx context.Context, projectID string) error {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("begin delete project: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_policies WHERE project_id = ?`, projectID); err != nil {
+		return fmt.Errorf("delete project policy: %w", err)
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, projectID)
+	if err != nil {
+		return fmt.Errorf("delete project: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete project rows affected: %w", err)
+	}
+	if rows == 0 {
+		return ErrNotFound
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete project: %w", err)
+	}
+	return nil
 }
 
 func (s *SQLite) ListProjects(ctx context.Context) ([]domain.Project, error) {
