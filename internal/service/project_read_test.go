@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +34,8 @@ func TestReadProjectFileInfersUniqueProjectWithoutGoalContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.ProjectID != "b" || got.Path != "note.txt" || got.Content != "hello from bounded read\n" {
+	digest := sha256.Sum256([]byte("hello from bounded read\n"))
+	if got.ProjectID != "b" || got.Path != "note.txt" || got.Content != "hello from bounded read\n" || got.SHA256 != hex.EncodeToString(digest[:]) {
 		t.Fatalf("unexpected project read: %+v", got)
 	}
 }

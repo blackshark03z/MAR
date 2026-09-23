@@ -75,7 +75,7 @@ func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string)
 	if projectID == "" {
 		projectID = "inferred-project"
 	}
-	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "first\nsecond\nthird\n", SizeBytes: 19}, nil
+	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "first\nsecond\nthird\n", SizeBytes: 19, SHA256: strings.Repeat("a", 64)}, nil
 }
 func (f *fakeBackend) ProjectGitStatus(_ context.Context, projectID string) (service.ProjectGitStatusResult, error) {
 	if projectID == "" {

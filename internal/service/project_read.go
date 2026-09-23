@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +24,7 @@ type ProjectReadResult struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
 	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
 	StartLine int    `json:"start_line,omitempty"`
 	EndLine   int    `json:"end_line,omitempty"`
 	Truncated bool   `json:"truncated,omitempty"`
@@ -69,7 +72,8 @@ func (s *TaskService) ReadProjectFile(ctx context.Context, projectID, requestedP
 	if err != nil {
 		return ProjectReadResult{}, fmt.Errorf("resolve project-relative path: %w", err)
 	}
-	return ProjectReadResult{ProjectID: project.ID, Path: filepath.ToSlash(rel), Content: string(payload), SizeBytes: int64(len(payload))}, nil
+	digest := sha256.Sum256(payload)
+	return ProjectReadResult{ProjectID: project.ID, Path: filepath.ToSlash(rel), Content: string(payload), SizeBytes: int64(len(payload)), SHA256: hex.EncodeToString(digest[:])}, nil
 }
 
 func resolveProjectReadTarget(projects []domain.Project, projectID, requestedPath string) (domain.Project, string, error) {
