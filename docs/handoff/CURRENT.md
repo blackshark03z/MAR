@@ -14,7 +14,9 @@ The historical bounded V1.3 B–D release checkpoint remains `ff2fcc6ad2eed9118e
 
 The repository has since advanced on a **post-V1.3 capability line** containing later production changes: owner permission/network/remote-Git behavior, cognition-delta adapter/guidance, and bounded local-path attach/list access (including `research_only` fail-closed access for non-Git research paths). The base entering this reconciliation is `3e44b765eae34a2c1c1c1d3cc874385dceae18bd`.
 
-**Next safe action:** run authoritative current-head `go-release` qualification for the accumulated post-V1.3 capability line. If it passes and integrates, activate that same exact revision and prove runtime `HEALTHY / ALIGNED / trusted_for_release=true` plus local/remote convergence. Do not open a new optimization slice merely because one is possible.
+**Current release truth:** the accumulated post-V1.3 capability line is release-qualified and activated at exact revision `2782f971d7ce2e885078c4d5b7cbc33962471cec`. Exact-HEAD release gate PASS (`go test -p 1 -count=1 -timeout 300s ./...`, `go vet -p 1 ./...`, `go build -p 1 ./...`, `git diff --check`), local/remote Git identity converged, and live runtime reports `HEALTHY / ALIGNED / trusted_for_release=true`; OpenAI Secure Tunnel is connected, ready, and healthy.
+
+**Next safe action:** benchmark a representative normal-development workflow through direct MAR versus ChatCode and only open measured capability/performance gaps. Keep V1.3 Slice E/F closed and do not add another optimization slice merely because one is possible.
 
 ## Connection usability correction — 2026-09-19
 
