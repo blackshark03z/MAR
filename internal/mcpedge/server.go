@@ -111,17 +111,18 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation      string             `json:"operation" jsonschema:"context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
-	ProjectID      string             `json:"project_id,omitempty"`
-	Path           string             `json:"path,omitempty"`
-	NetworkAllowed bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
-	Query          string             `json:"query,omitempty"`
-	StartLine      int                `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
-	EndLine        int                `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
-	Reads          []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
-	MaxEntries     int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
-	MaxResults     int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
-	MaxBytes       int                `json:"max_bytes,omitempty" jsonschema:"bounded snippet budget for context_batch"`
+	Operation        string             `json:"operation" jsonschema:"context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
+	ProjectID        string             `json:"project_id,omitempty"`
+	Path             string             `json:"path,omitempty"`
+	NetworkAllowed   bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
+	Query            string             `json:"query,omitempty"`
+	StartLine        int                `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
+	EndLine          int                `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
+	Reads            []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
+	MaxEntries       int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
+	MaxResults       int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
+	MaxBytes         int                `json:"max_bytes,omitempty" jsonschema:"bounded snippet budget for context_batch"`
+	IncludeGitStatus bool               `json:"include_git_status,omitempty" jsonschema:"for context_batch, include bounded git status in the same response"`
 }
 
 type actionChangeArgs struct {
@@ -264,11 +265,20 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"projects": items}, nil
 	case "context_batch":
-		result, err := backend.BuildProjectContextBatch(ctx, strings.TrimSpace(args.ProjectID), args.Query, args.MaxResults, args.MaxEntries, args.MaxBytes)
+		projectID := strings.TrimSpace(args.ProjectID)
+		result, err := backend.BuildProjectContextBatch(ctx, projectID, args.Query, args.MaxResults, args.MaxEntries, args.MaxBytes)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"context_batch": result}, nil
+		response := map[string]any{"context_batch": result}
+		if args.IncludeGitStatus {
+			status, err := backend.ProjectGitStatus(ctx, projectID)
+			if err != nil {
+				return nil, err
+			}
+			response["git_status"] = status
+		}
+		return response, nil
 	case "read":
 		result, err := backend.ReadProjectFile(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path))
 		if err != nil {

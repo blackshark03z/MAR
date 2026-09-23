@@ -757,4 +757,14 @@ func TestCallProjectContextBatch(t *testing.T) {
 	if result.ProjectID != "mar" || result.Query != "Project Brain" {
 		t.Fatalf("unexpected context_batch result: %+v", result)
 	}
+	withStatus, err := callProject(context.Background(), &fakeBackend{}, projectArgs{
+		Operation: "context_batch", ProjectID: "mar", Query: "Project Brain", IncludeGitStatus: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := withStatus["git_status"].(service.ProjectGitStatusResult)
+	if !ok || status.ProjectID != "mar" || status.Branch != "master" {
+		t.Fatalf("context_batch did not include git status: %#v", withStatus["git_status"])
+	}
 }
