@@ -13214,8 +13214,10 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
 						className: "rail-nav",
 						children: views.map((item) => {
 							const Icon = item.icon;
+							const active = view === item.id;
 							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								className: view === item.id ? "active" : "",
+								className: active ? "active" : "",
+								"aria-current": active ? "page" : void 0,
 								onClick: () => setView(item.id),
 								title: item.label,
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { size: 19 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: item.label })]

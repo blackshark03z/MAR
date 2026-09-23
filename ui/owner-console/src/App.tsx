@@ -201,7 +201,7 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
           <option value="">All workspaces</option>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.id}</option>)}
         </select>
       </div>
-      <nav className="rail-nav">{views.map(item=>{const Icon=item.icon;return <button key={item.id} className={view===item.id?'active':''} onClick={()=>setView(item.id)} title={item.label}><Icon size={19}/><span>{item.label}</span></button>})}</nav>
+      <nav className="rail-nav">{views.map(item=>{const Icon=item.icon;const active=view===item.id;return <button key={item.id} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>setView(item.id)} title={item.label}><Icon size={19}/><span>{item.label}</span></button>})}</nav>
       <div className={`rail-health ${health.tone}`}><span className="health-orb"><span/></span><div><strong>{health.label}</strong><small>{health.detail}</small></div></div>
       <div className="rail-foot">MAR · trusted local runtime</div>
     </aside>
