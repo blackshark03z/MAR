@@ -712,6 +712,14 @@ func TestCallActionFilesystemOperations(t *testing.T) {
 	if !ok || renameResult.Operation != "rename" || renameResult.Destination != "nested/new.txt" {
 		t.Fatalf("unexpected rename result: %#v", rename["rename"])
 	}
+	legacyRename, err := callAction(context.Background(), backend, actionArgs{Operation: "rename", ProjectID: "mar", Path: "old.txt", Replacement: "nested/legacy.txt", ExpectedSHA256: strings.Repeat("c", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyRenameResult, ok := legacyRename["rename"].(service.ProjectFSActionResult)
+	if !ok || legacyRenameResult.Destination != "nested/legacy.txt" {
+		t.Fatalf("legacy rename fallback did not use replacement as destination: %#v", legacyRename["rename"])
+	}
 }
 
 func TestProjectAttachExplicitNetworkAllowed(t *testing.T) {

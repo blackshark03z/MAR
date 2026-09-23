@@ -374,7 +374,11 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"remove": result}, nil
 	case "rename":
-		result, err := backend.RenameProjectFile(ctx, projectID, args.Path, args.Destination, args.ExpectedSHA256)
+		destination := strings.TrimSpace(args.Destination)
+		if destination == "" {
+			destination = strings.TrimSpace(args.Replacement)
+		}
+		result, err := backend.RenameProjectFile(ctx, projectID, args.Path, destination, args.ExpectedSHA256)
 		if err != nil {
 			return nil, err
 		}
