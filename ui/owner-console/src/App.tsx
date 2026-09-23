@@ -178,25 +178,32 @@ function ExecutionPulse({calls,now}:{calls:OperationCall[];now:number}){
 
 function Shell({ view, setView, runtime, workspace, setWorkspace, projects, children }: any) {
   const health = systemHealth(runtime)
-  return <div className="app-shell">
-    <header className="topbar">
-      <div className="brand-lockup"><div className="brand-mark">M</div><div><strong>MAR</strong><span>operations console</span></div></div>
-      <div className="topbar-center"><label>Workspace<select id="workspace-scope-select" aria-label="Chọn workspace đang theo dõi" value={workspace} onChange={e=>setWorkspace(e.target.value)}><option value="">Tất cả workspaces</option>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.id}</option>)}</select></label></div>
-      <div className="runtime-pills">
-        <span className={`runtime-pill ${runtime?'live':''}`}><span className="live-dot"/>Telemetry: {runtime?'live':'unavailable'}</span>
-        <span className="runtime-pill"><Gauge size={14}/>Uptime: {fmtDuration(runtime?.uptime_seconds)}</span>
-        <span className="runtime-pill"><Cpu size={14}/>{runtime?.model || 'model —'}</span>
-        <span className="runtime-pill"><Users size={14}/>Workers: {runtime?.max_workers ?? '—'}</span>
+  const currentView=views.find(v=>v.id===view) || views[0]
+  const CurrentIcon=currentView.icon
+  return <div className="app-shell command-shell">
+    <aside className="app-rail">
+      <div className="rail-brand"><div className="brand-mark">M</div><div><strong>MAR</strong><span>local execution</span></div></div>
+      <div className="rail-scope">
+        <span>Workspace</span>
+        <select id="workspace-scope-select" aria-label="Chọn workspace đang theo dõi" value={workspace} onChange={e=>setWorkspace(e.target.value)}>
+          <option value="">All workspaces</option>{projects.map((p:any)=><option key={p.id} value={p.id}>{p.id}</option>)}
+        </select>
+      </div>
+      <nav className="rail-nav">{views.map(item=>{const Icon=item.icon;return <button key={item.id} className={view===item.id?'active':''} onClick={()=>setView(item.id)} title={item.label}><Icon size={19}/><span>{item.label}</span></button>})}</nav>
+      <div className={`rail-health ${health.tone}`}><span className="health-orb"><span/></span><div><strong>{health.label}</strong><small>{health.detail}</small></div></div>
+      <div className="rail-foot">MAR · trusted local runtime</div>
+    </aside>
+    <header className="command-bar">
+      <div className="command-context"><div className="command-icon"><CurrentIcon size={18}/></div><div><strong>{currentView.label}</strong><span>{workspace || 'All workspaces'}</span></div></div>
+      <div className="command-status">
+        <div className={`command-signal ${runtime?'live':''}`}><span className="live-dot"/><b>{runtime?'LIVE':'OFFLINE'}</b></div>
+        <div className="command-stat"><Gauge size={14}/><span>{fmtDuration(runtime?.uptime_seconds)}</span></div>
+        <div className="command-stat"><Cpu size={14}/><span>{runtime?.model || 'Web cognition'}</span></div>
+        <div className="command-stat"><Users size={14}/><span>{runtime?.max_workers ?? '—'} workers</span></div>
         <div className="avatar"><UserRound size={18}/></div>
       </div>
     </header>
-    <aside className="sidebar">
-      <div className="sidebar-label">OPERATIONS</div>
-      <nav>{views.map(item=>{const Icon=item.icon;return <button key={item.id} className={view===item.id?'active':''} onClick={()=>setView(item.id)}><Icon size={19}/><span>{item.label}</span></button>})}</nav>
-      <div className={`sidebar-health ${health.tone}`}><span className="live-dot"/><div><strong>{health.label}</strong><small>{health.detail}</small></div></div>
-      <div className="sidebar-version">React Owner Console</div>
-    </aside>
-    <main className="main-content">{children}</main>
+    <main className="main-content command-stage">{children}</main>
   </div>
 }
 
@@ -219,19 +226,32 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
   const rates = tokenRates(tokenSamples)
   const latestTokenRate = rates.length ? rates[rates.length-1].total : 0
   return <>
-    <div className="page-header"><div><div className="title-row"><h1>Live Operations</h1><span className="live-state"><span className="live-dot"/>Đang hoạt động</span></div><p>Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR.</p></div><div className="last-update"><RefreshCw size={14}/>Live · snapshot 1 giây</div></div>
-    <section className="summary-cards four">
-      <div className={`summary-card ${health.tone}`}><div className="summary-icon"><ShieldCheck size={25}/></div><div><span>Trạng thái hệ thống</span><strong>{health.label}</strong><small>{health.detail}</small></div></div>
-      <div className="summary-card"><div className="summary-icon blue"><Database size={25}/></div><div><span>Kết nối AI</span><strong>{connected} / {primary.length}</strong><small>{primary.length ? 'Các provider chính' : 'Chưa có provider metadata'}</small></div></div>
-      <div className="summary-card"><div className="summary-icon cyan"><Play size={25}/></div><div><span>Hoạt động realtime</span><strong>{flows.length+activeCalls.length}</strong><small>{flows.length} task · {activeCalls.length} tool call đang chạy</small></div></div>
-      <div className="summary-card"><div className="summary-icon green"><Zap size={25}/></div><div><span>Token hôm nay</span><strong>{usageWindowValue(usage?.today)}</strong><small>{usage?.today ? `${fmtNumber(usage.today.input_tokens)} input · ${fmtNumber(usage.today.output_tokens)} output` : 'Đang tải usage'}</small></div></div>
+    <div className="page-header live-header"><div><div className="title-row"><h1>Live Operations</h1><span className="live-state"><span className="live-dot"/>Live</span></div><p>Một màn hình vận hành: đang làm gì, dùng bao nhiêu tài nguyên, và vừa xảy ra chuyện gì.</p></div><div className="last-update"><RefreshCw size={14}/>Snapshot 1s · UI 250ms</div></div>
+    <section className={`now-strip ${health.tone}`}>
+      <div className="now-answer"><div className="now-orb"><ShieldCheck size={24}/></div><div><span>RIGHT NOW</span><strong>{health.label}</strong><p>{health.detail}</p></div></div>
+      <div className="now-metrics">
+        <div><span>AI routes</span><b>{connected}/{primary.length}</b><small>{readyRoutes}/{routes.length} routes ready</small></div>
+        <div><span>Executing</span><b>{flows.length+activeCalls.length}</b><small>{activeCalls.length} tool · {flows.length} task</small></div>
+        <div><span>Waiting AI</span><b>{waitingAI}</b><small>durable web turns</small></div>
+        <div><span>Token rate</span><b>{agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : '—'}</b><small>{usageWindowValue(usage?.today)} today</small></div>
+      </div>
     </section>
-    <div className="live-main-grid">
-      <section className="panel chart-panel"><div className="panel-heading"><div className="panel-title"><Activity size={20}/><h2>Token heartbeat</h2></div><div className="segmented"><span>Observed throughput</span><ChevronDown size={14}/></div></div><div className="chart-kpis"><div><span>Live tokens</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : '—'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : '—'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : '—'}</b></div><div><span>Rate</span><b>{agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/min` : '—'}</b></div></div><div className="chart-wrap"><TrendChart samples={tokenSamples}/></div><div className="chart-legend"><span><i className="blue"/>Input tokens/min</span><span><i className="green"/>Output tokens/min</span></div></section>
-      <section className="panel active-panel"><div className="panel-heading"><div className="panel-title"><Workflow size={20}/><h2>Đang hoạt động</h2></div><button className="text-button" onClick={()=>setView('tasks')}>Tasks <ExternalLink size={14}/></button></div>{activeCalls.length||flows.length ? <div className="flow-list">{activeCalls.slice(0,5).map(call=><div key={call.key} className="flow-row static tool-live-row"><div><strong>{call.projectId||'global'} · {call.tool}{call.operation?`.${call.operation}`:''}</strong><small>{call.connectorName} · running {fmtDuration(Math.max(0,(now-call.startedAt)/1000))}</small></div><span className="status-badge info"><Activity size={12}/>Tool</span></div>)}{flows.slice(0,Math.max(0,8-activeCalls.length)).map((t:any)=><button key={t.id} className="flow-row" onClick={()=>setView('tasks')}><div><strong>{t.goal || t.id}</strong><small>{t.project_id} · epoch {t.run_epoch || 0}</small></div><StatusBadge state={t.state}/></button>)}</div> : <EmptyState icon={Workflow} title="Không có hoạt động đang chạy" text="Task và fast-path tool call sẽ hiện tại đây."/>}</section>
+    <div className="cockpit-grid">
+      <section className="panel telemetry-deck">
+        <div className="panel-heading"><div className="panel-title"><Activity size={20}/><div><h2>Token heartbeat</h2><small>Observed throughput · not estimated from tool calls</small></div></div><span className="deck-live"><span className="live-dot"/>streaming</span></div>
+        <div className="chart-kpis"><div><span>Live</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : '—'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : '—'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : '—'}</b></div><div><span>Turns</span><b>{agg.tokenTasks ? fmtNumber(agg.turns) : '—'}</b></div></div>
+        <div className="chart-wrap cockpit-chart"><TrendChart samples={tokenSamples}/></div>
+        <div className="chart-legend"><span><i className="blue"/>Input/min</span><span><i className="green"/>Output/min</span></div>
+      </section>
+      <section className="panel execution-lane">
+        <div className="panel-heading"><div className="panel-title"><Workflow size={20}/><div><h2>Execution lane</h2><small>What MAR is doing now</small></div></div><button className="text-button" onClick={()=>setView('tasks')}>Open tasks <ExternalLink size={14}/></button></div>
+        {activeCalls.length||flows.length ? <div className="flow-list execution-list">{activeCalls.slice(0,6).map(call=><div key={call.key} className="flow-row static tool-live-row"><span className="running-rail"/><div><strong>{call.projectId||'global'}</strong><code>{call.tool}{call.operation?`.${call.operation}`:''}</code><small>{call.connectorName} · {fmtDuration(Math.max(0,(now-call.startedAt)/1000))}</small></div><span className="status-badge info"><Activity size={12}/>RUN</span></div>)}{flows.slice(0,Math.max(0,8-activeCalls.length)).map((t:any)=><button key={t.id} className="flow-row" onClick={()=>setView('tasks')}><div><strong>{taskTitle(t)}</strong><small>{t.project_id} · epoch {t.run_epoch || 0}</small></div><StatusBadge state={t.state}/></button>)}</div> : <EmptyState icon={Workflow} title="Idle" text="Fast-path calls và durable tasks sẽ xuất hiện ngay khi bắt đầu."/>}
+      </section>
     </div>
-    <section className="panel operation-panel"><div className="panel-heading"><div className="panel-title"><Activity size={20}/><h2>MCP activity</h2></div><div className="activity-pulse-wrap"><ExecutionPulse calls={operationCalls} now={now}/><span>{recentCalls.length} recent{droppedCalls?` · ${fmtNumber(droppedCalls)} dropped`:''}</span></div></div>{recentCalls.length?<div className="operation-list">{recentCalls.slice(0,10).map(call=><div className="operation-row" key={call.key}><time>{new Date(call.completedAt||call.startedAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time><div><strong>{call.projectId||'global'}</strong><small>{call.connectorName}</small></div><code>{call.tool}{call.operation?`.${call.operation}`:''}</code><span>{fmtNumber(Math.max(0,call.durationMs||0))} ms</span><span className={`operation-outcome ${call.outcome==='ok'?'ok':'error'}`}>{call.outcome||'complete'}</span></div>)}</div>:<EmptyState icon={Activity} title="Chưa có MCP activity gần đây" text="Fast-path project/action calls sẽ xuất hiện tại đây mà không cần tạo task."/>}</section>
-    <div className="provider-and-stats"><div className="provider-grid">{['GPT','Claude'].map(provider=><ProviderZone key={provider} provider={provider} runtime={runtime}/>)}</div><section className="panel quick-panel"><div className="panel-heading"><div className="panel-title"><BarChart3 size={20}/><h2>Thống kê nhanh</h2></div></div><div className="quick-list"><Quick icon={Zap} label="Luồng hoạt động" value={String(flows.length)}/><Quick icon={LoaderCircle} label="Đang chờ AI" value={String(waitingAI)}/><Quick icon={Network} label="Tổng routes" value={`${readyRoutes} / ${routes.length}`}/><Quick icon={Database} label="Token hôm nay" value={usageWindowValue(usage?.today)}/></div></section></div>
+    <div className="operations-grid">
+      <section className="panel operation-panel stream-panel"><div className="panel-heading"><div className="panel-title"><TerminalSquare size={20}/><div><h2>Event stream</h2><small>Observed MCP operations</small></div></div><div className="activity-pulse-wrap"><ExecutionPulse calls={operationCalls} now={now}/><span>{recentCalls.length} events{droppedCalls?` · ${fmtNumber(droppedCalls)} dropped`:''}</span></div></div>{recentCalls.length?<div className="operation-list">{recentCalls.slice(0,14).map(call=><div className="operation-row" key={call.key}><time>{new Date(call.completedAt||call.startedAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time><div><strong>{call.projectId||'global'}</strong><small>{call.connectorName}</small></div><code>{call.tool}{call.operation?`.${call.operation}`:''}</code><span>{fmtNumber(Math.max(0,call.durationMs||0))} ms</span><span className={`operation-outcome ${call.outcome==='ok'?'ok':'error'}`}>{call.outcome||'complete'}</span></div>)}</div>:<EmptyState icon={Activity} title="No recent operations" text="MCP activity sẽ xuất hiện ở đây."/>}</section>
+      <aside className="provider-stack">{['GPT','Claude'].map(provider=><ProviderZone key={provider} provider={provider} runtime={runtime}/>)}</aside>
+    </div>
   </>
 }
 function Quick({icon:Icon,label,value}:any){return <div className="quick-item"><div><Icon size={18}/><span>{label}</span></div><strong>{value}</strong></div>}
@@ -253,16 +273,40 @@ function Overview({ runtime, tasks, usage, setView, workspace, projects }: any) 
   const active = scoped.filter(isTaskActive)
   const blocked = scoped.filter((t:any)=>isActionableBlockedTask(t,projects))
   const health = systemHealth(runtime)
-  return <><div className="page-header"><div><h1>Tổng quan</h1><p>Ảnh chụp nhanh hệ thống MAR và công việc cần chú ý.</p></div><button className="primary-button" onClick={()=>setView('live')}><Activity size={17}/>Mở Live Operations</button></div><section className="summary-cards four"><div className={`summary-card ${health.tone}`}><div className="summary-icon"><ShieldCheck size={25}/></div><div><span>Hệ thống</span><strong>{health.label}</strong><small>{health.detail}</small></div></div><div className="summary-card"><div className="summary-icon blue"><Workflow size={25}/></div><div><span>Đang chạy</span><strong>{active.length}</strong><small>execution flows</small></div></div><div className="summary-card warning"><div className="summary-icon amber"><AlertTriangle size={25}/></div><div><span>Cần chú ý</span><strong>{blocked.length}</strong><small>blocked / input required</small></div></div><div className="summary-card"><div className="summary-icon green"><Database size={25}/></div><div><span>Token hôm nay</span><strong>{usageWindowValue(usage?.today)}</strong><small>MAR measured</small></div></div></section><div className="overview-grid"><section className="panel"><div className="panel-heading"><div className="panel-title"><Workflow size={20}/><h2>Current work</h2></div></div>{active.length?<div className="flow-list">{active.slice(0,8).map((t:any)=><div className="flow-row static" key={t.id}><div><strong>{t.goal}</strong><small>{t.project_id}</small></div><StatusBadge state={t.state}/></div>)}</div>:<EmptyState icon={Workflow} title="Không có task đang hoạt động"/>}</section><section className="panel"><div className="panel-heading"><div className="panel-title"><AlertTriangle size={20}/><h2>Action</h2></div></div>{blocked.length?<div className="flow-list">{blocked.slice(0,8).map((t:any)=><button className="flow-row" key={t.id} onClick={()=>setView('tasks')}><div><strong>{t.goal}</strong><small>{t.project_id}</small></div><StatusBadge state={t.state}/></button>)}</div>:<EmptyState icon={CheckCircle2} title="Không có việc cần Owner can thiệp"/>}</section></div></>
+  const routes=operationalConnections(runtime),ready=routes.filter(routeReady).length
+  return <>
+    <div className="page-header overview-header"><div><span className="page-kicker">OWNER CONSOLE</span><h1>Right now</h1><p>Tập trung vào trạng thái hiện tại và việc cần quyết định, không phải một bảng KPI.</p></div><button className="primary-button" onClick={()=>setView('live')}><Activity size={17}/>Open live cockpit</button></div>
+    <section className={`overview-hero ${health.tone}`}>
+      <div className="overview-answer"><span className="health-orb large"><span/></span><div><span>SYSTEM ANSWER</span><h2>{health.label}</h2><p>{health.detail}</p></div></div>
+      <div className="overview-rail">
+        <div><span>Running</span><b>{active.length}</b><small>execution flows</small></div>
+        <div><span>Needs you</span><b>{blocked.length}</b><small>owner decisions</small></div>
+        <div><span>Routes</span><b>{ready}/{routes.length}</b><small>operational</small></div>
+        <div><span>Today</span><b>{usageWindowValue(usage?.today)}</b><small>measured tokens</small></div>
+      </div>
+    </section>
+    <div className="overview-workbench">
+      <section className="panel current-work-panel"><div className="panel-heading"><div className="panel-title"><Workflow size={20}/><div><h2>Current work</h2><small>{active.length ? 'In progress now' : 'Nothing executing'}</small></div></div><button className="text-button" onClick={()=>setView('tasks')}>View all <ExternalLink size={14}/></button></div>{active.length?<div className="flow-list">{active.slice(0,10).map((t:any)=><button className="flow-row" key={t.id} onClick={()=>setView('tasks')}><div><strong>{taskTitle(t)}</strong><small>{t.project_id}</small></div><StatusBadge state={t.state}/></button>)}</div>:<EmptyState icon={Workflow} title="MAR is idle" text="Fast-path activity vẫn có thể xuất hiện trong Live Operations."/>}</section>
+      <section className={`panel decision-panel ${blocked.length?'has-actions':''}`}><div className="panel-heading"><div className="panel-title"><AlertTriangle size={20}/><div><h2>Needs your attention</h2><small>Only human decisions</small></div></div><span className="decision-count">{blocked.length}</span></div>{blocked.length?<div className="flow-list">{blocked.slice(0,8).map((t:any)=><button className="flow-row" key={t.id} onClick={()=>setView('tasks')}><div><strong>{taskTitle(t)}</strong><small>{t.project_id}</small></div><StatusBadge state={t.state}/></button>)}</div>:<EmptyState icon={CheckCircle2} title="Nothing needs you" text="MAR can continue without Owner intervention."/>}</section>
+    </div>
+  </>
 }
 
 function TasksPage({ tasks, projects, workspace, reloadTasks }: any) {
   const scoped = workspace ? tasks.filter((t:any)=>t.project_id===workspace) : tasks
   const current = scoped.filter((t:any)=>!isHistoricalBlockedTask(t,projects))
-  const [filter,setFilter]=useState('current'), [query,setQuery]=useState(''), [selected,setSelected]=useState<string>('')
+  const [filter,setFilter]=useState('current'), [query,setQuery]=useState(''), [selected,setSelected]=useState<string>(''), [createOpen,setCreateOpen]=useState(false)
   useEffect(()=>{if(!selected && scoped.length)setSelected((scoped.find((t:any)=>isActionableBlockedTask(t,projects))||current[0]||scoped[0]).id);if(selected&&!scoped.some((t:any)=>t.id===selected))setSelected('')},[tasks,workspace,projects])
   const filtered = scoped.filter((t:any)=>{const state=String(t.state||'').toUpperCase();const status=(filter==='current'&&!isHistoricalBlockedTask(t,projects))||filter==='all'||(filter==='active'&&(isTaskActive(t)||state==='INPUT_REQUIRED'))||(filter==='blocked'&&isActionableBlockedTask(t,projects))||(filter==='history'&&isHistoricalBlockedTask(t,projects))||(filter==='complete'&&state==='COMPLETE');const text=`${t.goal||''} ${t.id||''} ${t.project_id||''}`.toLowerCase();return status&&(!query||text.includes(query.toLowerCase()))})
-  return <><div className="page-header"><div><h1>Tasks</h1><p>Theo dõi và quản lý các tác vụ AI trên toàn bộ workspaces.</p></div></div><div className="task-toolbar"><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="current">Hiện tại · {current.length}</option><option value="blocked">Cần xử lý</option><option value="active">Đang chạy</option><option value="complete">Hoàn tất</option><option value="history">Lịch sử / superseded</option><option value="all">Tất cả · {scoped.length}</option></select><div className="search-box"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tìm task theo tiêu đề, id…"/></div></div><div className="task-three-col"><section className="panel task-list-panel"><div className="panel-heading"><div className="panel-title"><ListTodo size={19}/><h2>Danh sách task ({filtered.length})</h2></div><IconButton icon={RefreshCw} label="Làm mới" onClick={reloadTasks}/></div><div className="task-list">{filtered.length?filtered.map((t:any)=>{const historical=isHistoricalBlockedTask(t,projects);return <button className={`task-item ${selected===t.id?'selected':''}`} key={t.id} onClick={()=>setSelected(t.id)}><div className="task-item-top"><strong title={taskTitle(t)}>{taskTitle(t)}</strong>{historical?<StatusBadge state="CANCELLED">Lịch sử</StatusBadge>:<StatusBadge state={t.state}/>}</div><div className="task-item-meta"><span>{t.project_id}</span>{historical&&<span>Lịch sử / superseded</span>}<span>{t.live_usage?.tokens_available?`~${fmtNumber(t.live_usage.total_tokens)} tokens`:fmtNumber(t.usage?.model_total_tokens||0)+' tokens'}</span>{historical?<span>Lưu trữ</span>:<span>{fmtTime(t.updated_at)}</span>}</div></button>}):<EmptyState icon={ListTodo} title="Không có task phù hợp"/>}</div></section><TaskDetail id={selected} reloadTasks={reloadTasks} projects={projects}/><CreateTaskPanel projects={projects} preferredWorkspace={workspace} onCreated={reloadTasks}/></div></>
+  return <>
+    <div className="page-header tasks-header"><div><span className="page-kicker">WORK QUEUE</span><h1>Tasks</h1><p>Master/detail workspace. Tạo task là secondary action, không chiếm một cột cố định.</p></div><button className="primary-button" onClick={()=>setCreateOpen(true)}><Plus size={16}/>New task</button></div>
+    <div className="task-toolbar modern-toolbar"><select value={filter} onChange={e=>setFilter(e.target.value)}><option value="current">Hiện tại · {current.length}</option><option value="blocked">Cần xử lý</option><option value="active">Đang chạy</option><option value="complete">Hoàn tất</option><option value="history">Lịch sử / superseded</option><option value="all">Tất cả · {scoped.length}</option></select><div className="search-box"><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search tasks…"/></div><IconButton icon={RefreshCw} label="Làm mới" onClick={reloadTasks}/></div>
+    <div className="task-workbench">
+      <section className="panel task-list-panel"><div className="panel-heading"><div className="panel-title"><ListTodo size={19}/><div><h2>Queue</h2><small>{filtered.length} tasks</small></div></div></div><div className="task-list">{filtered.length?filtered.map((t:any)=>{const historical=isHistoricalBlockedTask(t,projects);return <button className={`task-item ${selected===t.id?'selected':''}`} key={t.id} onClick={()=>setSelected(t.id)}><div className="task-item-top"><strong title={taskTitle(t)}>{taskTitle(t)}</strong>{historical?<StatusBadge state="CANCELLED">Lịch sử</StatusBadge>:<StatusBadge state={t.state}/>}</div><div className="task-item-meta"><span>{t.project_id}</span><span>{t.live_usage?.tokens_available?`~${fmtNumber(t.live_usage.total_tokens)} tokens`:fmtNumber(t.usage?.model_total_tokens||0)+' tokens'}</span><span>{historical?'Archived':fmtTime(t.updated_at)}</span></div></button>}):<EmptyState icon={ListTodo} title="Không có task phù hợp"/>}</div></section>
+      <TaskDetail id={selected} reloadTasks={reloadTasks} projects={projects}/>
+    </div>
+    {createOpen&&<div className="drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setCreateOpen(false)}}><div className="task-drawer"><div className="drawer-head"><div><span className="page-kicker">NEW WORK</span><h2>Create task</h2></div><IconButton icon={XCircle} label="Đóng" onClick={()=>setCreateOpen(false)}/></div><CreateTaskPanel projects={projects} preferredWorkspace={workspace} onCreated={async()=>{await reloadTasks();setCreateOpen(false)}}/></div></div>}
+  </>
 }
 function TaskDetail({ id, reloadTasks, projects }: any) {
   const [data,setData]=useState<any>(null), [loading,setLoading]=useState(false), [input,setInput]=useState(''), [feedback,setFeedback]=useState('')

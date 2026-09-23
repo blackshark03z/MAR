@@ -11706,7 +11706,7 @@ function createLucideIcon(iconDataOrName, iconNode = [], aliases = []) {
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$32 = {
+var __iconData$31 = {
 	name: "activity",
 	size: 24,
 	node: [["path", {
@@ -11714,8 +11714,8 @@ var __iconData$32 = {
 		key: "169zse"
 	}]]
 };
-__iconData$32.node;
-var Activity = createLucideIcon(__iconData$32);
+__iconData$31.node;
+var Activity = createLucideIcon(__iconData$31);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/bot.mjs
 /**
@@ -11724,7 +11724,7 @@ var Activity = createLucideIcon(__iconData$32);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$31 = {
+var __iconData$30 = {
 	name: "bot",
 	size: 24,
 	node: [
@@ -11758,8 +11758,8 @@ var __iconData$31 = {
 		}]
 	]
 };
-__iconData$31.node;
-var Bot = createLucideIcon(__iconData$31);
+__iconData$30.node;
+var Bot = createLucideIcon(__iconData$30);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/chart-column.mjs
 /**
@@ -11768,7 +11768,7 @@ var Bot = createLucideIcon(__iconData$31);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$30 = {
+var __iconData$29 = {
 	name: "chart-column",
 	size: 24,
 	node: [
@@ -11791,8 +11791,8 @@ var __iconData$30 = {
 	],
 	aliases: ["bar-chart-3"]
 };
-__iconData$30.node;
-var ChartColumn = createLucideIcon(__iconData$30);
+__iconData$29.node;
+var ChartColumn = createLucideIcon(__iconData$29);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/chevron-down.mjs
 /**
@@ -11801,7 +11801,7 @@ var ChartColumn = createLucideIcon(__iconData$30);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$29 = {
+var __iconData$28 = {
 	name: "chevron-down",
 	size: 24,
 	node: [["path", {
@@ -11809,8 +11809,8 @@ var __iconData$29 = {
 		key: "qrunsl"
 	}]]
 };
-__iconData$29.node;
-var ChevronDown = createLucideIcon(__iconData$29);
+__iconData$28.node;
+var ChevronDown = createLucideIcon(__iconData$28);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/circle-check.mjs
 /**
@@ -11819,7 +11819,7 @@ var ChevronDown = createLucideIcon(__iconData$29);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$28 = {
+var __iconData$27 = {
 	name: "circle-check",
 	size: 24,
 	node: [["circle", {
@@ -11833,8 +11833,8 @@ var __iconData$28 = {
 	}]],
 	aliases: ["check-circle-2"]
 };
-__iconData$28.node;
-var CircleCheck = createLucideIcon(__iconData$28);
+__iconData$27.node;
+var CircleCheck = createLucideIcon(__iconData$27);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/circle-dot.mjs
 /**
@@ -11843,7 +11843,7 @@ var CircleCheck = createLucideIcon(__iconData$28);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$27 = {
+var __iconData$26 = {
 	name: "circle-dot",
 	size: 24,
 	node: [["circle", {
@@ -11858,8 +11858,8 @@ var __iconData$27 = {
 		key: "1mglay"
 	}]]
 };
-__iconData$27.node;
-var CircleDot = createLucideIcon(__iconData$27);
+__iconData$26.node;
+var CircleDot = createLucideIcon(__iconData$26);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/circle-stop.mjs
 /**
@@ -11868,7 +11868,7 @@ var CircleDot = createLucideIcon(__iconData$27);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$26 = {
+var __iconData$25 = {
 	name: "circle-stop",
 	size: 24,
 	node: [["circle", {
@@ -11886,8 +11886,8 @@ var __iconData$26 = {
 	}]],
 	aliases: ["stop-circle"]
 };
-__iconData$26.node;
-var CircleStop = createLucideIcon(__iconData$26);
+__iconData$25.node;
+var CircleStop = createLucideIcon(__iconData$25);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/circle-x.mjs
 /**
@@ -11896,7 +11896,7 @@ var CircleStop = createLucideIcon(__iconData$26);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$25 = {
+var __iconData$24 = {
 	name: "circle-x",
 	size: 24,
 	node: [
@@ -11917,8 +11917,8 @@ var __iconData$25 = {
 	],
 	aliases: ["x-circle"]
 };
-__iconData$25.node;
-var CircleX = createLucideIcon(__iconData$25);
+__iconData$24.node;
+var CircleX = createLucideIcon(__iconData$24);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/clipboard-list.mjs
 /**
@@ -11927,7 +11927,7 @@ var CircleX = createLucideIcon(__iconData$25);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$24 = {
+var __iconData$23 = {
 	name: "clipboard-list",
 	size: 24,
 	node: [
@@ -11962,8 +11962,8 @@ var __iconData$24 = {
 		}]
 	]
 };
-__iconData$24.node;
-var ClipboardList = createLucideIcon(__iconData$24);
+__iconData$23.node;
+var ClipboardList = createLucideIcon(__iconData$23);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/copy.mjs
 /**
@@ -11972,7 +11972,7 @@ var ClipboardList = createLucideIcon(__iconData$24);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$23 = {
+var __iconData$22 = {
 	name: "copy",
 	size: 24,
 	node: [["rect", {
@@ -11988,8 +11988,8 @@ var __iconData$23 = {
 		key: "zix9uf"
 	}]]
 };
-__iconData$23.node;
-var Copy = createLucideIcon(__iconData$23);
+__iconData$22.node;
+var Copy = createLucideIcon(__iconData$22);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/cpu.mjs
 /**
@@ -11998,7 +11998,7 @@ var Copy = createLucideIcon(__iconData$23);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$22 = {
+var __iconData$21 = {
 	name: "cpu",
 	size: 24,
 	node: [
@@ -12068,8 +12068,8 @@ var __iconData$22 = {
 		}]
 	]
 };
-__iconData$22.node;
-var Cpu = createLucideIcon(__iconData$22);
+__iconData$21.node;
+var Cpu = createLucideIcon(__iconData$21);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/database.mjs
 /**
@@ -12078,7 +12078,7 @@ var Cpu = createLucideIcon(__iconData$22);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$21 = {
+var __iconData$20 = {
 	name: "database",
 	size: 24,
 	node: [
@@ -12099,8 +12099,8 @@ var __iconData$21 = {
 		}]
 	]
 };
-__iconData$21.node;
-var Database = createLucideIcon(__iconData$21);
+__iconData$20.node;
+var Database = createLucideIcon(__iconData$20);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/external-link.mjs
 /**
@@ -12109,7 +12109,7 @@ var Database = createLucideIcon(__iconData$21);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$20 = {
+var __iconData$19 = {
 	name: "external-link",
 	size: 24,
 	node: [
@@ -12127,8 +12127,8 @@ var __iconData$20 = {
 		}]
 	]
 };
-__iconData$20.node;
-var ExternalLink = createLucideIcon(__iconData$20);
+__iconData$19.node;
+var ExternalLink = createLucideIcon(__iconData$19);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/folder-git-2.mjs
 /**
@@ -12137,7 +12137,7 @@ var ExternalLink = createLucideIcon(__iconData$20);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$19 = {
+var __iconData$18 = {
 	name: "folder-git-2",
 	size: 24,
 	node: [
@@ -12163,8 +12163,8 @@ var __iconData$19 = {
 		}]
 	]
 };
-__iconData$19.node;
-var FolderGit2 = createLucideIcon(__iconData$19);
+__iconData$18.node;
+var FolderGit2 = createLucideIcon(__iconData$18);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/gauge.mjs
 /**
@@ -12173,7 +12173,7 @@ var FolderGit2 = createLucideIcon(__iconData$19);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$18 = {
+var __iconData$17 = {
 	name: "gauge",
 	size: 24,
 	node: [["path", {
@@ -12184,8 +12184,8 @@ var __iconData$18 = {
 		key: "19p75a"
 	}]]
 };
-__iconData$18.node;
-var Gauge = createLucideIcon(__iconData$18);
+__iconData$17.node;
+var Gauge = createLucideIcon(__iconData$17);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/house.mjs
 /**
@@ -12194,7 +12194,7 @@ var Gauge = createLucideIcon(__iconData$18);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$17 = {
+var __iconData$16 = {
 	name: "house",
 	size: 24,
 	node: [["path", {
@@ -12206,8 +12206,8 @@ var __iconData$17 = {
 	}]],
 	aliases: ["home"]
 };
-__iconData$17.node;
-var House = createLucideIcon(__iconData$17);
+__iconData$16.node;
+var House = createLucideIcon(__iconData$16);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/link-2.mjs
 /**
@@ -12216,7 +12216,7 @@ var House = createLucideIcon(__iconData$17);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$16 = {
+var __iconData$15 = {
 	name: "link-2",
 	size: 24,
 	node: [
@@ -12237,8 +12237,8 @@ var __iconData$16 = {
 		}]
 	]
 };
-__iconData$16.node;
-var Link2 = createLucideIcon(__iconData$16);
+__iconData$15.node;
+var Link2 = createLucideIcon(__iconData$15);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/list-todo.mjs
 /**
@@ -12247,7 +12247,7 @@ var Link2 = createLucideIcon(__iconData$16);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$15 = {
+var __iconData$14 = {
 	name: "list-todo",
 	size: 24,
 	node: [
@@ -12277,8 +12277,8 @@ var __iconData$15 = {
 		}]
 	]
 };
-__iconData$15.node;
-var ListTodo = createLucideIcon(__iconData$15);
+__iconData$14.node;
+var ListTodo = createLucideIcon(__iconData$14);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/loader-circle.mjs
 /**
@@ -12287,7 +12287,7 @@ var ListTodo = createLucideIcon(__iconData$15);
 * This source code is licensed under the ISC license.
 * See the LICENSE file in the root directory of this source tree.
 */
-var __iconData$14 = {
+var __iconData$13 = {
 	name: "loader-circle",
 	size: 24,
 	node: [["path", {
@@ -12296,56 +12296,8 @@ var __iconData$14 = {
 	}]],
 	aliases: ["loader-2"]
 };
-__iconData$14.node;
-var LoaderCircle = createLucideIcon(__iconData$14);
-//#endregion
-//#region node_modules/lucide-react/dist/esm/icons/network.mjs
-/**
-* @license lucide-react v1.45.0 - ISC
-*
-* This source code is licensed under the ISC license.
-* See the LICENSE file in the root directory of this source tree.
-*/
-var __iconData$13 = {
-	name: "network",
-	size: 24,
-	node: [
-		["rect", {
-			x: "16",
-			y: "16",
-			width: "6",
-			height: "6",
-			rx: "1",
-			key: "4q2zg0"
-		}],
-		["rect", {
-			x: "2",
-			y: "16",
-			width: "6",
-			height: "6",
-			rx: "1",
-			key: "8cvhb9"
-		}],
-		["rect", {
-			x: "9",
-			y: "2",
-			width: "6",
-			height: "6",
-			rx: "1",
-			key: "1egb70"
-		}],
-		["path", {
-			d: "M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3",
-			key: "1jsf9p"
-		}],
-		["path", {
-			d: "M12 12V8",
-			key: "2874zd"
-		}]
-	]
-};
 __iconData$13.node;
-var Network = createLucideIcon(__iconData$13);
+var LoaderCircle = createLucideIcon(__iconData$13);
 //#endregion
 //#region node_modules/lucide-react/dist/esm/icons/play.mjs
 /**
@@ -13179,101 +13131,98 @@ function ExecutionPulse({ calls, now }) {
 }
 function Shell({ view, setView, runtime, workspace, setWorkspace, projects, children }) {
 	const health = systemHealth(runtime);
+	const currentView = views.find((v) => v.id === view) || views[0];
+	const CurrentIcon = currentView.icon;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "app-shell",
+		className: "app-shell command-shell",
 		children: [
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
-				className: "topbar",
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("aside", {
+				className: "app-rail",
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "brand-lockup",
+						className: "rail-brand",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 							className: "brand-mark",
 							children: "M"
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "MAR" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "operations console" })] })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: "MAR" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "local execution" })] })]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "topbar-center",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Workspace", /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "rail-scope",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Workspace" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
 							id: "workspace-scope-select",
 							"aria-label": "Chọn workspace đang theo dõi",
 							value: workspace,
 							onChange: (e) => setWorkspace(e.target.value),
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 								value: "",
-								children: "Tất cả workspaces"
+								children: "All workspaces"
 							}), projects.map((p) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
 								value: p.id,
 								children: p.id
 							}, p.id))]
-						})] })
+						})]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("nav", {
+						className: "rail-nav",
+						children: views.map((item) => {
+							const Icon = item.icon;
+							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+								className: view === item.id ? "active" : "",
+								onClick: () => setView(item.id),
+								title: item.label,
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { size: 19 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: item.label })]
+							}, item.id);
+						})
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "runtime-pills",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: `runtime-pill ${runtime ? "live" : ""}`,
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }),
-									"Telemetry: ",
-									runtime ? "live" : "unavailable"
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: "runtime-pill",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Gauge, { size: 14 }),
-									"Uptime: ",
-									fmtDuration(runtime?.uptime_seconds)
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: "runtime-pill",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Cpu, { size: 14 }), runtime?.model || "model —"]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-								className: "runtime-pill",
-								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Users, { size: 14 }),
-									"Workers: ",
-									runtime?.max_workers ?? "—"
-								]
-							}),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-								className: "avatar",
-								children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(UserRound, { size: 18 })
-							})
-						]
+						className: `rail-health ${health.tone}`,
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "health-orb",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: health.detail })] })]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "rail-foot",
+						children: "MAR · trusted local runtime"
 					})
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("aside", {
-				className: "sidebar",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "sidebar-label",
-						children: "OPERATIONS"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("nav", { children: views.map((item) => {
-						const Icon = item.icon;
-						return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-							className: view === item.id ? "active" : "",
-							onClick: () => setView(item.id),
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { size: 19 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: item.label })]
-						}, item.id);
-					}) }),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: `sidebar-health ${health.tone}`,
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: health.detail })] })]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "sidebar-version",
-						children: "React Owner Console"
-					})
-				]
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
+				className: "command-bar",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "command-context",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+						className: "command-icon",
+						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CurrentIcon, { size: 18 })
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: currentView.label }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: workspace || "All workspaces" })] })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "command-status",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: `command-signal ${runtime ? "live" : ""}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: runtime ? "LIVE" : "OFFLINE" })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "command-stat",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Gauge, { size: 14 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: fmtDuration(runtime?.uptime_seconds) })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "command-stat",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Cpu, { size: 14 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: runtime?.model || "Web cognition" })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "command-stat",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Users, { size: 14 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [runtime?.max_workers ?? "—", " workers"] })]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "avatar",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(UserRound, { size: 18 })
+						})
+					]
+				})]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("main", {
-				className: "main-content",
+				className: "main-content command-stage",
 				children
 			})
 		]
@@ -13302,142 +13251,139 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 	const latestTokenRate = rates.length ? rates[rates.length - 1].total : 0;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "page-header",
+			className: "page-header live-header",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "title-row",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Live Operations" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 					className: "live-state",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), "Đang hoạt động"]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), "Live"]
 				})]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR." })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Một màn hình vận hành: đang làm gì, dùng bao nhiêu tài nguyên, và vừa xảy ra chuyện gì." })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "last-update",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { size: 14 }), "Live · snapshot 1 giây"]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { size: 14 }), "Snapshot 1s · UI 250ms"]
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-			className: "summary-cards four",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: `summary-card ${health.tone}`,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Trạng thái hệ thống" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: health.detail })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon blue",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Database, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Kết nối AI" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", { children: [
+			className: `now-strip ${health.tone}`,
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "now-answer",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "now-orb",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { size: 24 })
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "RIGHT NOW" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: health.detail })
+				] })]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "now-metrics",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "AI routes" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("b", { children: [
 							connected,
-							" / ",
+							"/",
 							primary.length
 						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: primary.length ? "Các provider chính" : "Chưa có provider metadata" })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon cyan",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Hoạt động realtime" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: flows.length + activeCalls.length }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
-							flows.length,
-							" task · ",
-							activeCalls.length,
-							" tool call đang chạy"
+							readyRoutes,
+							"/",
+							routes.length,
+							" routes ready"
 						] })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon green",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Zap, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Token hôm nay" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: usageWindowValue(usage?.today) }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: usage?.today ? `${fmtNumber(usage.today.input_tokens)} input · ${fmtNumber(usage.today.output_tokens)} output` : "Đang tải usage" })
-					] })]
-				})
-			]
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Executing" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: flows.length + activeCalls.length }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
+							activeCalls.length,
+							" tool · ",
+							flows.length,
+							" task"
+						] })
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Waiting AI" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: waitingAI }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "durable web turns" })
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Token rate" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : "—" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [usageWindowValue(usage?.today), " today"] })
+					] })
+				]
+			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "live-main-grid",
+			className: "cockpit-grid",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				className: "panel chart-panel",
+				className: "panel telemetry-deck",
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "panel-heading",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "panel-title",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Token heartbeat" })]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "segmented",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Observed throughput" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { size: 14 })]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Token heartbeat" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "Observed throughput · not estimated from tool calls" })] })]
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "deck-live",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), "streaming"]
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "chart-kpis",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live tokens" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "—" })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "—" })] }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.input)}` : "—" })] }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.output)}` : "—" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Rate" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/min` : "—" })] })
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Turns" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? fmtNumber(agg.turns) : "—" })] })
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "chart-wrap",
+						className: "chart-wrap cockpit-chart",
 						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TrendChart, { samples: tokenSamples })
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "chart-legend",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input tokens/min"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output tokens/min"] })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input/min"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output/min"] })]
 					})
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				className: "panel active-panel",
+				className: "panel execution-lane",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "panel-heading",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Đang hoạt động" })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Execution lane" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "What MAR is doing now" })] })]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "text-button",
 						onClick: () => setView("tasks"),
-						children: ["Tasks ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { size: 14 })]
+						children: ["Open tasks ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { size: 14 })]
 					})]
 				}), activeCalls.length || flows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flow-list",
-					children: [activeCalls.slice(0, 5).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flow-list execution-list",
+					children: [activeCalls.slice(0, 6).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "flow-row static tool-live-row",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", { children: [
-							call.projectId || "global",
-							" · ",
-							call.tool,
-							call.operation ? `.${call.operation}` : ""
-						] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
-							call.connectorName,
-							" · running ",
-							fmtDuration(Math.max(0, (now - call.startedAt) / 1e3))
-						] })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-							className: "status-badge info",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 12 }), "Tool"]
-						})]
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "running-rail" }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: call.projectId || "global" }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("code", { children: [call.tool, call.operation ? `.${call.operation}` : ""] }),
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
+									call.connectorName,
+									" · ",
+									fmtDuration(Math.max(0, (now - call.startedAt) / 1e3))
+								] })
+							] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+								className: "status-badge info",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 12 }), "RUN"]
+							})
+						]
 					}, call.key)), flows.slice(0, Math.max(0, 8 - activeCalls.length)).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "flow-row",
 						onClick: () => setView("tasks"),
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: t.goal || t.id }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: taskTitle(t) }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
 							t.project_id,
 							" · epoch ",
 							t.run_epoch || 0
@@ -13445,104 +13391,64 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 					}, t.id))]
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
 					icon: Workflow,
-					title: "Không có hoạt động đang chạy",
-					text: "Task và fast-path tool call sẽ hiện tại đây."
+					title: "Idle",
+					text: "Fast-path calls và durable tasks sẽ xuất hiện ngay khi bắt đầu."
 				})]
-			})]
-		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-			className: "panel operation-panel",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "panel-heading",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "panel-title",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "MCP activity" })]
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "activity-pulse-wrap",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExecutionPulse, {
-						calls: operationCalls,
-						now
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-						recentCalls.length,
-						" recent",
-						droppedCalls ? ` · ${fmtNumber(droppedCalls)} dropped` : ""
-					] })]
-				})]
-			}), recentCalls.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "operation-list",
-				children: recentCalls.slice(0, 10).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "operation-row",
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("time", { children: new Date(call.completedAt || call.startedAt).toLocaleTimeString("vi-VN", {
-							hour: "2-digit",
-							minute: "2-digit",
-							second: "2-digit"
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: call.projectId || "global" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: call.connectorName })] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("code", { children: [call.tool, call.operation ? `.${call.operation}` : ""] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [fmtNumber(Math.max(0, call.durationMs || 0)), " ms"] }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: `operation-outcome ${call.outcome === "ok" ? "ok" : "error"}`,
-							children: call.outcome || "complete"
-						})
-					]
-				}, call.key))
-			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
-				icon: Activity,
-				title: "Chưa có MCP activity gần đây",
-				text: "Fast-path project/action calls sẽ xuất hiện tại đây mà không cần tạo task."
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "provider-and-stats",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-				className: "provider-grid",
+			className: "operations-grid",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				className: "panel operation-panel stream-panel",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "panel-heading",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "panel-title",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SquareTerminal, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Event stream" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "Observed MCP operations" })] })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "activity-pulse-wrap",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExecutionPulse, {
+							calls: operationCalls,
+							now
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+							recentCalls.length,
+							" events",
+							droppedCalls ? ` · ${fmtNumber(droppedCalls)} dropped` : ""
+						] })]
+					})]
+				}), recentCalls.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "operation-list",
+					children: recentCalls.slice(0, 14).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "operation-row",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("time", { children: new Date(call.completedAt || call.startedAt).toLocaleTimeString("vi-VN", {
+								hour: "2-digit",
+								minute: "2-digit",
+								second: "2-digit"
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: call.projectId || "global" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: call.connectorName })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("code", { children: [call.tool, call.operation ? `.${call.operation}` : ""] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [fmtNumber(Math.max(0, call.durationMs || 0)), " ms"] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+								className: `operation-outcome ${call.outcome === "ok" ? "ok" : "error"}`,
+								children: call.outcome || "complete"
+							})
+						]
+					}, call.key))
+				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
+					icon: Activity,
+					title: "No recent operations",
+					text: "MCP activity sẽ xuất hiện ở đây."
+				})]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("aside", {
+				className: "provider-stack",
 				children: ["GPT", "Claude"].map((provider) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ProviderZone, {
 					provider,
 					runtime
 				}, provider))
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				className: "panel quick-panel",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-					className: "panel-heading",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChartColumn, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Thống kê nhanh" })]
-					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "quick-list",
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quick, {
-							icon: Zap,
-							label: "Luồng hoạt động",
-							value: String(flows.length)
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quick, {
-							icon: LoaderCircle,
-							label: "Đang chờ AI",
-							value: String(waitingAI)
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quick, {
-							icon: Network,
-							label: "Tổng routes",
-							value: `${readyRoutes} / ${routes.length}`
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quick, {
-							icon: Database,
-							label: "Token hôm nay",
-							value: usageWindowValue(usage?.today)
-						})
-					]
-				})]
 			})]
 		})
 	] });
-}
-function Quick({ icon: Icon, label, value }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-		className: "quick-item",
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, { size: 18 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: label })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: value })]
-	});
 }
 function ProviderZone({ provider, runtime }) {
 	const conns = operationalConnections(runtime).filter((c) => connectionProvider(c) === provider);
@@ -13611,102 +13517,113 @@ function Overview({ runtime, tasks, usage, setView, workspace, projects }) {
 	const active = scoped.filter(isTaskActive);
 	const blocked = scoped.filter((t) => isActionableBlockedTask(t, projects));
 	const health = systemHealth(runtime);
+	const routes = operationalConnections(runtime), ready = routes.filter(routeReady).length;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "page-header",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Tổng quan" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Ảnh chụp nhanh hệ thống MAR và công việc cần chú ý." })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+			className: "page-header overview-header",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "page-kicker",
+					children: "OWNER CONSOLE"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Right now" }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Tập trung vào trạng thái hiện tại và việc cần quyết định, không phải một bảng KPI." })
+			] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 				className: "primary-button",
 				onClick: () => setView("live"),
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 17 }), "Mở Live Operations"]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 17 }), "Open live cockpit"]
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-			className: "summary-cards four",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: `summary-card ${health.tone}`,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ShieldCheck, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Hệ thống" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: health.label }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: health.detail })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon blue",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Đang chạy" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: active.length }),
+			className: `overview-hero ${health.tone}`,
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "overview-answer",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "health-orb large",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "SYSTEM ANSWER" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: health.label }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: health.detail })
+				] })]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "overview-rail",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Running" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: active.length }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "execution flows" })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card warning",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon amber",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Cần chú ý" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: blocked.length }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "blocked / input required" })
-					] })]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "summary-card",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "summary-icon green",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Database, { size: 25 })
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Token hôm nay" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: usageWindowValue(usage?.today) }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "MAR measured" })
-					] })]
-				})
-			]
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Needs you" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: blocked.length }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "owner decisions" })
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Routes" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("b", { children: [
+							ready,
+							"/",
+							routes.length
+						] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "operational" })
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Today" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: usageWindowValue(usage?.today) }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "measured tokens" })
+					] })
+				]
+			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "overview-grid",
+			className: "overview-workbench",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				className: "panel",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "panel current-work-panel",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "panel-heading",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Current work" })]
-					})
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Current work" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: active.length ? "In progress now" : "Nothing executing" })] })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						className: "text-button",
+						onClick: () => setView("tasks"),
+						children: ["View all ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { size: 14 })]
+					})]
 				}), active.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "flow-list",
-					children: active.slice(0, 8).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "flow-row static",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: t.goal }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: t.project_id })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
+					children: active.slice(0, 10).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+						className: "flow-row",
+						onClick: () => setView("tasks"),
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: taskTitle(t) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: t.project_id })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
 					}, t.id))
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
 					icon: Workflow,
-					title: "Không có task đang hoạt động"
+					title: "MAR is idle",
+					text: "Fast-path activity vẫn có thể xuất hiện trong Live Operations."
 				})]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-				className: "panel",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: `panel decision-panel ${blocked.length ? "has-actions" : ""}`,
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "panel-heading",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Action" })]
-					})
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Needs your attention" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "Only human decisions" })] })]
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "decision-count",
+						children: blocked.length
+					})]
 				}), blocked.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 					className: "flow-list",
 					children: blocked.slice(0, 8).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "flow-row",
 						onClick: () => setView("tasks"),
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: t.goal }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: t.project_id })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: taskTitle(t) }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: t.project_id })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
 					}, t.id))
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
 					icon: CircleCheck,
-					title: "Không có việc cần Owner can thiệp"
+					title: "Nothing needs you",
+					text: "MAR can continue without Owner intervention."
 				})]
 			})]
 		})
@@ -13715,7 +13632,7 @@ function Overview({ runtime, tasks, usage, setView, workspace, projects }) {
 function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 	const scoped = workspace ? tasks.filter((t) => t.project_id === workspace) : tasks;
 	const current = scoped.filter((t) => !isHistoricalBlockedTask(t, projects));
-	const [filter, setFilter] = (0, import_react.useState)("current"), [query, setQuery] = (0, import_react.useState)(""), [selected, setSelected] = (0, import_react.useState)("");
+	const [filter, setFilter] = (0, import_react.useState)("current"), [query, setQuery] = (0, import_react.useState)(""), [selected, setSelected] = (0, import_react.useState)(""), [createOpen, setCreateOpen] = (0, import_react.useState)(false);
 	(0, import_react.useEffect)(() => {
 		if (!selected && scoped.length) setSelected((scoped.find((t) => isActionableBlockedTask(t, projects)) || current[0] || scoped[0]).id);
 		if (selected && !scoped.some((t) => t.id === selected)) setSelected("");
@@ -13731,112 +13648,141 @@ function TasksPage({ tasks, projects, workspace, reloadTasks }) {
 		return status && (!query || text.includes(query.toLowerCase()));
 	});
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-			className: "page-header",
-			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Tasks" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Theo dõi và quản lý các tác vụ AI trên toàn bộ workspaces." })] })
-		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "task-toolbar",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
-				value: filter,
-				onChange: (e) => setFilter(e.target.value),
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
-						value: "current",
-						children: ["Hiện tại · ", current.length]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "blocked",
-						children: "Cần xử lý"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "active",
-						children: "Đang chạy"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "complete",
-						children: "Hoàn tất"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
-						value: "history",
-						children: "Lịch sử / superseded"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
-						value: "all",
-						children: ["Tất cả · ", scoped.length]
-					})
-				]
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "search-box",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Search, { size: 16 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
-					value: query,
-					onChange: (e) => setQuery(e.target.value),
-					placeholder: "Tìm task theo tiêu đề, id…"
-				})]
+			className: "page-header tasks-header",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "page-kicker",
+					children: "WORK QUEUE"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", { children: "Tasks" }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Master/detail workspace. Tạo task là secondary action, không chiếm một cột cố định." })
+			] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+				className: "primary-button",
+				onClick: () => setCreateOpen(true),
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 16 }), "New task"]
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-			className: "task-three-col",
+			className: "task-toolbar modern-toolbar",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
-					className: "panel task-list-panel",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "panel-heading",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-							className: "panel-title",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListTodo, { size: 19 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("h2", { children: [
-								"Danh sách task (",
-								filtered.length,
-								")"
-							] })]
-						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
-							icon: RefreshCw,
-							label: "Làm mới",
-							onClick: reloadTasks
-						})]
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
-						className: "task-list",
-						children: filtered.length ? filtered.map((t) => {
-							const historical = isHistoricalBlockedTask(t, projects);
-							return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-								className: `task-item ${selected === t.id ? "selected" : ""}`,
-								onClick: () => setSelected(t.id),
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "task-item-top",
-									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
-										title: taskTitle(t),
-										children: taskTitle(t)
-									}), historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, {
-										state: "CANCELLED",
-										children: "Lịch sử"
-									}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-									className: "task-item-meta",
-									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.project_id }),
-										historical && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lịch sử / superseded" }),
-										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.live_usage?.tokens_available ? `~${fmtNumber(t.live_usage.total_tokens)} tokens` : fmtNumber(t.usage?.model_total_tokens || 0) + " tokens" }),
-										historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Lưu trữ" }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: fmtTime(t.updated_at) })
-									]
-								})]
-							}, t.id);
-						}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
-							icon: ListTodo,
-							title: "Không có task phù hợp"
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("select", {
+					value: filter,
+					onChange: (e) => setFilter(e.target.value),
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
+							value: "current",
+							children: ["Hiện tại · ", current.length]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "blocked",
+							children: "Cần xử lý"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "active",
+							children: "Đang chạy"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "complete",
+							children: "Hoàn tất"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("option", {
+							value: "history",
+							children: "Lịch sử / superseded"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("option", {
+							value: "all",
+							children: ["Tất cả · ", scoped.length]
 						})
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "search-box",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Search, { size: 16 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						value: query,
+						onChange: (e) => setQuery(e.target.value),
+						placeholder: "Search tasks…"
 					})]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TaskDetail, {
-					id: selected,
-					reloadTasks,
-					projects
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CreateTaskPanel, {
-					projects,
-					preferredWorkspace: workspace,
-					onCreated: reloadTasks
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
+					icon: RefreshCw,
+					label: "Làm mới",
+					onClick: reloadTasks
 				})
 			]
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "task-workbench",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+				className: "panel task-list-panel",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "panel-heading",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "panel-title",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ListTodo, { size: 19 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Queue" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [filtered.length, " tasks"] })] })]
+					})
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "task-list",
+					children: filtered.length ? filtered.map((t) => {
+						const historical = isHistoricalBlockedTask(t, projects);
+						return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							className: `task-item ${selected === t.id ? "selected" : ""}`,
+							onClick: () => setSelected(t.id),
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "task-item-top",
+								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", {
+									title: taskTitle(t),
+									children: taskTitle(t)
+								}), historical ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, {
+									state: "CANCELLED",
+									children: "Lịch sử"
+								}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+								className: "task-item-meta",
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.project_id }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: t.live_usage?.tokens_available ? `~${fmtNumber(t.live_usage.total_tokens)} tokens` : fmtNumber(t.usage?.model_total_tokens || 0) + " tokens" }),
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: historical ? "Archived" : fmtTime(t.updated_at) })
+								]
+							})]
+						}, t.id);
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
+						icon: ListTodo,
+						title: "Không có task phù hợp"
+					})
+				})]
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TaskDetail, {
+				id: selected,
+				reloadTasks,
+				projects
+			})]
+		}),
+		createOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "drawer-backdrop",
+			onMouseDown: (e) => {
+				if (e.target === e.currentTarget) setCreateOpen(false);
+			},
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "task-drawer",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "drawer-head",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "page-kicker",
+						children: "NEW WORK"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Create task" })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(IconButton, {
+						icon: CircleX,
+						label: "Đóng",
+						onClick: () => setCreateOpen(false)
+					})]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CreateTaskPanel, {
+					projects,
+					preferredWorkspace: workspace,
+					onCreated: async () => {
+						await reloadTasks();
+						setCreateOpen(false);
+					}
+				})]
+			})
 		})
 	] });
 }

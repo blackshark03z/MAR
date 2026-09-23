@@ -321,7 +321,7 @@ func TestOwnerUITaskAttentionExplainsStateResultAndNextAction(t *testing.T) {
 
 func TestOwnerUIStartsOnLiveOperations(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"react-owner-console-v1", "Live Operations", "React Owner Console", "const initialHash = window.location.hash.replace", `|| "live"`, `? initialHash : "live"`} {
+	for _, marker := range []string{"react-owner-console-v1", "Live Operations", "command-shell", "const initialHash = window.location.hash.replace", `|| "live"`, `? initialHash : "live"`} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React Owner Console must default to Live Operations, missing %q", marker)
 		}
@@ -341,7 +341,7 @@ func TestOwnerUIReactWorkspaceAndTaskListInteractionContract(t *testing.T) {
 
 func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "live-main-grid", "task-three-col", "create-panel", "provider-grid", "summary-cards", "TrendChart", "ExecutionPulse", "Token heartbeat", "MCP activity", "CreateTaskPanel"} {
+	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "command-shell", "app-rail", "cockpit-grid", "operations-grid", "overview-hero", "task-workbench", "task-drawer", "provider-stack", "TrendChart", "ExecutionPulse", "Token heartbeat", "Event stream", "CreateTaskPanel"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React Owner Console contract missing %q", marker)
 		}
@@ -355,7 +355,7 @@ func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 
 func TestOwnerUIWorkspaceSelectionAndSidebarAlignmentContract(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"workspace-scope-select", "workspace-select-button", ".workspace-card.selected", "grid-template-columns:24px", "hashchange", "mar.owner.workspace.react.v1", "FolderPickerModal", "/api/projects/browse", "form-error"} {
+	for _, marker := range []string{"workspace-scope-select", "workspace-select-button", ".workspace-card.selected", ".app-rail", ".rail-nav", "hashchange", "mar.owner.workspace.react.v1", "FolderPickerModal", "/api/projects/browse", "form-error"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React workspace/sidebar contract missing %q", marker)
 		}
@@ -1667,7 +1667,7 @@ func TestOwnerUIHistoricalTasksAreCalmAndNonActionable(t *testing.T) {
 		"filter==='current'&&!isHistoricalBlockedTask(t,projects)",
 		"<option value=\"history\">Lịch sử / superseded</option>",
 		"<StatusBadge state=\"CANCELLED\">Lịch sử</StatusBadge>",
-		"historical?<span>Lưu trữ</span>:<span>{fmtTime(t.updated_at)}</span>",
+		"historical?'Archived':fmtTime(t.updated_at)",
 		"<TaskDetail id={selected} reloadTasks={reloadTasks} projects={projects}/>",
 		"Task này thuộc revision cũ và được giữ lại để audit; không cần Owner xử lý.",
 		"{!historical&&<button className=\"danger-button\"",
