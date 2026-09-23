@@ -30,6 +30,11 @@ type Backend interface {
 	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
 	ProjectGitStatus(context.Context, string) (service.ProjectGitStatusResult, error)
 	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
+	ApplyProjectPatch(context.Context, service.ProjectPatchRequest) (service.ProjectPatchResult, error)
+	RunProjectCommand(context.Context, string, string, []string, string, int, int) (service.ProjectCommandResult, error)
+	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
+	CommitProject(context.Context, string, string) (service.ProjectGitActionResult, error)
+	PushProject(context.Context, string, string) (service.ProjectGitActionResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
@@ -105,6 +110,24 @@ type projectArgs struct {
 	MaxResults int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
 }
 
+type actionArgs struct {
+	Operation      string   `json:"operation" jsonschema:"patch, run, git_stage, git_commit, or git_push"`
+	ProjectID      string   `json:"project_id"`
+	Path           string   `json:"path,omitempty"`
+	ExpectedSHA256 string   `json:"expected_sha256,omitempty"`
+	Search         string   `json:"search,omitempty"`
+	Replacement    string   `json:"replacement,omitempty"`
+	ExpectedCount  int      `json:"expected_count,omitempty"`
+	Executable     string   `json:"executable,omitempty"`
+	Args           []string `json:"args,omitempty"`
+	Cwd            string   `json:"cwd,omitempty"`
+	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+	MaxOutputBytes int      `json:"max_output_bytes,omitempty"`
+	Paths          []string `json:"paths,omitempty"`
+	Message        string   `json:"message,omitempty"`
+	Remote         string   `json:"remote,omitempty"`
+}
+
 type taskDomainArgs struct {
 	Operation string `json:"operation" jsonschema:"status, result, or inspect"`
 	TaskID    string `json:"task_id" jsonschema:"MAR durable task id"`
@@ -137,6 +160,14 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, search text, inspect bounded Git status/diff, or list one bounded directory. Use operation=context, read, read_many, search, git_status, git_diff, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
+			if err != nil {
+				return nil, nil, err
+			}
+			return nil, value, nil
+		})
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=patch, run, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
+			value, err := callAction(ctx, backend, args)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -252,6 +283,37 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		return map[string]any{"directory": result}, nil
 	default:
 		return nil, errors.New("project operation must be context, read, read_many, search, git_status, git_diff, attach, or list")
+	}
+}
+
+func callAction(ctx context.Context, backend Backend, args actionArgs) (map[string]any, error) {
+	projectID := strings.TrimSpace(args.ProjectID)
+	if projectID == "" {
+		return nil, errors.New("project_id is required")
+	}
+	switch strings.ToLower(strings.TrimSpace(args.Operation)) {
+	case "patch":
+		result, err := backend.ApplyProjectPatch(ctx, service.ProjectPatchRequest{ProjectID: projectID, Path: args.Path, ExpectedSHA256: args.ExpectedSHA256, Search: args.Search, Replacement: args.Replacement, ExpectedCount: args.ExpectedCount})
+		if err != nil { return nil, err }
+		return map[string]any{"patch": result}, nil
+	case "run":
+		result, err := backend.RunProjectCommand(ctx, projectID, args.Executable, args.Args, args.Cwd, args.TimeoutSeconds, args.MaxOutputBytes)
+		if err != nil { return nil, err }
+		return map[string]any{"run": result}, nil
+	case "git_stage":
+		result, err := backend.StageProjectPaths(ctx, projectID, args.Paths)
+		if err != nil { return nil, err }
+		return map[string]any{"git_stage": result}, nil
+	case "git_commit":
+		result, err := backend.CommitProject(ctx, projectID, args.Message)
+		if err != nil { return nil, err }
+		return map[string]any{"git_commit": result}, nil
+	case "git_push":
+		result, err := backend.PushProject(ctx, projectID, args.Remote)
+		if err != nil { return nil, err }
+		return map[string]any{"git_push": result}, nil
+	default:
+		return nil, errors.New("action operation must be patch, run, git_stage, git_commit, or git_push")
 	}
 }
 

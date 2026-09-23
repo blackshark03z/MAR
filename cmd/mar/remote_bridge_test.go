@@ -79,7 +79,7 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedTools := map[string]struct{}{
-		"brain_respond": {}, "brain_turn": {}, "brain_turn_fast": {},
+		"action": {}, "brain_respond": {}, "brain_turn": {}, "brain_turn_fast": {},
 		"control": {}, "project": {}, "submit": {}, "task": {},
 	}
 	if len(listed.Tools) != len(expectedTools) {

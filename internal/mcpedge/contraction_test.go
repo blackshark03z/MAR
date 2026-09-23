@@ -10,7 +10,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-var canonicalPublicTools = []string{"brain_respond", "brain_turn", "control", "project", "submit", "task"}
+var canonicalPublicTools = []string{"action", "brain_respond", "brain_turn", "control", "project", "submit", "task"}
 var legacyPublicAliases = []string{"project_context", "project_read", "status", "result", "inspect", "steer", "input", "cancel"}
 
 func TestPublicToolSurfaceSchemaBudget(t *testing.T) {
@@ -19,8 +19,8 @@ func TestPublicToolSurfaceSchemaBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Tools) != 6 {
-		t.Fatalf("listed tool count=%d want=6", len(listed.Tools))
+	if len(listed.Tools) != 7 {
+		t.Fatalf("listed tool count=%d want=7", len(listed.Tools))
 	}
 	raw, err := json.Marshal(listed.Tools)
 	if err != nil {
@@ -160,7 +160,7 @@ func TestLegacyAliasesRemainCallableButUnlisted(t *testing.T) {
 func TestCanonicalPublicToolNamesRemainStable(t *testing.T) {
 	got := append([]string(nil), canonicalPublicTools...)
 	sort.Strings(got)
-	want := []string{"brain_respond", "brain_turn", "control", "project", "submit", "task"}
+	want := []string{"action", "brain_respond", "brain_turn", "control", "project", "submit", "task"}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("canonical public names changed: got=%v want=%v", got, want)

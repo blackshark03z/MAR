@@ -85,6 +85,21 @@ func (f *fakeBackend) ProjectGitDiff(_ context.Context, projectID, path string) 
 	}
 	return service.ProjectGitDiffResult{ProjectID: projectID, Path: path, Diff: "diff --git a/README.md b/README.md\n"}, nil
 }
+func (f *fakeBackend) ApplyProjectPatch(_ context.Context, req service.ProjectPatchRequest) (service.ProjectPatchResult, error) {
+	return service.ProjectPatchResult{ProjectID: req.ProjectID, Path: req.Path, BeforeSHA256: req.ExpectedSHA256, AfterSHA256: "after", Replacements: req.ExpectedCount}, nil
+}
+func (f *fakeBackend) RunProjectCommand(_ context.Context, projectID, executable string, args []string, cwd string, timeoutSeconds, maxOutputBytes int) (service.ProjectCommandResult, error) {
+	return service.ProjectCommandResult{ProjectID: projectID, Executable: executable, Args: args, Cwd: cwd, Output: "ok", ExitCode: 0}, nil
+}
+func (f *fakeBackend) StageProjectPaths(_ context.Context, projectID string, paths []string) (service.ProjectGitActionResult, error) {
+	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_stage", Paths: paths}, nil
+}
+func (f *fakeBackend) CommitProject(_ context.Context, projectID, message string) (service.ProjectGitActionResult, error) {
+	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_commit", Revision: "abc123", Output: message}, nil
+}
+func (f *fakeBackend) PushProject(_ context.Context, projectID, remote string) (service.ProjectGitActionResult, error) {
+	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_push", Remote: remote, Branch: "master"}, nil
+}
 func (f *fakeBackend) SearchProjectText(_ context.Context, projectID, path, query string, maxResults int) (service.ProjectSearchResult, error) {
 	if projectID == "" {
 		return service.ProjectSearchResult{}, errors.New("project_id is required for project search")
@@ -266,7 +281,7 @@ func TestSubmitUsesProjectAdvertisedProfilesForMarkerlessAndGoRelease(t *testing
 	}
 }
 
-func TestPublicToolSurfaceListsExactlySixCanonicalTools(t *testing.T) {
+func TestPublicToolSurfaceListsTrustedOwnerActionWithCanonicalTools(t *testing.T) {
 	session := connectTestMCP(t, &fakeBackend{})
 	listed, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 	if err != nil {
@@ -277,7 +292,7 @@ func TestPublicToolSurfaceListsExactlySixCanonicalTools(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "control", "project", "submit", "task"}
+	want := []string{"action", "brain_respond", "brain_turn", "control", "project", "submit", "task"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected public tool count: got=%v want=%v", names, want)
 	}
@@ -306,7 +321,7 @@ func TestPublicToolSurfaceAddsFastToolOnlyForAutomaticDeltaBackend(t *testing.T)
 		names = append(names, tool.Name)
 	}
 	sort.Strings(names)
-	want := []string{"brain_respond", "brain_turn", "brain_turn_fast", "control", "project", "submit", "task"}
+	want := []string{"action", "brain_respond", "brain_turn", "brain_turn_fast", "control", "project", "submit", "task"}
 	if len(names) != len(want) {
 		t.Fatalf("unexpected capable public tool count: got=%v want=%v", names, want)
 	}

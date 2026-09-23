@@ -120,13 +120,13 @@ Engineering acceptance is criterion-bound and machine-observed. V1 supports `out
 
 ## MCP control surface
 
-Normal `tools/list` exposes exactly six canonical domain tools:
+Normal `tools/list` exposes seven canonical domain tools:
 
-`project`, `submit`, `task`, `control`, `brain_turn`, `brain_respond`.
+`project`, `action`, `submit`, `task`, `control`, `brain_turn`, `brain_respond`.
 
-`project` is the bounded read-only pre-submit/research surface: context, local-path attach, directory list, UTF-8 file read (including bounded line ranges), and bounded text search. It does not grant mutation authority. `submit`, `task`, and `control` own durable work submission/status/control semantics. `brain_turn` and `brain_respond` are the typed external-cognition relay.
+`project` is the bounded read-only discovery surface. `action` is the Trusted Owner Fast Path for ordinary development: exact-hash patch, argv-only bounded run, Git stage/commit, and non-force push gated by project policy, with no durable Goal/task/brain lifecycle. `submit`, `task`, and `control` retain the governed high-assurance workflow; `brain_turn` and `brain_respond` remain its external-cognition relay.
 
-Low-level mutation primitives such as file writes, Git mutation, and allowed command execution remain inside the worker runtime under the immutable Goal Contract and Windows sandbox. This keeps ChatWeb useful enough to replace ChatCode as the normal local bridge without exposing a second mutation authority.
+Use `action` by default for normal single-owner edit/test/commit work. Use the governed Goal path when independent candidate verification, publication authorization, or recovery guarantees are actually required.
 
 ## Project Brain V1
 

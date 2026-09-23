@@ -19,7 +19,9 @@ ChatGPT / Claude / future external cognition
                   +-- bounded project research
                   |
                   v
-          MAR governed execution
+      +-- Trusted Owner Fast Path (default ordinary development)
+      |
+      +-- governed execution (optional high-assurance path)
                   |
                   v
              Windows / Git
@@ -50,6 +52,7 @@ MAR may copy, port, adapt, or reimplement proven ChatCode ideas when they materi
 Keep the canonical MCP discovery surface compact:
 
 - `project`
+- `action` — Trusted Owner Fast Path: patch/run/git stage/commit/push without durable task lifecycle
 - `submit`
 - `task`
 - `control`
@@ -64,7 +67,7 @@ The `project` tool is the only pre-submit repository-research domain surface. It
 - `read` with optional bounded line range
 - `search` with bounded text matches
 
-The current six-tool surface is the initial direct-MAR surface, not a permanent ceiling. Public productivity capabilities may be added, composed, or rewritten from proven ChatCode patterns when representative workflows show material benefit, provided they cannot bypass immutable Goal/authority, isolation, candidate identity, verification, publication authorization, or recovery. Low-level unrestricted mutation does not become kernel authority merely for parity.
+The productivity surface is intentionally allowed to follow proven ChatCode ergonomics. Trusted Owner Fast Path is the default for ordinary single-owner development; the governed Goal path is retained for work that actually needs independent candidate verification/publication guarantees. The prior six-tool surface was a starting point, not a permanent ceiling. Public productivity capabilities may be added, composed, or rewritten from proven ChatCode patterns when representative workflows show material benefit, provided they cannot bypass immutable Goal/authority, isolation, candidate identity, verification, publication authorization, or recovery. Low-level unrestricted mutation does not become kernel authority merely for parity.
 
 ## Replacement acceptance proof
 
