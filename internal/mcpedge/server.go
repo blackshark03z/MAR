@@ -111,7 +111,7 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation        string             `json:"operation" jsonschema:"context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
+	Operation        string             `json:"operation" jsonschema:"context, context_batch, context_status, read, read_many, find, search, git_status, git_diff, attach, detach, or list"`
 	ProjectID        string             `json:"project_id,omitempty"`
 	Path             string             `json:"path,omitempty"`
 	NetworkAllowed   bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
@@ -197,7 +197,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, build one lightweight context_batch from existing find/search/read primitives, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, build one lightweight context_batch from existing find/search/read primitives, combine context+Git status through context_status without new request fields, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, context_batch, context_status, read, read_many, find, search, git_status, git_diff, attach, detach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -257,21 +257,22 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 }
 
 func callProject(ctx context.Context, backend Backend, args projectArgs) (map[string]any, error) {
-	switch strings.ToLower(strings.TrimSpace(args.Operation)) {
+	operation := strings.ToLower(strings.TrimSpace(args.Operation))
+	switch operation {
 	case "context":
 		items, err := backend.ProjectContext(ctx, strings.TrimSpace(args.ProjectID))
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"projects": items}, nil
-	case "context_batch":
+	case "context_batch", "context_status":
 		projectID := strings.TrimSpace(args.ProjectID)
 		result, err := backend.BuildProjectContextBatch(ctx, projectID, args.Query, args.MaxResults, args.MaxEntries, args.MaxBytes)
 		if err != nil {
 			return nil, err
 		}
 		response := map[string]any{"context_batch": result}
-		if args.IncludeGitStatus {
+		if operation == "context_status" || args.IncludeGitStatus {
 			status, err := backend.ProjectGitStatus(ctx, projectID)
 			if err != nil {
 				return nil, err
@@ -349,7 +350,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, context_batch, read, read_many, find, search, git_status, git_diff, attach, detach, or list")
+		return nil, errors.New("project operation must be context, context_batch, context_status, read, read_many, find, search, git_status, git_diff, attach, detach, or list")
 	}
 }
 

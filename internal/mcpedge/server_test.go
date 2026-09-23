@@ -793,4 +793,17 @@ func TestCallProjectContextBatch(t *testing.T) {
 	if !ok || status.ProjectID != "mar" || status.Branch != "master" {
 		t.Fatalf("context_batch did not include git status: %#v", withStatus["git_status"])
 	}
+	legacySchemaSafe, err := callProject(context.Background(), &fakeBackend{}, projectArgs{
+		Operation: "context_status", ProjectID: "mar", Query: "Project Brain",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasStatus, ok := legacySchemaSafe["git_status"].(service.ProjectGitStatusResult)
+	if !ok || aliasStatus.ProjectID != "mar" || aliasStatus.Branch != "master" {
+		t.Fatalf("context_status did not include git status: %#v", legacySchemaSafe["git_status"])
+	}
+	if _, ok := legacySchemaSafe["context_batch"].(service.ProjectContextBatchResult); !ok {
+		t.Fatalf("context_status did not include context batch: %#v", legacySchemaSafe["context_batch"])
+	}
 }
