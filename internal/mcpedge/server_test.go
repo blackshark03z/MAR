@@ -97,6 +97,15 @@ func (f *fakeBackend) RunProjectCommand(_ context.Context, projectID, executable
 func (f *fakeBackend) ApplyAndVerifyProject(_ context.Context, projectID string, changes []service.ProjectOwnedChange, verification []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error) {
 	return service.ProjectApplyVerifyResult{ProjectID: projectID, Changes: []service.ProjectChangeResult{}, Verification: []service.ProjectCommandResult{}, Passed: true}, nil
 }
+func (f *fakeBackend) ListProjectBranches(_ context.Context, projectID string) (service.ProjectBranchListResult, error) {
+	return service.ProjectBranchListResult{ProjectID: projectID, Current: "master", Branches: []string{"master"}}, nil
+}
+func (f *fakeBackend) CreateProjectBranch(_ context.Context, projectID, name string) (service.ProjectBranchResult, error) {
+	return service.ProjectBranchResult{ProjectID: projectID, Name: name, Revision: "abc123"}, nil
+}
+func (f *fakeBackend) CreateProjectWorktree(_ context.Context, projectID, baseline, purpose string) (service.ProjectWorktreeResult, error) {
+	return service.ProjectWorktreeResult{ProjectID: projectID, Path: "C:/tmp/worktree", Baseline: baseline, Head: baseline, Purpose: purpose}, nil
+}
 func (f *fakeBackend) StageProjectPaths(_ context.Context, projectID string, paths []string) (service.ProjectGitActionResult, error) {
 	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_stage", Paths: paths}, nil
 }

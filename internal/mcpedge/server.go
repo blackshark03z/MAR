@@ -37,6 +37,9 @@ type Backend interface {
 	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
 	CommitProject(context.Context, string, string) (service.ProjectGitActionResult, error)
 	PushProject(context.Context, string, string) (service.ProjectGitActionResult, error)
+	ListProjectBranches(context.Context, string) (service.ProjectBranchListResult, error)
+	CreateProjectBranch(context.Context, string, string) (service.ProjectBranchResult, error)
+	CreateProjectWorktree(context.Context, string, string, string) (service.ProjectWorktreeResult, error)
 	ApplyAndVerifyProject(context.Context, string, []service.ProjectOwnedChange, []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
@@ -131,7 +134,7 @@ type actionVerifyArgs struct {
 }
 
 type actionArgs struct {
-	Operation      string             `json:"operation" jsonschema:"write, patch, run, apply_and_verify, git_stage, git_commit, or git_push"`
+	Operation      string             `json:"operation" jsonschema:"write, patch, run, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
 	ProjectID      string             `json:"project_id"`
 	Path           string             `json:"path,omitempty"`
 	ExpectedSHA256 string             `json:"expected_sha256,omitempty"`
@@ -147,6 +150,9 @@ type actionArgs struct {
 	Paths          []string           `json:"paths,omitempty"`
 	Message        string             `json:"message,omitempty"`
 	Remote         string             `json:"remote,omitempty"`
+	Branch         string             `json:"branch,omitempty"`
+	Baseline       string             `json:"baseline,omitempty"`
+	Purpose        string             `json:"purpose,omitempty"`
 	Changes        []actionChangeArgs `json:"changes,omitempty"`
 	Verify         []actionVerifyArgs `json:"verify,omitempty"`
 }
@@ -359,6 +365,24 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 			return nil, err
 		}
 		return map[string]any{"apply_and_verify": result}, nil
+	case "git_branch_list":
+		result, err := backend.ListProjectBranches(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"git_branch_list": result}, nil
+	case "git_branch_create":
+		result, err := backend.CreateProjectBranch(ctx, projectID, args.Branch)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"git_branch_create": result}, nil
+	case "git_worktree_create":
+		result, err := backend.CreateProjectWorktree(ctx, projectID, args.Baseline, args.Purpose)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"git_worktree_create": result}, nil
 	case "git_stage":
 		result, err := backend.StageProjectPaths(ctx, projectID, args.Paths)
 		if err != nil {
@@ -378,7 +402,7 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be write, patch, run, apply_and_verify, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, run, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
 	}
 }
 
