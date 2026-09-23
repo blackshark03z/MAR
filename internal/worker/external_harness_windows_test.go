@@ -15,9 +15,63 @@ import (
 	"time"
 
 	"mar/internal/agent"
+	"mar/internal/testsupport"
 )
 
+func TestRunChildExternalHarnessPreparesMissingTempRoot(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
+	// Regression: runExternalHarnessChild must prepare the selected missing temp root,
+	// not fall back to another owner/global temp location.
+	base := t.TempDir()
+	missingTemp := filepath.Join(base, "missing-temp-root")
+	t.Setenv("TEMP", missingTemp)
+	t.Setenv("TMP", missingTemp)
+	if _, err := os.Stat(missingTemp); !os.IsNotExist(err) {
+		t.Fatalf("missing temp precondition failed: %v", err)
+	}
+
+	start := workerProcessTestStart()
+	workspace := filepath.Join(base, "workspace")
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	start.WorkspacePath = workspace
+	if err := os.WriteFile(filepath.Join(workspace, "external-harness.input"), []byte("run\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start.Provider = ProviderConfig{BrainMode: BrainHarness}
+	start.AgentProfile = agent.Profile{}
+	start.AgentConfig = agent.Config{}
+	start.HarnessExecutable = executable
+	start.HarnessArguments = []string{"-test.run=^TestExternalHarnessExecutableHelper$", "-test.v"}
+	start.SandboxReadPaths = []string{filepath.Dir(executable)}
+	start.CommandTimeout = 30 * time.Second
+
+	first, err := marshalFrame(frameStart, 0, "", start, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var input bytes.Buffer
+	if err := json.NewEncoder(&input).Encode(first); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := RunChild(ctx, &input, &output); err != nil {
+		t.Fatalf("external harness child failed with missing temp root: %v\n%s", err, output.String())
+	}
+	if info, err := os.Stat(missingTemp); err != nil || !info.IsDir() {
+		t.Fatalf("selected missing temp root was not prepared: info=%v err=%v", info, err)
+	}
+}
+
 func TestRunChildExternalHarnessBypassesMAROwnedCognition(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	start := workerProcessTestStart()
 	workspace := t.TempDir()
 	executable, err := filepath.Abs(os.Args[0])
@@ -75,6 +129,7 @@ func TestRunChildExternalHarnessBypassesMAROwnedCognition(t *testing.T) {
 }
 
 func TestRunChildExternalHarnessMapsTaskNetworkAuthorityToLPAC(t *testing.T) {
+	testsupport.RequireOutsideAppContainer(t)
 	const target = "example.com:443"
 	hostConn, err := net.DialTimeout("tcp", target, 3*time.Second)
 	if err != nil {

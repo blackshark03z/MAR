@@ -303,7 +303,18 @@ func runExternalHarnessChild(ctx context.Context, start StartRequest, encoder *j
 		_ = sendChildError(encoder, err)
 		return err
 	}
-	inputDir, err := os.MkdirTemp("", "mar-harness-input-")
+	tempRoot := strings.TrimSpace(os.TempDir())
+	if tempRoot == "" {
+		err = errors.New("external harness temp root is empty")
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	if err := os.MkdirAll(tempRoot, 0o700); err != nil {
+		err = fmt.Errorf("prepare external harness temp root: %w", err)
+		_ = sendChildError(encoder, err)
+		return err
+	}
+	inputDir, err := os.MkdirTemp(tempRoot, "mar-harness-input-")
 	if err != nil {
 		err = fmt.Errorf("create external harness input directory: %w", err)
 		_ = sendChildError(encoder, err)
