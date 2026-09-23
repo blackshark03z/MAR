@@ -34,29 +34,31 @@ const (
 )
 
 type remoteConnectorState struct {
-	ID                      string     `json:"id"`
-	Status                  string     `json:"status"`
-	PreferredMode           string     `json:"preferred_mode"`
-	PublicURL               string     `json:"public_url,omitempty"`
-	StableBaseURL           string     `json:"stable_base_url,omitempty"`
-	StableURL               string     `json:"stable_url,omitempty"`
-	TemporaryURL            string     `json:"temporary_url,omitempty"`
-	LocalTarget             string     `json:"local_target,omitempty"`
-	LastSeenAt              *time.Time `json:"last_seen_at,omitempty"`
-	LastHealthAt            *time.Time `json:"last_health_at,omitempty"`
-	Initialized             bool       `json:"initialized"`
-	ToolsListed             bool       `json:"tools_listed"`
-	Requests                int64      `json:"requests"`
-	ActiveSessions          int        `json:"active_sessions,omitempty"`
-	ActiveSessionsAvailable bool       `json:"active_sessions_available"`
-	ActiveSessionsReason    string     `json:"active_sessions_reason,omitempty"`
-	RouteReady              bool       `json:"route_ready"`
-	ConnectionStage         string     `json:"connection_stage,omitempty"`
-	ClientAttached          bool       `json:"client_attached"`
-	ToolsDiscovered         bool       `json:"tools_discovered"`
-	UsableFromClient        bool       `json:"usable_from_client"`
-	EndpointStable          bool       `json:"endpoint_stable"`
-	LastError               string     `json:"last_error,omitempty"`
+	ID                      string               `json:"id"`
+	Status                  string               `json:"status"`
+	PreferredMode           string               `json:"preferred_mode"`
+	PublicURL               string               `json:"public_url,omitempty"`
+	StableBaseURL           string               `json:"stable_base_url,omitempty"`
+	StableURL               string               `json:"stable_url,omitempty"`
+	TemporaryURL            string               `json:"temporary_url,omitempty"`
+	LocalTarget             string               `json:"local_target,omitempty"`
+	LastSeenAt              *time.Time           `json:"last_seen_at,omitempty"`
+	LastHealthAt            *time.Time           `json:"last_health_at,omitempty"`
+	Initialized             bool                 `json:"initialized"`
+	ToolsListed             bool                 `json:"tools_listed"`
+	Requests                int64                `json:"requests"`
+	ActiveSessions          int                  `json:"active_sessions,omitempty"`
+	ActiveSessionsAvailable bool                 `json:"active_sessions_available"`
+	ActiveSessionsReason    string               `json:"active_sessions_reason,omitempty"`
+	RouteReady              bool                 `json:"route_ready"`
+	ConnectionStage         string               `json:"connection_stage,omitempty"`
+	ClientAttached          bool                 `json:"client_attached"`
+	ToolsDiscovered         bool                 `json:"tools_discovered"`
+	UsableFromClient        bool                 `json:"usable_from_client"`
+	EndpointStable          bool                 `json:"endpoint_stable"`
+	LastError               string               `json:"last_error,omitempty"`
+	RecentOperations        []mcpRecentOperation `json:"recent_operations,omitempty"`
+	DroppedOperations       int64                `json:"dropped_operations,omitempty"`
 }
 
 type remoteBridgeState struct {
@@ -88,6 +90,7 @@ type remoteConnectorTelemetry struct {
 	stableReady                    bool
 	lastHealthAt                   time.Time
 	stableError                    string
+	activity                       *mcpActivityBuffer
 }
 
 type remoteBridgeManager struct {
@@ -155,7 +158,8 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 		}
 		handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
 			PathToken: profile.PathToken, AllowedOriginHosts: allowed,
-			Observe: func(event mcpedge.RemoteHTTPEvent) { m.observe(connectorID, event) },
+			Observe:     func(event mcpedge.RemoteHTTPEvent) { m.observe(connectorID, event) },
+			ObserveTool: func(event mcpedge.ToolCallEvent) { m.observeTool(connectorID, event) },
 		})
 		if err != nil {
 			return fmt.Errorf("build %s remote MCP handler: %w", connectorID, err)
@@ -172,9 +176,11 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 	for id, profile := range newProfiles {
 		previous, existed := m.profiles[id]
 		if !existed || previous.PathToken != profile.PathToken || previous.StableBaseURL != profile.StableBaseURL || previous.PreferredMode != profile.PreferredMode {
-			m.telemetry[id] = &remoteConnectorTelemetry{}
+			m.telemetry[id] = &remoteConnectorTelemetry{activity: newMCPActivityBuffer(mcpRecentOperationLimit)}
 		} else if m.telemetry[id] == nil {
-			m.telemetry[id] = &remoteConnectorTelemetry{}
+			m.telemetry[id] = &remoteConnectorTelemetry{activity: newMCPActivityBuffer(mcpRecentOperationLimit)}
+		} else if m.telemetry[id].activity == nil {
+			m.telemetry[id].activity = newMCPActivityBuffer(mcpRecentOperationLimit)
 		}
 	}
 	m.profiles = newProfiles
@@ -299,6 +305,7 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 		ClientAttached: telemetry.initialized, ToolsDiscovered: telemetry.toolsListed,
 		EndpointStable: profile.PreferredMode == store.RemoteConnectorModeStable, ConnectionStage: "ROUTE_UNAVAILABLE",
 	}
+	state.RecentOperations, state.DroppedOperations = telemetry.activity.Snapshot()
 	switch {
 	case !telemetry.sessionTrackingSeen:
 		state.ActiveSessionsReason = "NOT_OBSERVED"
@@ -641,6 +648,20 @@ func (m *remoteBridgeManager) observe(connectorID string, event mcpedge.RemoteHT
 	if event.JSONRPCMethod == "tools/list" {
 		telemetry.toolsListed = true
 	}
+}
+
+func (m *remoteBridgeManager) observeTool(connectorID string, event mcpedge.ToolCallEvent) {
+	m.mu.Lock()
+	telemetry := m.telemetry[connectorID]
+	if telemetry == nil {
+		telemetry = &remoteConnectorTelemetry{activity: newMCPActivityBuffer(mcpRecentOperationLimit)}
+		m.telemetry[connectorID] = telemetry
+	} else if telemetry.activity == nil {
+		telemetry.activity = newMCPActivityBuffer(mcpRecentOperationLimit)
+	}
+	activity := telemetry.activity
+	m.mu.Unlock()
+	activity.Observe(event)
 }
 
 func (m *remoteBridgeManager) setError(err error) {

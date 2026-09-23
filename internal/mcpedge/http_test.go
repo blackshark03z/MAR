@@ -2,6 +2,7 @@ package mcpedge
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -159,6 +160,87 @@ func TestRemoteHTTPAllowsClaudeOriginToReachMCPTransport(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code == http.StatusForbidden || rec.Code == http.StatusNotFound {
 		t.Fatalf("Claude Origin did not reach MCP transport: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRemoteHTTPToolObserverCapturesOnlyBoundedMetadata(t *testing.T) {
+	testsupport.RequireLoopbackTCP(t)
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const sentinel = "SHADOW_PRIVATE_SENTINEL_9F2C7A"
+	var mu sync.Mutex
+	var events []ToolCallEvent
+	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{
+		PathToken: token,
+		ObserveTool: func(event ToolCallEvent) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "mar-tool-observer-test", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp/" + token, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "context", "project_id": "mar", "query": sentinel}})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("project context call failed: result=%+v err=%v", result, err)
+	}
+	mu.Lock()
+	got := append([]ToolCallEvent(nil), events...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("tool observer event count=%d want=2 events=%+v", len(got), got)
+	}
+	if got[0].Phase != "start" || got[1].Phase != "complete" || got[0].CallID == 0 || got[0].CallID != got[1].CallID {
+		t.Fatalf("tool observer lifecycle mismatch: %+v", got)
+	}
+	for _, event := range got {
+		if event.Tool != "project" || event.Operation != "context" || event.ProjectID != "mar" {
+			t.Fatalf("tool observer metadata mismatch: %+v", event)
+		}
+	}
+	if got[1].Outcome != "ok" || got[1].DurationMS < 0 {
+		t.Fatalf("tool observer completion mismatch: %+v", got[1])
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), sentinel) {
+		t.Fatalf("tool observer leaked request content: %s", raw)
+	}
+}
+
+func TestRemoteHTTPToolObserverPanicDoesNotBreakToolCall(t *testing.T) {
+	testsupport.RequireLoopbackTCP(t)
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{
+		PathToken: token,
+		ObserveTool: func(ToolCallEvent) {
+			panic("synthetic observer failure")
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "mar-tool-observer-panic-test", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp/" + token, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "context", "project_id": "mar"}})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("observer panic affected tool call: result=%+v err=%v", result, err)
 	}
 }
 

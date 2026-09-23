@@ -30,36 +30,38 @@ const (
 )
 
 type openAITunnelState struct {
-	Provider           string     `json:"provider"`
-	Transport          string     `json:"transport"`
-	Status             string     `json:"status"`
-	Configured         bool       `json:"configured"`
-	Running            bool       `json:"running"`
-	Healthy            bool       `json:"healthy"`
-	Ready              bool       `json:"ready"`
-	Connected          bool       `json:"connected"`
-	Identifier         string     `json:"identifier,omitempty"`
-	ProfileName        string     `json:"profile_name"`
-	APIKeyEnv          string     `json:"api_key_env"`
-	AuthConfigured     bool       `json:"auth_configured"`
-	ClientFound        bool       `json:"client_found"`
-	ClientPath         string     `json:"client_path,omitempty"`
-	InstallURL         string     `json:"install_url"`
-	LocalTarget        string     `json:"local_target,omitempty"`
-	AdminBaseURL       string     `json:"admin_base_url,omitempty"`
-	DesiredRunning     bool       `json:"desired_running"`
-	PID                int        `json:"pid,omitempty"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	ConnectedSince     *time.Time `json:"connected_since,omitempty"`
-	LastActivityAt     *time.Time `json:"last_activity_at,omitempty"`
-	LastSuccessAt      *time.Time `json:"last_success_at,omitempty"`
-	LastHealthAt       *time.Time `json:"last_health_at,omitempty"`
-	LastError          string     `json:"last_error,omitempty"`
-	DiagnosticsSummary string     `json:"diagnostics_summary,omitempty"`
-	RecoveryInProgress bool       `json:"recovery_in_progress"`
-	RecoveryAttempts   int        `json:"recovery_attempts"`
-	RecoveryLimit      int        `json:"recovery_limit"`
-	NextAction         string     `json:"next_action"`
+	Provider           string               `json:"provider"`
+	Transport          string               `json:"transport"`
+	Status             string               `json:"status"`
+	Configured         bool                 `json:"configured"`
+	Running            bool                 `json:"running"`
+	Healthy            bool                 `json:"healthy"`
+	Ready              bool                 `json:"ready"`
+	Connected          bool                 `json:"connected"`
+	Identifier         string               `json:"identifier,omitempty"`
+	ProfileName        string               `json:"profile_name"`
+	APIKeyEnv          string               `json:"api_key_env"`
+	AuthConfigured     bool                 `json:"auth_configured"`
+	ClientFound        bool                 `json:"client_found"`
+	ClientPath         string               `json:"client_path,omitempty"`
+	InstallURL         string               `json:"install_url"`
+	LocalTarget        string               `json:"local_target,omitempty"`
+	AdminBaseURL       string               `json:"admin_base_url,omitempty"`
+	DesiredRunning     bool                 `json:"desired_running"`
+	PID                int                  `json:"pid,omitempty"`
+	StartedAt          *time.Time           `json:"started_at,omitempty"`
+	ConnectedSince     *time.Time           `json:"connected_since,omitempty"`
+	LastActivityAt     *time.Time           `json:"last_activity_at,omitempty"`
+	LastSuccessAt      *time.Time           `json:"last_success_at,omitempty"`
+	LastHealthAt       *time.Time           `json:"last_health_at,omitempty"`
+	LastError          string               `json:"last_error,omitempty"`
+	DiagnosticsSummary string               `json:"diagnostics_summary,omitempty"`
+	RecoveryInProgress bool                 `json:"recovery_in_progress"`
+	RecoveryAttempts   int                  `json:"recovery_attempts"`
+	RecoveryLimit      int                  `json:"recovery_limit"`
+	NextAction         string               `json:"next_action"`
+	RecentOperations   []mcpRecentOperation `json:"recent_operations,omitempty"`
+	DroppedOperations  int64                `json:"dropped_operations,omitempty"`
 }
 
 type tunnelClientProcess interface {
@@ -101,6 +103,7 @@ type openAITunnelManager struct {
 	recoveryAttempts   int
 	recoveryDelay      func(int) time.Duration
 	recoverySettle     time.Duration
+	activity           *mcpActivityBuffer
 
 	findClient   func(store.OpenAITunnelConfig, string) (string, error)
 	runCommand   func(context.Context, string, ...string) (string, error)
@@ -109,7 +112,7 @@ type openAITunnelManager struct {
 }
 
 func newOpenAITunnelManager(ctx context.Context, backend mcpedge.Backend, dataRoot string) *openAITunnelManager {
-	m := &openAITunnelManager{ctx: ctx, backend: backend, dataRoot: filepath.Clean(dataRoot), healthWake: make(chan struct{}, 1)}
+	m := &openAITunnelManager{ctx: ctx, backend: backend, dataRoot: filepath.Clean(dataRoot), healthWake: make(chan struct{}, 1), activity: newMCPActivityBuffer(mcpRecentOperationLimit)}
 	m.recoveryDelay = openAITunnelRecoveryDelay
 	m.recoverySettle = openAITunnelRecoverySettle
 	m.findClient = findTunnelClient
@@ -179,6 +182,7 @@ func (m *openAITunnelManager) stateLocked() openAITunnelState {
 	if running {
 		state.PID = m.process.PID()
 	}
+	state.RecentOperations, state.DroppedOperations = m.activity.Snapshot()
 	copyTime := func(value time.Time) *time.Time {
 		if value.IsZero() {
 			return nil
@@ -473,7 +477,7 @@ func (m *openAITunnelManager) ensureLocalServer() error {
 		return err
 	}
 	handler, err := mcpedge.NewRemoteHTTPHandler(m.backend, mcpedge.RemoteHTTPOptions{
-		PathToken: token, AllowedOriginHosts: []string{"openai.com", "chatgpt.com"}, Observe: m.observeMCP, Stateless: true,
+		PathToken: token, AllowedOriginHosts: []string{"openai.com", "chatgpt.com"}, Observe: m.observeMCP, ObserveTool: m.activity.Observe, Stateless: true,
 	})
 	if err != nil {
 		return fmt.Errorf("build OpenAI tunnel local MCP handler: %w", err)

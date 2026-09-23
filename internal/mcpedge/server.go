@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -15,6 +17,19 @@ import (
 )
 
 const serverVersion = "0.1.0"
+
+type ToolCallEvent struct {
+	CallID     uint64    `json:"call_id"`
+	At         time.Time `json:"at"`
+	Phase      string    `json:"phase"`
+	Tool       string    `json:"tool"`
+	Operation  string    `json:"operation,omitempty"`
+	ProjectID  string    `json:"project_id,omitempty"`
+	DurationMS int64     `json:"duration_ms,omitempty"`
+	Outcome    string    `json:"outcome,omitempty"`
+}
+
+type ToolCallObserver func(ToolCallEvent)
 
 type Backend interface {
 	Submit(context.Context, string, domain.GoalContract) (domain.Task, bool, error)
@@ -191,11 +206,18 @@ type brainRespondArgs struct {
 }
 
 func NewServer(backend Backend) (*mcp.Server, error) {
+	return newServerWithToolObserver(backend, nil)
+}
+
+func newServerWithToolObserver(backend Backend, observer ToolCallObserver) (*mcp.Server, error) {
 	if backend == nil {
 		return nil, errors.New("MCP backend is required")
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
+	if observer != nil {
+		server.AddReceivingMiddleware(toolCallObservationMiddleware(observer))
+	}
 
 	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, build one lightweight context_batch from existing find/search/read primitives, combine context+Git status through context_status without new request fields, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, context_batch, context_status, read, read_many, find, search, git_status, git_diff, attach, detach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
@@ -575,6 +597,52 @@ func callControl(ctx context.Context, backend Backend, args controlArgs) (map[st
 		return map[string]any{"created": created, "control": control}, nil
 	default:
 		return nil, errors.New("control operation must be steer, input, or cancel")
+	}
+}
+
+func toolCallObservationMiddleware(observer ToolCallObserver) mcp.Middleware {
+	var sequence atomic.Uint64
+	safeObserve := func(event ToolCallEvent) {
+		defer func() { _ = recover() }()
+		observer(event)
+	}
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method != "tools/call" {
+				return next(ctx, method, req)
+			}
+			call, ok := req.(*mcp.CallToolRequest)
+			if !ok || call.Params == nil {
+				return next(ctx, method, req)
+			}
+			tool := strings.TrimSpace(call.Params.Name)
+			var metadata struct {
+				Operation string `json:"operation"`
+				ProjectID string `json:"project_id"`
+			}
+			if len(call.Params.Arguments) != 0 {
+				_ = json.Unmarshal(call.Params.Arguments, &metadata)
+			}
+			if canonical, aliasOperation, alias := legacyToolAlias(tool); alias {
+				tool = canonical
+				if strings.TrimSpace(metadata.Operation) == "" {
+					metadata.Operation = aliasOperation
+				}
+			}
+			callID := sequence.Add(1)
+			started := time.Now().UTC()
+			safeObserve(ToolCallEvent{CallID: callID, At: started, Phase: "start", Tool: tool, Operation: strings.TrimSpace(metadata.Operation), ProjectID: strings.TrimSpace(metadata.ProjectID)})
+			result, err := next(ctx, method, req)
+			outcome := "ok"
+			if err != nil {
+				outcome = "error"
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					outcome = "cancelled"
+				}
+			}
+			safeObserve(ToolCallEvent{CallID: callID, At: time.Now().UTC(), Phase: "complete", Tool: tool, Operation: strings.TrimSpace(metadata.Operation), ProjectID: strings.TrimSpace(metadata.ProjectID), DurationMS: time.Since(started).Milliseconds(), Outcome: outcome})
+			return result, err
+		}
 	}
 }
 

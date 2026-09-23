@@ -12964,6 +12964,65 @@ function operationalConnections(runtime) {
 	]);
 	return (runtime?.connections || []).filter((c) => wanted.has(c.id));
 }
+function observedOperationCalls(runtime, workspace = "") {
+	const calls = /* @__PURE__ */ new Map();
+	for (const c of operationalConnections(runtime)) for (const event of c.recent_operations || []) {
+		const projectId = String(event.project_id || "");
+		if (workspace && projectId !== workspace) continue;
+		const callId = Number(event.call_id || 0);
+		const key = `${c.id}:${callId}`;
+		let call = calls.get(key);
+		if (!call) {
+			call = {
+				key,
+				connectorId: c.id,
+				connectorName: c.name || c.id,
+				callId,
+				tool: String(event.tool || ""),
+				operation: String(event.operation || ""),
+				projectId,
+				startedAt: Date.parse(event.at || "") || 0
+			};
+			calls.set(key, call);
+		}
+		if (event.phase === "start") call.startedAt = Date.parse(event.at || "") || call.startedAt;
+		if (event.phase === "complete") {
+			call.completedAt = Date.parse(event.at || "") || Date.now();
+			call.durationMs = Number(event.duration_ms || 0);
+			call.outcome = String(event.outcome || "");
+		}
+	}
+	return [...calls.values()].sort((a, b) => (b.completedAt || b.startedAt) - (a.completedAt || a.startedAt));
+}
+function activeOperationCalls(calls) {
+	const cutoff = Date.now() - 12e4;
+	return calls.filter((c) => !c.completedAt && c.startedAt >= cutoff);
+}
+function recentCompletedCalls(calls) {
+	const cutoff = Date.now() - 3e5;
+	return calls.filter((c) => !!c.completedAt && (c.completedAt || 0) >= cutoff);
+}
+function droppedOperationCount(runtime) {
+	return operationalConnections(runtime).reduce((n, c) => n + Number(c.dropped_operations || 0), 0);
+}
+function tokenRates(samples) {
+	return samples.map((s, i) => {
+		if (i === 0) return {
+			at: s.at,
+			input: 0,
+			output: 0,
+			total: 0
+		};
+		const prev = samples[i - 1], minutes = Math.max((s.at - prev.at) / 6e4, 1 / 6e4);
+		const input = Math.max(0, s.input - prev.input) / minutes, output = Math.max(0, s.output - prev.output) / minutes;
+		return {
+			at: s.at,
+			input,
+			output,
+			total: input + output
+		};
+	});
+}
 function primaryConnections(runtime) {
 	const all = operationalConnections(runtime);
 	const tunnel = all.find((c) => c.id === "openai-tunnel");
@@ -13062,7 +13121,7 @@ function TrendChart({ samples }) {
 		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 30 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Đang thu thập dữ liệu realtime…" })]
 	});
 	const width = 820, height = 235, px = 34;
-	const visible = samples.slice(-30);
+	const visible = tokenRates(samples.slice(-30));
 	const max = Math.max(1, ...visible.flatMap((s) => [s.input, s.output]));
 	const points = (key) => visible.map((s, i) => {
 		const x = px + i * 752 / Math.max(1, visible.length - 1);
@@ -13070,11 +13129,11 @@ function TrendChart({ samples }) {
 		return `${x.toFixed(1)},${y.toFixed(1)}`;
 	}).join(" ");
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
-		className: "trend-chart",
+		className: "trend-chart heartbeat-chart",
 		viewBox: `0 0 ${width} ${height}`,
 		preserveAspectRatio: "none",
 		role: "img",
-		"aria-label": "Realtime input and output token trend",
+		"aria-label": "Observed input and output token throughput per minute",
 		children: [
 			[
 				.25,
@@ -13097,6 +13156,25 @@ function TrendChart({ samples }) {
 				className: "chart-output-line"
 			})
 		]
+	});
+}
+function ExecutionPulse({ calls }) {
+	const now = Date.now(), buckets = 20, bucketMs = 2e3, values = Array(buckets).fill(0);
+	for (const call of calls) {
+		const age = now - call.startedAt;
+		if (age < 0 || age >= buckets * bucketMs) continue;
+		const idx = 19 - Math.floor(age / bucketMs);
+		values[idx]++;
+	}
+	const max = Math.max(1, ...values), w = 180, h = 34;
+	const pts = values.map((v, i) => `${(i * w / 19).toFixed(1)},${(31 - v / max * 28).toFixed(1)}`).join(" ");
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("svg", {
+		className: "execution-pulse",
+		viewBox: `0 0 ${w} ${h}`,
+		preserveAspectRatio: "none",
+		role: "img",
+		"aria-label": "MCP tool activity heartbeat",
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("polyline", { points: pts })
 	});
 }
 function Shell({ view, setView, runtime, workspace, setWorkspace, projects, children }) {
@@ -13211,6 +13289,12 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 	const routes = operationalConnections(runtime);
 	const readyRoutes = routes.filter(routeReady).length;
 	const waitingAI = flows.filter((t) => t.waiting_for_ai_turn).length;
+	const operationCalls = observedOperationCalls(runtime, workspace);
+	const activeCalls = activeOperationCalls(operationCalls);
+	const recentCalls = recentCompletedCalls(operationCalls);
+	const droppedCalls = droppedOperationCount(runtime);
+	const rates = tokenRates(tokenSamples);
+	const latestTokenRate = rates.length ? rates[rates.length - 1].total : 0;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "page-header",
@@ -13260,9 +13344,14 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 						className: "summary-icon cyan",
 						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Play, { size: 25 })
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Luồng đang hoạt động" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: flows.length }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: flows.length ? "Execution flow đang chạy" : "Không có flow đang chạy" })
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Hoạt động realtime" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: flows.length + activeCalls.length }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
+							flows.length,
+							" task · ",
+							activeCalls.length,
+							" tool call đang chạy"
+						] })
 					] })]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13287,10 +13376,10 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 						className: "panel-heading",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "panel-title",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChartColumn, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Biểu đồ realtime" })]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Token heartbeat" })]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "segmented",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Token input + output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { size: 14 })]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Observed throughput" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ChevronDown, { size: 14 })]
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -13299,7 +13388,7 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live tokens" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "—" })] }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.input)}` : "—" })] }),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.output)}` : "—" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Turns" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.observable ? fmtNumber(agg.turns) : "—" })] })
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Rate" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/min` : "—" })] })
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
@@ -13308,7 +13397,7 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "chart-legend",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input tokens"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output tokens"] })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input tokens/min"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output tokens/min"] })]
 					})
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -13317,15 +13406,30 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 					className: "panel-heading",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "panel-title",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Luồng đang hoạt động" })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Workflow, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Đang hoạt động" })]
 					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "text-button",
 						onClick: () => setView("tasks"),
-						children: ["Xem tất cả ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { size: 14 })]
+						children: ["Tasks ", /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExternalLink, { size: 14 })]
 					})]
-				}), flows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				}), activeCalls.length || flows.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "flow-list",
-					children: flows.slice(0, 8).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					children: [activeCalls.slice(0, 5).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "flow-row static tool-live-row",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("strong", { children: [
+							call.projectId || "global",
+							" · ",
+							call.tool,
+							call.operation ? `.${call.operation}` : ""
+						] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
+							call.connectorName,
+							" · running ",
+							fmtDuration(Math.max(0, (Date.now() - call.startedAt) / 1e3))
+						] })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+							className: "status-badge info",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 12 }), "Tool"]
+						})]
+					}, call.key)), flows.slice(0, Math.max(0, 8 - activeCalls.length)).map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 						className: "flow-row",
 						onClick: () => setView("tasks"),
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: t.goal || t.id }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
@@ -13333,12 +13437,52 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 							" · epoch ",
 							t.run_epoch || 0
 						] })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StatusBadge, { state: t.state })]
-					}, t.id))
+					}, t.id))]
 				}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
 					icon: Workflow,
-					title: "Không có luồng nào đang hoạt động",
-					text: "Khi có flow chạy, thông tin sẽ hiện tại đây."
+					title: "Không có hoạt động đang chạy",
+					text: "Task và fast-path tool call sẽ hiện tại đây."
 				})]
+			})]
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+			className: "panel operation-panel",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "panel-heading",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "panel-title",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "MCP activity" })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "activity-pulse-wrap",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExecutionPulse, { calls: operationCalls }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+						recentCalls.length,
+						" recent",
+						droppedCalls ? ` · ${fmtNumber(droppedCalls)} dropped` : ""
+					] })]
+				})]
+			}), recentCalls.length ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "operation-list",
+				children: recentCalls.slice(0, 10).map((call) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "operation-row",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("time", { children: new Date(call.completedAt || call.startedAt).toLocaleTimeString("vi-VN", {
+							hour: "2-digit",
+							minute: "2-digit",
+							second: "2-digit"
+						}) }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("strong", { children: call.projectId || "global" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: call.connectorName })] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("code", { children: [call.tool, call.operation ? `.${call.operation}` : ""] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [fmtNumber(Math.max(0, call.durationMs || 0)), " ms"] }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: `operation-outcome ${call.outcome === "ok" ? "ok" : "error"}`,
+							children: call.outcome || "complete"
+						})
+					]
+				}, call.key))
+			}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(EmptyState, {
+				icon: Activity,
+				title: "Chưa có MCP activity gần đây",
+				text: "Fast-path project/action calls sẽ xuất hiện tại đây mà không cần tạo task."
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
@@ -14313,9 +14457,33 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 					checked: git,
 					onChange: (e) => setGit(e.target.checked)
 				}), "Local Git"] }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: network, onChange: (e) => setNetwork(e.target.checked) }), "Network: ", network ? "ON" : "OFF"] }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: push, onChange: (e) => setPush(e.target.checked) }), "Push: ", push ? "ON" : "OFF"] }),
-				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", { type: "checkbox", checked: deploy, onChange: (e) => setDeploy(e.target.checked) }), "Deploy: ", deploy ? "ON" : "OFF"] }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: network,
+						onChange: (e) => setNetwork(e.target.checked)
+					}),
+					"Network: ",
+					network ? "ON" : "OFF"
+				] }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: push,
+						onChange: (e) => setPush(e.target.checked)
+					}),
+					"Push: ",
+					push ? "ON" : "OFF"
+				] }),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: deploy,
+						onChange: (e) => setDeploy(e.target.checked)
+					}),
+					"Deploy: ",
+					deploy ? "ON" : "OFF"
+				] }),
 				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					className: `workspace-select-button ${selected ? "selected" : ""}`,
 					onClick: onSelect,
@@ -14338,10 +14506,19 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 							setSaving(false);
 						}
 					},
-					children: saving ? "Đang lưu..." : "Lưu quyền"
+					children: saving ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+						className: "spin",
+						size: 15
+					}), "Đang lưu..."] }) : "Lưu quyền"
 				}),
-				message && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "action-feedback success", children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CheckCircle2, { size: 15 }), message] }),
-				error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "action-feedback error", children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AlertTriangle, { size: 15 }), error] })
+				message && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "action-feedback success",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { size: 15 }), message]
+				}),
+				error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "action-feedback error",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 15 }), error]
+				})
 			]
 		})]
 	});
@@ -14759,18 +14936,28 @@ function App() {
 	}, [workspace]);
 	const scopedTasks = (0, import_react.useMemo)(() => workspace ? tasks.filter((t) => t.project_id === workspace) : tasks, [tasks, workspace]);
 	const aggregate = (0, import_react.useMemo)(() => liveAggregate(scopedTasks), [scopedTasks]);
+	const aggregateRef = (0, import_react.useRef)(aggregate);
+	aggregateRef.current = aggregate;
 	(0, import_react.useEffect)(() => {
-		if (!aggregate.tokenTasks) return;
-		setTokenSamples((prev) => [...prev, {
-			at: Date.now(),
-			input: aggregate.input,
-			output: aggregate.output
-		}].slice(-40));
-	}, [
-		aggregate.input,
-		aggregate.output,
-		aggregate.tokenTasks
-	]);
+		const tick = () => {
+			const a = aggregateRef.current;
+			if (!a.tokenTasks) {
+				setTokenSamples((prev) => prev.length ? [] : prev);
+				return;
+			}
+			setTokenSamples((prev) => [...prev, {
+				at: Date.now(),
+				input: a.input,
+				output: a.output
+			}].slice(-40));
+		};
+		tick();
+		const timer = setInterval(tick, 2e3);
+		return () => clearInterval(timer);
+	}, []);
+	(0, import_react.useEffect)(() => {
+		setTokenSamples([]);
+	}, [workspace]);
 	let content;
 	if (view === "live") content = /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LiveOperations, {
 		runtime,

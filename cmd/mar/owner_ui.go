@@ -186,56 +186,58 @@ type ownerUsageView struct {
 }
 
 type ownerConnectionView struct {
-	ID                      string     `json:"id"`
-	Name                    string     `json:"name"`
-	Status                  string     `json:"status"`
-	Transport               string     `json:"transport"`
-	Summary                 string     `json:"summary"`
-	ActiveSessions          *int       `json:"active_sessions,omitempty"`
-	ActiveSessionsAvailable bool       `json:"active_sessions_available"`
-	SessionCountDetail      string     `json:"session_count_detail,omitempty"`
-	Command                 string     `json:"command,omitempty"`
-	Args                    []string   `json:"args,omitempty"`
-	SetupAction             string     `json:"setup_action,omitempty"`
-	ConnectionURL           string     `json:"connection_url,omitempty"`
-	StableBaseURL           string     `json:"stable_base_url,omitempty"`
-	StableURL               string     `json:"stable_url,omitempty"`
-	TemporaryURL            string     `json:"temporary_url,omitempty"`
-	PreferredMode           string     `json:"preferred_mode,omitempty"`
-	LocalTarget             string     `json:"local_target,omitempty"`
-	TemporaryLink           bool       `json:"temporary_link,omitempty"`
-	RouteReady              bool       `json:"route_ready,omitempty"`
-	ConnectionStage         string     `json:"connection_stage,omitempty"`
-	ClientAttached          bool       `json:"client_attached,omitempty"`
-	ToolsDiscovered         bool       `json:"tools_discovered,omitempty"`
-	UsableFromClient        bool       `json:"usable_from_client,omitempty"`
-	EndpointStable          bool       `json:"endpoint_stable,omitempty"`
-	Initialized             bool       `json:"initialized,omitempty"`
-	ToolsListed             bool       `json:"tools_listed,omitempty"`
-	Requests                int64      `json:"requests,omitempty"`
-	LastSeenAt              *time.Time `json:"last_seen_at,omitempty"`
-	LastHealthAt            *time.Time `json:"last_health_at,omitempty"`
-	Configured              bool       `json:"configured,omitempty"`
-	Running                 bool       `json:"running,omitempty"`
-	Healthy                 bool       `json:"healthy,omitempty"`
-	Ready                   bool       `json:"ready,omitempty"`
-	Connected               bool       `json:"connected,omitempty"`
-	Identifier              string     `json:"identifier,omitempty"`
-	ProfileName             string     `json:"profile_name,omitempty"`
-	APIKeyEnv               string     `json:"api_key_env,omitempty"`
-	AuthConfigured          bool       `json:"auth_configured,omitempty"`
-	ClientFound             bool       `json:"client_found,omitempty"`
-	ClientPath              string     `json:"client_path,omitempty"`
-	InstallURL              string     `json:"install_url,omitempty"`
-	AdminBaseURL            string     `json:"admin_base_url,omitempty"`
-	DesiredRunning          bool       `json:"desired_running,omitempty"`
-	PID                     int        `json:"pid,omitempty"`
-	ConnectedSince          *time.Time `json:"connected_since,omitempty"`
-	LastActivityAt          *time.Time `json:"last_activity_at,omitempty"`
-	LastSuccessAt           *time.Time `json:"last_success_at,omitempty"`
-	DiagnosticsSummary      string     `json:"diagnostics_summary,omitempty"`
-	NextAction              string     `json:"next_action,omitempty"`
-	LastError               string     `json:"last_error,omitempty"`
+	ID                      string               `json:"id"`
+	Name                    string               `json:"name"`
+	Status                  string               `json:"status"`
+	Transport               string               `json:"transport"`
+	Summary                 string               `json:"summary"`
+	ActiveSessions          *int                 `json:"active_sessions,omitempty"`
+	ActiveSessionsAvailable bool                 `json:"active_sessions_available"`
+	SessionCountDetail      string               `json:"session_count_detail,omitempty"`
+	Command                 string               `json:"command,omitempty"`
+	Args                    []string             `json:"args,omitempty"`
+	SetupAction             string               `json:"setup_action,omitempty"`
+	ConnectionURL           string               `json:"connection_url,omitempty"`
+	StableBaseURL           string               `json:"stable_base_url,omitempty"`
+	StableURL               string               `json:"stable_url,omitempty"`
+	TemporaryURL            string               `json:"temporary_url,omitempty"`
+	PreferredMode           string               `json:"preferred_mode,omitempty"`
+	LocalTarget             string               `json:"local_target,omitempty"`
+	TemporaryLink           bool                 `json:"temporary_link,omitempty"`
+	RouteReady              bool                 `json:"route_ready,omitempty"`
+	ConnectionStage         string               `json:"connection_stage,omitempty"`
+	ClientAttached          bool                 `json:"client_attached,omitempty"`
+	ToolsDiscovered         bool                 `json:"tools_discovered,omitempty"`
+	UsableFromClient        bool                 `json:"usable_from_client,omitempty"`
+	EndpointStable          bool                 `json:"endpoint_stable,omitempty"`
+	Initialized             bool                 `json:"initialized,omitempty"`
+	ToolsListed             bool                 `json:"tools_listed,omitempty"`
+	Requests                int64                `json:"requests,omitempty"`
+	LastSeenAt              *time.Time           `json:"last_seen_at,omitempty"`
+	LastHealthAt            *time.Time           `json:"last_health_at,omitempty"`
+	Configured              bool                 `json:"configured,omitempty"`
+	Running                 bool                 `json:"running,omitempty"`
+	Healthy                 bool                 `json:"healthy,omitempty"`
+	Ready                   bool                 `json:"ready,omitempty"`
+	Connected               bool                 `json:"connected,omitempty"`
+	Identifier              string               `json:"identifier,omitempty"`
+	ProfileName             string               `json:"profile_name,omitempty"`
+	APIKeyEnv               string               `json:"api_key_env,omitempty"`
+	AuthConfigured          bool                 `json:"auth_configured,omitempty"`
+	ClientFound             bool                 `json:"client_found,omitempty"`
+	ClientPath              string               `json:"client_path,omitempty"`
+	InstallURL              string               `json:"install_url,omitempty"`
+	AdminBaseURL            string               `json:"admin_base_url,omitempty"`
+	DesiredRunning          bool                 `json:"desired_running,omitempty"`
+	PID                     int                  `json:"pid,omitempty"`
+	ConnectedSince          *time.Time           `json:"connected_since,omitempty"`
+	LastActivityAt          *time.Time           `json:"last_activity_at,omitempty"`
+	LastSuccessAt           *time.Time           `json:"last_success_at,omitempty"`
+	DiagnosticsSummary      string               `json:"diagnostics_summary,omitempty"`
+	NextAction              string               `json:"next_action,omitempty"`
+	LastError               string               `json:"last_error,omitempty"`
+	RecentOperations        []mcpRecentOperation `json:"recent_operations,omitempty"`
+	DroppedOperations       int64                `json:"dropped_operations,omitempty"`
 }
 
 type ownerAttentionItem struct {
@@ -1088,6 +1090,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		AdminBaseURL: tunnel.AdminBaseURL, DesiredRunning: tunnel.DesiredRunning, PID: tunnel.PID, ConnectedSince: tunnel.ConnectedSince,
 		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
 		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
+		RecentOperations: tunnel.RecentOperations, DroppedOperations: tunnel.DroppedOperations,
 	})
 	for _, connector := range bridge.Connectors {
 		name := "Claude Web"
@@ -1106,6 +1109,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 			Initialized: connector.Initialized, ToolsListed: connector.ToolsListed, Requests: connector.Requests,
 			LastSeenAt: connector.LastSeenAt, LastHealthAt: connector.LastHealthAt, LastError: connector.LastError,
 			ActiveSessionsAvailable: connector.ActiveSessionsAvailable,
+			RecentOperations:        connector.RecentOperations, DroppedOperations: connector.DroppedOperations,
 		}
 		if connector.ActiveSessionsAvailable {
 			count := connector.ActiveSessions

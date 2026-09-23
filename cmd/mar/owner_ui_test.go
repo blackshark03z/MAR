@@ -341,7 +341,7 @@ func TestOwnerUIReactWorkspaceAndTaskListInteractionContract(t *testing.T) {
 
 func TestOwnerUIV6ConvergenceInformationArchitecture(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "live-main-grid", "task-three-col", "create-panel", "provider-grid", "summary-cards", "TrendChart", "CreateTaskPanel"} {
+	for _, marker := range []string{"Live Operations", "Tasks", "Workspaces", "Connections", "Usage", "Diagnostics", "mar.owner.workspace.react.v1", "live-main-grid", "task-three-col", "create-panel", "provider-grid", "summary-cards", "TrendChart", "ExecutionPulse", "Token heartbeat", "MCP activity", "CreateTaskPanel"} {
 		if !strings.Contains(bundle, marker) {
 			t.Fatalf("React Owner Console contract missing %q", marker)
 		}

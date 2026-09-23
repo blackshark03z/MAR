@@ -15,6 +15,7 @@ import {
 
 type View = 'overview' | 'live' | 'tasks' | 'workspaces' | 'connections' | 'usage' | 'diagnostics'
 type TokenSample = { at: number; input: number; output: number }
+type OperationCall = { key:string; connectorId:string; connectorName:string; callId:number; tool:string; operation:string; projectId:string; startedAt:number; completedAt?:number; durationMs?:number; outcome?:string }
 
 const ACTIVE_STATES = new Set(['SUBMITTED','PREFLIGHT','WAITING_RESOURCE','WORKSPACE_READY','RUNNING','VERIFYING','REVIEWING','READY_TO_INTEGRATE','INTEGRATING','RETRY_WAIT'])
 const TERMINAL_STATES = new Set(['COMPLETE','FAILED','CANCELLED','BLOCKED'])
@@ -77,6 +78,26 @@ function operationalConnections(runtime: any) {
   const wanted = new Set(['openai-tunnel','chatgpt-web','claude-web'])
   return (runtime?.connections || []).filter((c: any) => wanted.has(c.id))
 }
+function observedOperationCalls(runtime:any, workspace=''):OperationCall[]{
+  const calls=new Map<string,OperationCall>()
+  for(const c of operationalConnections(runtime)){
+    for(const event of c.recent_operations||[]){
+      const projectId=String(event.project_id||'')
+      if(workspace&&projectId!==workspace)continue
+      const callId=Number(event.call_id||0)
+      const key=`${c.id}:${callId}`
+      let call=calls.get(key)
+      if(!call){call={key,connectorId:c.id,connectorName:c.name||c.id,callId,tool:String(event.tool||''),operation:String(event.operation||''),projectId,startedAt:Date.parse(event.at||'')||0};calls.set(key,call)}
+      if(event.phase==='start')call.startedAt=Date.parse(event.at||'')||call.startedAt
+      if(event.phase==='complete'){call.completedAt=Date.parse(event.at||'')||Date.now();call.durationMs=Number(event.duration_ms||0);call.outcome=String(event.outcome||'')}
+    }
+  }
+  return [...calls.values()].sort((a,b)=>(b.completedAt||b.startedAt)-(a.completedAt||a.startedAt))
+}
+function activeOperationCalls(calls:OperationCall[]){const cutoff=Date.now()-120000;return calls.filter(c=>!c.completedAt&&c.startedAt>=cutoff)}
+function recentCompletedCalls(calls:OperationCall[]){const cutoff=Date.now()-300000;return calls.filter(c=>!!c.completedAt&&(c.completedAt||0)>=cutoff)}
+function droppedOperationCount(runtime:any){return operationalConnections(runtime).reduce((n:number,c:any)=>n+Number(c.dropped_operations||0),0)}
+function tokenRates(samples:TokenSample[]){return samples.map((s,i)=>{if(i===0)return {at:s.at,input:0,output:0,total:0};const prev=samples[i-1],minutes=Math.max((s.at-prev.at)/60000,1/60000);const input=Math.max(0,s.input-prev.input)/minutes,output=Math.max(0,s.output-prev.output)/minutes;return {at:s.at,input,output,total:input+output}})}
 function primaryConnections(runtime: any) {
   const all = operationalConnections(runtime)
   const tunnel = all.find((c: any) => c.id === 'openai-tunnel')
@@ -134,18 +155,25 @@ function IconButton({ icon: Icon, label, ...props }: any) {
 function TrendChart({ samples }: { samples: TokenSample[] }) {
   if (samples.length < 2) return <div className="chart-empty"><Activity size={30}/><span>Đang thu thập dữ liệu realtime…</span></div>
   const width = 820, height = 235, px = 34, py = 24
-  const visible = samples.slice(-30)
+  const visible = tokenRates(samples.slice(-30))
   const max = Math.max(1, ...visible.flatMap(s => [s.input, s.output]))
   const points = (key: 'input'|'output') => visible.map((s, i) => {
     const x = px + i * (width - px * 2) / Math.max(1, visible.length - 1)
     const y = height - py - (s[key] / max) * (height - py * 2)
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
-  return <svg className="trend-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Realtime input and output token trend">
+  return <svg className="trend-chart heartbeat-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Observed input and output token throughput per minute">
     {[.25,.5,.75,1].map(v => <line key={v} x1={px} x2={width-px} y1={height-py-v*(height-py*2)} y2={height-py-v*(height-py*2)} className="chart-grid-line"/>)}
     <polyline points={points('input')} className="chart-input-line"/>
     <polyline points={points('output')} className="chart-output-line"/>
   </svg>
+}
+function ExecutionPulse({calls}:{calls:OperationCall[]}){
+  const now=Date.now(),buckets=20,bucketMs=2000,values=Array(buckets).fill(0)
+  for(const call of calls){const age=now-call.startedAt;if(age<0||age>=buckets*bucketMs)continue;const idx=buckets-1-Math.floor(age/bucketMs);values[idx]++}
+  const max=Math.max(1,...values),w=180,h=34
+  const pts=values.map((v,i)=>`${(i*w/(buckets-1)).toFixed(1)},${(h-3-(v/max)*(h-6)).toFixed(1)}`).join(' ')
+  return <svg className="execution-pulse" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="MCP tool activity heartbeat"><polyline points={pts}/></svg>
 }
 
 function Shell({ view, setView, runtime, workspace, setWorkspace, projects, children }: any) {
@@ -182,18 +210,25 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
   const routes = operationalConnections(runtime)
   const readyRoutes = routes.filter(routeReady).length
   const waitingAI = flows.filter((t:any)=>t.waiting_for_ai_turn).length
+  const operationCalls = observedOperationCalls(runtime, workspace)
+  const activeCalls = activeOperationCalls(operationCalls)
+  const recentCalls = recentCompletedCalls(operationCalls)
+  const droppedCalls = droppedOperationCount(runtime)
+  const rates = tokenRates(tokenSamples)
+  const latestTokenRate = rates.length ? rates[rates.length-1].total : 0
   return <>
     <div className="page-header"><div><div className="title-row"><h1>Live Operations</h1><span className="live-state"><span className="live-dot"/>Đang hoạt động</span></div><p>Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR.</p></div><div className="last-update"><RefreshCw size={14}/>2 giây / lần</div></div>
     <section className="summary-cards four">
       <div className={`summary-card ${health.tone}`}><div className="summary-icon"><ShieldCheck size={25}/></div><div><span>Trạng thái hệ thống</span><strong>{health.label}</strong><small>{health.detail}</small></div></div>
       <div className="summary-card"><div className="summary-icon blue"><Database size={25}/></div><div><span>Kết nối AI</span><strong>{connected} / {primary.length}</strong><small>{primary.length ? 'Các provider chính' : 'Chưa có provider metadata'}</small></div></div>
-      <div className="summary-card"><div className="summary-icon cyan"><Play size={25}/></div><div><span>Luồng đang hoạt động</span><strong>{flows.length}</strong><small>{flows.length ? 'Execution flow đang chạy' : 'Không có flow đang chạy'}</small></div></div>
+      <div className="summary-card"><div className="summary-icon cyan"><Play size={25}/></div><div><span>Hoạt động realtime</span><strong>{flows.length+activeCalls.length}</strong><small>{flows.length} task · {activeCalls.length} tool call đang chạy</small></div></div>
       <div className="summary-card"><div className="summary-icon green"><Zap size={25}/></div><div><span>Token hôm nay</span><strong>{usageWindowValue(usage?.today)}</strong><small>{usage?.today ? `${fmtNumber(usage.today.input_tokens)} input · ${fmtNumber(usage.today.output_tokens)} output` : 'Đang tải usage'}</small></div></div>
     </section>
     <div className="live-main-grid">
-      <section className="panel chart-panel"><div className="panel-heading"><div className="panel-title"><BarChart3 size={20}/><h2>Biểu đồ realtime</h2></div><div className="segmented"><span>Token input + output</span><ChevronDown size={14}/></div></div><div className="chart-kpis"><div><span>Live tokens</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : '—'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : '—'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : '—'}</b></div><div><span>Turns</span><b>{agg.observable ? fmtNumber(agg.turns) : '—'}</b></div></div><div className="chart-wrap"><TrendChart samples={tokenSamples}/></div><div className="chart-legend"><span><i className="blue"/>Input tokens</span><span><i className="green"/>Output tokens</span></div></section>
-      <section className="panel active-panel"><div className="panel-heading"><div className="panel-title"><Workflow size={20}/><h2>Luồng đang hoạt động</h2></div><button className="text-button" onClick={()=>setView('tasks')}>Xem tất cả <ExternalLink size={14}/></button></div>{flows.length ? <div className="flow-list">{flows.slice(0,8).map((t:any)=><button key={t.id} className="flow-row" onClick={()=>setView('tasks')}><div><strong>{t.goal || t.id}</strong><small>{t.project_id} · epoch {t.run_epoch || 0}</small></div><StatusBadge state={t.state}/></button>)}</div> : <EmptyState icon={Workflow} title="Không có luồng nào đang hoạt động" text="Khi có flow chạy, thông tin sẽ hiện tại đây."/>}</section>
+      <section className="panel chart-panel"><div className="panel-heading"><div className="panel-title"><Activity size={20}/><h2>Token heartbeat</h2></div><div className="segmented"><span>Observed throughput</span><ChevronDown size={14}/></div></div><div className="chart-kpis"><div><span>Live tokens</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : '—'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : '—'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : '—'}</b></div><div><span>Rate</span><b>{agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/min` : '—'}</b></div></div><div className="chart-wrap"><TrendChart samples={tokenSamples}/></div><div className="chart-legend"><span><i className="blue"/>Input tokens/min</span><span><i className="green"/>Output tokens/min</span></div></section>
+      <section className="panel active-panel"><div className="panel-heading"><div className="panel-title"><Workflow size={20}/><h2>Đang hoạt động</h2></div><button className="text-button" onClick={()=>setView('tasks')}>Tasks <ExternalLink size={14}/></button></div>{activeCalls.length||flows.length ? <div className="flow-list">{activeCalls.slice(0,5).map(call=><div key={call.key} className="flow-row static tool-live-row"><div><strong>{call.projectId||'global'} · {call.tool}{call.operation?`.${call.operation}`:''}</strong><small>{call.connectorName} · running {fmtDuration(Math.max(0,(Date.now()-call.startedAt)/1000))}</small></div><span className="status-badge info"><Activity size={12}/>Tool</span></div>)}{flows.slice(0,Math.max(0,8-activeCalls.length)).map((t:any)=><button key={t.id} className="flow-row" onClick={()=>setView('tasks')}><div><strong>{t.goal || t.id}</strong><small>{t.project_id} · epoch {t.run_epoch || 0}</small></div><StatusBadge state={t.state}/></button>)}</div> : <EmptyState icon={Workflow} title="Không có hoạt động đang chạy" text="Task và fast-path tool call sẽ hiện tại đây."/>}</section>
     </div>
+    <section className="panel operation-panel"><div className="panel-heading"><div className="panel-title"><Activity size={20}/><h2>MCP activity</h2></div><div className="activity-pulse-wrap"><ExecutionPulse calls={operationCalls}/><span>{recentCalls.length} recent{droppedCalls?` · ${fmtNumber(droppedCalls)} dropped`:''}</span></div></div>{recentCalls.length?<div className="operation-list">{recentCalls.slice(0,10).map(call=><div className="operation-row" key={call.key}><time>{new Date(call.completedAt||call.startedAt).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time><div><strong>{call.projectId||'global'}</strong><small>{call.connectorName}</small></div><code>{call.tool}{call.operation?`.${call.operation}`:''}</code><span>{fmtNumber(Math.max(0,call.durationMs||0))} ms</span><span className={`operation-outcome ${call.outcome==='ok'?'ok':'error'}`}>{call.outcome||'complete'}</span></div>)}</div>:<EmptyState icon={Activity} title="Chưa có MCP activity gần đây" text="Fast-path project/action calls sẽ xuất hiện tại đây mà không cần tạo task."/>}</section>
     <div className="provider-and-stats"><div className="provider-grid">{['GPT','Claude'].map(provider=><ProviderZone key={provider} provider={provider} runtime={runtime}/>)}</div><section className="panel quick-panel"><div className="panel-heading"><div className="panel-title"><BarChart3 size={20}/><h2>Thống kê nhanh</h2></div></div><div className="quick-list"><Quick icon={Zap} label="Luồng hoạt động" value={String(flows.length)}/><Quick icon={LoaderCircle} label="Đang chờ AI" value={String(waitingAI)}/><Quick icon={Network} label="Tổng routes" value={`${readyRoutes} / ${routes.length}`}/><Quick icon={Database} label="Token hôm nay" value={usageWindowValue(usage?.today)}/></div></section></div>
   </>
 }
@@ -269,7 +304,9 @@ export default function App(){
   useEffect(()=>{reloadUsage()},[workspace])
   const scopedTasks=useMemo(()=>workspace?tasks.filter((t:any)=>t.project_id===workspace):tasks,[tasks,workspace])
   const aggregate=useMemo(()=>liveAggregate(scopedTasks),[scopedTasks])
-  useEffect(()=>{if(!aggregate.tokenTasks)return;setTokenSamples(prev=>[...prev,{at:Date.now(),input:aggregate.input,output:aggregate.output}].slice(-40))},[aggregate.input,aggregate.output,aggregate.tokenTasks])
+  const aggregateRef=useRef(aggregate);aggregateRef.current=aggregate
+  useEffect(()=>{const tick=()=>{const a=aggregateRef.current;if(!a.tokenTasks){setTokenSamples(prev=>prev.length?[]:prev);return}setTokenSamples(prev=>[...prev,{at:Date.now(),input:a.input,output:a.output}].slice(-40))};tick();const timer=setInterval(tick,2000);return()=>clearInterval(timer)},[])
+  useEffect(()=>{setTokenSamples([])},[workspace])
   let content:React.ReactNode
   if(view==='live')content=<LiveOperations runtime={runtime} tasks={tasks} usage={usage} tokenSamples={tokenSamples} setView={setView} workspace={workspace}/>
   else if(view==='overview')content=<Overview runtime={runtime} tasks={tasks} usage={usage} setView={setView} workspace={workspace} projects={projects}/>

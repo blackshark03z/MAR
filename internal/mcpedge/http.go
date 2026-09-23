@@ -31,6 +31,7 @@ type RemoteHTTPOptions struct {
 	PathToken          string
 	AllowedOriginHosts []string
 	Observe            func(RemoteHTTPEvent)
+	ObserveTool        ToolCallObserver
 	Stateless          bool
 }
 
@@ -42,7 +43,7 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 	if len(token) < 32 || strings.ContainsAny(token, "/\\?#") {
 		return nil, errors.New("remote MCP path token must be at least 32 URL-safe characters")
 	}
-	server, err := NewServer(backend)
+	server, err := newServerWithToolObserver(backend, opts.ObserveTool)
 	if err != nil {
 		return nil, err
 	}
