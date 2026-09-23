@@ -1,7 +1,7 @@
 # Slice 055 — Frozen-Schema-Safe Context + Status
 
 **Date:** 2026-09-23  
-**Status:** IMPLEMENTED CANDIDATE
+**Status:** VERIFIED / ACTIVATED
 
 ## Goal
 
@@ -64,3 +64,11 @@ This makes the optimization usable in the current conversation after runtime act
 - `go test -count=1 ./internal/mcpedge` — PASS;
 - `git diff --check` — PASS;
 - `TestCallProjectContextBatch` covers both the Slice-052 flag path and the frozen-schema-safe alias.
+
+## Release evidence
+
+Exact revision `f5ada0d6e29fbdc3fc81e431349150cc038b4233` completed the release-style gate on the second full-suite run with `test=0`, `vet=0`, `build=0`, `diff_check=0`, unchanged HEAD before/after, and a clean working tree. The first full-suite run hit `TestRuntimeE2EWebWaitCapacityAllowsThirdReadyTask`; the same test immediately passed in isolation in 5.54 s on the same revision, and the complete rerun then passed.
+
+The same exact revision was activated live and reported `HEALTHY / ALIGNED / trusted_for_release=true`; the OpenAI Secure Tunnel reported connected / ready / healthy.
+
+Most importantly, the already-open ChatGPT conversation still exposed the older frozen `project` input schema, yet `operation=context_status` succeeded without reconnecting or adding a new request field. The live call returned both `context_batch` and `git_status` in one response in approximately 2.4 s. This satisfies acceptance criterion 6 and proves the compatibility purpose of the slice.
