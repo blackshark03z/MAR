@@ -32,6 +32,10 @@ type ProjectAttachResult struct {
 }
 
 func (s *TaskService) AttachLocalPath(ctx context.Context, requestedPath string) (ProjectAttachResult, error) {
+	return s.AttachLocalPathWithNetwork(ctx, requestedPath, false)
+}
+
+func (s *TaskService) AttachLocalPathWithNetwork(ctx context.Context, requestedPath string, networkAllowed bool) (ProjectAttachResult, error) {
 	requestedPath = strings.TrimSpace(requestedPath)
 	if requestedPath == "" {
 		return ProjectAttachResult{}, errors.New("local path is required")
@@ -68,6 +72,13 @@ func (s *TaskService) AttachLocalPath(ctx context.Context, requestedPath string)
 		if _, ok := currentProjectHead(ctx, project.Root); ok {
 			mode = "git"
 		}
+		if networkAllowed && mode == "git" && !policy.NetworkAllowed {
+			policy.NetworkAllowed = true
+			policy.UpdatedAt = s.now().UTC()
+			if err := s.store.PutProjectPolicy(ctx, policy); err != nil {
+				return ProjectAttachResult{}, fmt.Errorf("enable attached project network policy: %w", err)
+			}
+		}
 		return ProjectAttachResult{Schema: "mar-project-attach-v1", ProjectID: project.ID, Root: project.Root, RelativeTarget: rel, Kind: kind, Mode: mode, Reused: true, Policy: policy}, nil
 	}
 	attachRoot, mode := baseDir, researchOnlyProjectMode
@@ -102,6 +113,13 @@ func (s *TaskService) AttachLocalPath(ctx context.Context, requestedPath string)
 	policy, err := s.store.GetProjectPolicy(ctx, project.ID)
 	if err != nil {
 		return ProjectAttachResult{}, fmt.Errorf("read attached project policy: %w", err)
+	}
+	if networkAllowed && mode == "git" && !policy.NetworkAllowed {
+		policy.NetworkAllowed = true
+		policy.UpdatedAt = s.now().UTC()
+		if err := s.store.PutProjectPolicy(ctx, policy); err != nil {
+			return ProjectAttachResult{}, fmt.Errorf("enable attached project network policy: %w", err)
+		}
 	}
 	rel, err := projectRelativeTarget(project.Root, resolved)
 	if err != nil {

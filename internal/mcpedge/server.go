@@ -42,7 +42,7 @@ type Backend interface {
 	CreateProjectWorktree(context.Context, string, string, string) (service.ProjectWorktreeResult, error)
 	ApplyAndVerifyProject(context.Context, string, []service.ProjectOwnedChange, []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
-	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
+	AttachLocalPathWithNetwork(context.Context, string, bool) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
 }
 
@@ -105,15 +105,16 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation  string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, or list"`
-	ProjectID  string             `json:"project_id,omitempty"`
-	Path       string             `json:"path,omitempty"`
-	Query      string             `json:"query,omitempty"`
-	StartLine  int                `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
-	EndLine    int                `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
-	Reads      []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
-	MaxEntries int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
-	MaxResults int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
+	Operation      string             `json:"operation" jsonschema:"context, read, read_many, find, search, git_status, git_diff, attach, or list"`
+	ProjectID      string             `json:"project_id,omitempty"`
+	Path           string             `json:"path,omitempty"`
+	NetworkAllowed bool               `json:"network_allowed,omitempty" jsonschema:"for attach, explicitly allow trusted-owner host commands; omitted keeps network denied"`
+	Query          string             `json:"query,omitempty"`
+	StartLine      int                `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
+	EndLine        int                `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
+	Reads          []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
+	MaxEntries     int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
+	MaxResults     int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
 }
 
 type actionChangeArgs struct {
@@ -186,7 +187,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. Use operation=context, read, read_many, find, search, git_status, git_diff, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for research, inspect registered project context, read one or many bounded file ranges, find paths, search text, inspect bounded Git status/diff, or list one bounded directory. For a Git attach that needs trusted-owner host verification, set network_allowed=true explicitly; omission remains fail-closed. Use operation=context, read, read_many, find, search, git_status, git_diff, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -305,7 +306,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"git_diff": result}, nil
 	case "attach":
-		result, err := backend.AttachLocalPath(ctx, strings.TrimSpace(args.Path))
+		result, err := backend.AttachLocalPathWithNetwork(ctx, strings.TrimSpace(args.Path), args.NetworkAllowed)
 		if err != nil {
 			return nil, err
 		}

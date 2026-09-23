@@ -52,11 +52,11 @@ func (f *fakeBackend) PendingWebTurn(context.Context, string) (domain.WebTurn, b
 func (f *fakeBackend) RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error) {
 	return domain.WebTurn{}, true, nil
 }
-func (f *fakeBackend) AttachLocalPath(_ context.Context, path string) (service.ProjectAttachResult, error) {
+func (f *fakeBackend) AttachLocalPathWithNetwork(_ context.Context, path string, networkAllowed bool) (service.ProjectAttachResult, error) {
 	if strings.TrimSpace(path) == "" {
 		return service.ProjectAttachResult{}, errors.New("local path is required")
 	}
-	return service.ProjectAttachResult{Schema: "mar-project-attach-v1", ProjectID: "attached-project", Root: path, Kind: "directory", Mode: "research_only", Created: true}, nil
+	return service.ProjectAttachResult{Schema: "mar-project-attach-v1", ProjectID: "attached-project", Root: path, Kind: "directory", Mode: "research_only", Created: true, Policy: domain.ProjectPolicy{ProjectID: "attached-project", LocalFileWrite: true, LocalGitWrite: true, NetworkAllowed: networkAllowed}}, nil
 }
 func (f *fakeBackend) ListProjectDirectory(_ context.Context, projectID, path string, maxEntries int) (service.ProjectListResult, error) {
 	if projectID == "" {
@@ -664,5 +664,21 @@ func TestCallActionApplyAndVerify(t *testing.T) {
 	}
 	if !result.Passed || result.ProjectID != "mar" {
 		t.Fatalf("unexpected apply_and_verify result: %+v", result)
+	}
+}
+func TestProjectAttachExplicitNetworkAllowed(t *testing.T) {
+	session := connectTestMCP(t, &fakeBackend{})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{
+		"operation": "attach", "path": "C:\\repo", "network_allowed": true,
+	}})
+	if err != nil || result.IsError {
+		t.Fatalf("project attach failed: err=%v result=%+v", err, result)
+	}
+	raw, err := json.Marshal(result.StructuredContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "\"network_allowed\":true") {
+		t.Fatalf("attach did not preserve explicit network authority: %s", raw)
 	}
 }

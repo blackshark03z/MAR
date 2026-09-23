@@ -80,6 +80,33 @@ func TestAttachLocalPathGitTopLevel(t *testing.T) {
 	}
 }
 
+func TestAttachLocalPathWithNetworkEnablesExplicitGitFastPath(t *testing.T) {
+	svc := newAttachService(t)
+	root := t.TempDir()
+	runProjectContextGit(t, root, "init")
+	runProjectContextGit(t, root, "config", "user.email", "attach-network@example.invalid")
+	runProjectContextGit(t, root, "config", "user.name", "Attach Network Test")
+	if err := os.WriteFile(filepath.Join(root, "main.txt"), []byte("ok\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runProjectContextGit(t, root, "add", ".")
+	runProjectContextGit(t, root, "commit", "-m", "base")
+	got, err := svc.AttachLocalPathWithNetwork(context.Background(), root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Policy.LocalFileWrite || !got.Policy.LocalGitWrite || !got.Policy.NetworkAllowed || got.Policy.RemoteGitWrite || got.Policy.DeployAllowed {
+		t.Fatalf("unexpected explicit fast-path policy: %+v", got.Policy)
+	}
+	stored, err := svc.ProjectPolicy(context.Background(), got.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stored.NetworkAllowed {
+		t.Fatalf("network permission was not persisted: %+v", stored)
+	}
+}
+
 func TestAttachLocalPathResearchOnlyContext(t *testing.T) {
 	svc := newAttachService(t)
 	root := t.TempDir()
