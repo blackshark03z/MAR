@@ -28,6 +28,8 @@ type Backend interface {
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
 	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
+	ProjectGitStatus(context.Context, string) (service.ProjectGitStatusResult, error)
+	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
@@ -92,7 +94,7 @@ type projectReadRange struct {
 }
 
 type projectArgs struct {
-	Operation  string             `json:"operation" jsonschema:"context, read, read_many, search, attach, or list"`
+	Operation  string             `json:"operation" jsonschema:"context, read, read_many, search, git_status, git_diff, attach, or list"`
 	ProjectID  string             `json:"project_id,omitempty"`
 	Path       string             `json:"path,omitempty"`
 	Query      string             `json:"query,omitempty"`
@@ -132,7 +134,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, search text, or list one bounded directory. Use operation=context, read, read_many, search, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, search text, inspect bounded Git status/diff, or list one bounded directory. Use operation=context, read, read_many, search, git_status, git_diff, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -224,6 +226,18 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"search": result}, nil
+	case "git_status":
+		result, err := backend.ProjectGitStatus(ctx, strings.TrimSpace(args.ProjectID))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"git_status": result}, nil
+	case "git_diff":
+		result, err := backend.ProjectGitDiff(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"git_diff": result}, nil
 	case "attach":
 		result, err := backend.AttachLocalPath(ctx, strings.TrimSpace(args.Path))
 		if err != nil {
@@ -237,7 +251,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, read_many, search, attach, or list")
+		return nil, errors.New("project operation must be context, read, read_many, search, git_status, git_diff, attach, or list")
 	}
 }
 

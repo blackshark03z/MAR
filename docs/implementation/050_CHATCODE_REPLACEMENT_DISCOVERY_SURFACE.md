@@ -14,6 +14,8 @@ The existing canonical MCP `project` tool remains one tool and gains bounded rea
 - `operation=read` accepts optional `start_line` / `end_line`;
 - `operation=read_many` batches 1..16 existing bounded file/range reads into one round trip;
 - `operation=search` performs bounded UTF-8 text search under one registered project/subtree.
+- `operation=git_status` reports bounded read-only HEAD/branch/porcelain working-tree state so Web cognition can see Owner changes before submit.
+- `operation=git_diff` reports a bounded no-color diff against HEAD, optionally confined to one project-relative path.
 
 The canonical public tool count remains six.
 

@@ -73,6 +73,18 @@ func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string)
 	}
 	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "first\nsecond\nthird\n", SizeBytes: 19}, nil
 }
+func (f *fakeBackend) ProjectGitStatus(_ context.Context, projectID string) (service.ProjectGitStatusResult, error) {
+	if projectID == "" {
+		return service.ProjectGitStatusResult{}, errors.New("project_id is required for project git_status")
+	}
+	return service.ProjectGitStatusResult{ProjectID: projectID, Head: "abc123", Branch: "master", Porcelain: " M README.md\n"}, nil
+}
+func (f *fakeBackend) ProjectGitDiff(_ context.Context, projectID, path string) (service.ProjectGitDiffResult, error) {
+	if projectID == "" {
+		return service.ProjectGitDiffResult{}, errors.New("project_id is required for project git_diff")
+	}
+	return service.ProjectGitDiffResult{ProjectID: projectID, Path: path, Diff: "diff --git a/README.md b/README.md\n"}, nil
+}
 func (f *fakeBackend) SearchProjectText(_ context.Context, projectID, path, query string, maxResults int) (service.ProjectSearchResult, error) {
 	if projectID == "" {
 		return service.ProjectSearchResult{}, errors.New("project_id is required for project search")
