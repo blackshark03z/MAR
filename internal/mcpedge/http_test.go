@@ -218,6 +218,48 @@ func TestRemoteHTTPToolObserverCapturesOnlyBoundedMetadata(t *testing.T) {
 	}
 }
 
+func TestRemoteHTTPToolObserverMarksToolLevelError(t *testing.T) {
+	testsupport.RequireLoopbackTCP(t)
+	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	var mu sync.Mutex
+	var events []ToolCallEvent
+	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{
+		PathToken: token,
+		ObserveTool: func(event ToolCallEvent) {
+			mu.Lock()
+			defer mu.Unlock()
+			events = append(events, event)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(handler)
+	defer ts.Close()
+	client := mcp.NewClient(&mcp.Implementation{Name: "mar-tool-observer-error-test", Version: "1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp/" + token, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "definitely_invalid_observability_probe", "project_id": "mar"}})
+	if err != nil {
+		t.Fatalf("tool-level error escaped transport: %v", err)
+	}
+	if result == nil || !result.IsError {
+		t.Fatalf("expected MCP tool-level IsError result, got %+v", result)
+	}
+	mu.Lock()
+	got := append([]ToolCallEvent(nil), events...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("tool observer event count=%d want=2 events=%+v", len(got), got)
+	}
+	if got[1].Phase != "complete" || got[1].Outcome != "error" {
+		t.Fatalf("tool observer failed to classify tool-level error: %+v", got[1])
+	}
+}
+
 func TestRemoteHTTPToolObserverPanicDoesNotBreakToolCall(t *testing.T) {
 	testsupport.RequireLoopbackTCP(t)
 	const token = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

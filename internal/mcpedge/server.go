@@ -634,6 +634,9 @@ func toolCallObservationMiddleware(observer ToolCallObserver) mcp.Middleware {
 			safeObserve(ToolCallEvent{CallID: callID, At: started, Phase: "start", Tool: tool, Operation: strings.TrimSpace(metadata.Operation), ProjectID: strings.TrimSpace(metadata.ProjectID)})
 			result, err := next(ctx, method, req)
 			outcome := "ok"
+			if callResult, ok := result.(*mcp.CallToolResult); ok && callResult.IsError {
+				outcome = "error"
+			}
 			if err != nil {
 				outcome = "error"
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

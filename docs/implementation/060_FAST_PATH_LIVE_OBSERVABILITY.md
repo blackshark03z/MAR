@@ -1,7 +1,7 @@
 # Slice 060 — Fast-Path Live Observability
 
-**Date:** 2026-09-24  
-**Status:** IMPLEMENTED CANDIDATE  
+**Date:** 2026-09-24
+**Status:** IMPLEMENTED CANDIDATE
 **Scope:** additive observability projection only; no authority, task lifecycle, database, or execution-path redesign.
 
 ## Problem proved before implementation
@@ -181,6 +181,8 @@ Before full release qualification:
 - React production `npm run build` — PASS;
 - `git diff --check` — PASS;
 - production regressions cover bounded tool metadata, privacy, observer-panic isolation and bounded ring overflow.
+- Independent post-commit audit reproduced one tool-level error-classification defect: MCP `IsError=true` responses were initially recorded as `outcome=ok` because HTTP/transport success was mistaken for tool success. The candidate now classifies `CallToolResult.IsError` as `outcome=error` and carries an explicit regression for that case.
+- Production `mcpActivityBuffer` benchmark with a full 256-event buffer measured about `279.6 ns/op` on the current Ryzen 5 5500U host, so the bounded copy-on-overwrite implementation is retained instead of introducing a more complex ring structure without measured need.
 
 ## Release acceptance still required
 
