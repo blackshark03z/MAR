@@ -135,17 +135,18 @@ func TestAcceptanceT9DaemonHostHelper(t *testing.T) {
 	}
 	defer s.Close()
 	runtime, err := NewRuntime(s, RuntimeConfig{
-		DataRoot:             dataRoot,
-		Executable:           os.Args[0],
-		WorkerArguments:      []string{"-test.run=^TestAcceptanceT9WorkerSleepHelper$"},
-		Provider:             worker.ProviderConfig{BaseURL: "http://127.0.0.1:1/v1", APIKeyEnv: "MAR_T9_DUMMY_KEY", RequestTimeout: time.Second},
-		AgentProfile:         agent.Profile{Model: "unused-model", BaseInstructions: "unused because the worker helper only proves daemon crash containment"},
-		VerificationProfiles: []verification.Profile{{ID: "t9-noop", Commands: []verification.Command{{Name: "go", Args: []string{"test", "./..."}, Cwd: "."}}}},
-		LeaseDuration:        10 * time.Second,
-		WorkerStopTimeout:    5 * time.Second,
-		ResourceGovernor:     resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 1, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1},
-		Scheduler:            scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
-		Daemon:               DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 10 * time.Millisecond, ResourcePollInterval: 50 * time.Millisecond, MaxConcurrentWorkers: 1, MaxPreflightPerTick: 4},
+		DataRoot:                dataRoot,
+		Executable:              os.Args[0],
+		WorkerArguments:         []string{"-test.run=^TestAcceptanceT9WorkerSleepHelper$"},
+		WorkerEnvironmentExtras: []string{"MAR_T9_DAEMON_HELPER=1", "MAR_T9_WORKER_MARKER=" + os.Getenv("MAR_T9_WORKER_MARKER")},
+		Provider:                worker.ProviderConfig{BaseURL: "http://127.0.0.1:1/v1", APIKeyEnv: "MAR_T9_DUMMY_KEY", RequestTimeout: time.Second},
+		AgentProfile:            agent.Profile{Model: "unused-model", BaseInstructions: "unused because the worker helper only proves daemon crash containment"},
+		VerificationProfiles:    []verification.Profile{{ID: "t9-noop", Commands: []verification.Command{{Name: "go", Args: []string{"test", "./..."}, Cwd: "."}}}},
+		LeaseDuration:           10 * time.Second,
+		WorkerStopTimeout:       5 * time.Second,
+		ResourceGovernor:        resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 1, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1},
+		Scheduler:               scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
+		Daemon:                  DaemonConfig{PollInterval: 10 * time.Millisecond, ControlPollInterval: 10 * time.Millisecond, ResourcePollInterval: 50 * time.Millisecond, MaxConcurrentWorkers: 1, MaxPreflightPerTick: 4},
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -274,9 +274,10 @@ func runAcceptanceTaskClass(t *testing.T, scenario acceptanceTaskClass) {
 	defer s.Close()
 
 	runtime, err := NewRuntime(s, RuntimeConfig{
-		DataRoot:        dataRoot,
-		Executable:      os.Args[0],
-		WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		DataRoot:                dataRoot,
+		Executable:              os.Args[0],
+		WorkerArguments:         []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
 		Provider: worker.ProviderConfig{
 			BaseURL:        provider.URL + "/v1",
 			APIKeyEnv:      apiKeyEnv,

@@ -92,6 +92,10 @@ func NewProcessRunnerWithBackends(kernel KernelControlBackend, harness HarnessCo
 	if strings.TrimSpace(cfg.Executable) == "" {
 		return nil, errors.New("worker process executable is required")
 	}
+	if cfg.Environment == nil {
+		return nil, errors.New("worker process environment is required; nil would inherit ambient host environment")
+	}
+	cfg.Environment = append([]string{}, cfg.Environment...)
 	if cfg.LeaseDuration <= 0 {
 		cfg.LeaseDuration = time.Minute
 	}
@@ -123,15 +127,11 @@ func (r *ProcessRunner) Run(ctx context.Context, start StartRequest) (agent.Resu
 	defer parentFromChild.Close()
 
 	stderr := &boundedBuffer{limit: 64 << 10}
-	env := r.cfg.Environment
-	if env == nil {
-		env = os.Environ()
-	}
 	tree, err := r.supervisor.Start(processctl.Spec{
 		Attempt: processctl.AttemptRef{TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch},
 		Path:    r.cfg.Executable,
 		Args:    append([]string{}, r.cfg.Arguments...),
-		Env:     env,
+		Env:     append([]string{}, r.cfg.Environment...),
 		Stdin:   childStdin,
 		Stdout:  childStdout,
 		Stderr:  stderr,

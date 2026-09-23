@@ -412,7 +412,7 @@ func TestProcessRunnerAcceptsSeparateKernelAndHarnessBackends(t *testing.T) {
 		kernelOnlyBackend{KernelControlBackend: backend},
 		harnessOnlyBackend{HarnessCognitionBackend: backend},
 		processctl.NewSupervisor(),
-		ProcessConfig{Executable: os.Args[0], LeaseDuration: time.Minute, StopTimeout: time.Second},
+		ProcessConfig{Executable: os.Args[0], Environment: []string{}, LeaseDuration: time.Minute, StopTimeout: time.Second},
 	)
 	if err != nil {
 		t.Fatalf("separate worker backends rejected: %v", err)
@@ -422,6 +422,14 @@ func TestProcessRunnerAcceptsSeparateKernelAndHarnessBackends(t *testing.T) {
 	}
 	if _, err := NewProcessRunnerWithBackends(kernelOnlyBackend{KernelControlBackend: backend}, nil, processctl.NewSupervisor(), ProcessConfig{Executable: os.Args[0]}); err == nil {
 		t.Fatal("nil harness backend must be rejected")
+	}
+}
+
+func TestProcessRunnerRejectsImplicitAmbientEnvironment(t *testing.T) {
+	backend := &fakeControlBackend{authoritative: true}
+	_, err := NewProcessRunner(backend, processctl.NewSupervisor(), ProcessConfig{Executable: os.Args[0]})
+	if err == nil || !strings.Contains(err.Error(), "environment is required") {
+		t.Fatalf("nil worker environment did not fail closed: %v", err)
 	}
 }
 

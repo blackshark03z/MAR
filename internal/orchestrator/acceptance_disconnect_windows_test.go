@@ -98,10 +98,11 @@ func TestAcceptanceT7ClientDisconnectDoesNotCancelActiveTask(t *testing.T) {
 	defer s.Close()
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
-		Provider:             worker.ProviderConfig{BaseURL: provider.URL + "/v1", APIKeyEnv: apiKeyEnv, RequestTimeout: 30 * time.Second},
-		AgentProfile:         agent.Profile{Model: "t7-model", ReasoningEffort: "high", BaseInstructions: "Finish safely within the immutable goal."},
-		VerificationProfiles: []verification.Profile{{ID: "go-standard", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
-		SandboxReadPaths:     []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
+		Provider:                worker.ProviderConfig{BaseURL: provider.URL + "/v1", APIKeyEnv: apiKeyEnv, RequestTimeout: 30 * time.Second},
+		AgentProfile:            agent.Profile{Model: "t7-model", ReasoningEffort: "high", BaseInstructions: "Finish safely within the immutable goal."},
+		VerificationProfiles:    []verification.Profile{{ID: "go-standard", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
+		SandboxReadPaths:        []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
 		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,
 		ResourceGovernor: resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 1, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1},
 		Scheduler:        scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},

@@ -26,26 +26,27 @@ import (
 )
 
 type RuntimeConfig struct {
-	DataRoot             string
-	Executable           string
-	WorkerArguments      []string
-	Provider             worker.ProviderConfig
-	AgentProfile         agent.Profile
-	AgentConfig          agent.Config
-	HarnessExecutable    string
-	HarnessArguments     []string
-	VerificationProfiles []verification.Profile
-	SandboxReadPaths     []string
-	WorkerPathEntries    []string
-	GoModuleCache        string
-	GoBuildCache         string
-	CommandTimeout       time.Duration
-	LeaseDuration        time.Duration
-	WorkerStopTimeout    time.Duration
-	WorkerProcessLimits  processctl.Limits
-	ResourceGovernor     resourcegov.Config
-	Scheduler            scheduler.Config
-	Daemon               DaemonConfig
+	DataRoot                string
+	Executable              string
+	WorkerArguments         []string
+	WorkerEnvironmentExtras []string
+	Provider                worker.ProviderConfig
+	AgentProfile            agent.Profile
+	AgentConfig             agent.Config
+	HarnessExecutable       string
+	HarnessArguments        []string
+	VerificationProfiles    []verification.Profile
+	SandboxReadPaths        []string
+	WorkerPathEntries       []string
+	GoModuleCache           string
+	GoBuildCache            string
+	CommandTimeout          time.Duration
+	LeaseDuration           time.Duration
+	WorkerStopTimeout       time.Duration
+	WorkerProcessLimits     processctl.Limits
+	ResourceGovernor        resourcegov.Config
+	Scheduler               scheduler.Config
+	Daemon                  DaemonConfig
 }
 
 type Runtime struct {
@@ -188,10 +189,18 @@ func NewRuntime(s *store.SQLite, cfg RuntimeConfig) (*Runtime, error) {
 	if cfg.Daemon.ExecutionDiskReservation == 0 {
 		cfg.Daemon.ExecutionDiskReservation = cfg.Scheduler.WorkspaceDiskReservation
 	}
+	providerAPIKeyEnv := ""
+	if cfg.Provider.Mode() == worker.BrainProvider {
+		providerAPIKeyEnv = strings.TrimSpace(cfg.Provider.APIKeyEnv)
+	}
+	workerEnv, err := workerEnvironment(os.Environ(), pathEntries, providerAPIKeyEnv, cfg.WorkerEnvironmentExtras)
+	if err != nil {
+		return nil, err
+	}
 	processRunner, err := worker.NewProcessRunner(taskService, processctl.NewSupervisorWithRecoveryRoot(filepath.Join(cfg.DataRoot, "runtime", "attempt-recovery")), worker.ProcessConfig{
 		Executable:    cfg.Executable,
 		Arguments:     append([]string{}, cfg.WorkerArguments...),
-		Environment:   workerEnvironment(os.Environ(), pathEntries),
+		Environment:   workerEnv,
 		LeaseDuration: cfg.LeaseDuration,
 		StopTimeout:   cfg.WorkerStopTimeout,
 		ProcessLimits: processLimits,
@@ -342,21 +351,74 @@ func coveredByReadGrant(path string, grants []string) bool {
 	return false
 }
 
-func workerEnvironment(env, pathEntries []string) []string {
-	out := append([]string{}, env...)
-	if len(pathEntries) == 0 {
-		return out
-	}
-	prefix := strings.Join(pathEntries, string(os.PathListSeparator))
-	for i, item := range out {
-		key, value, ok := strings.Cut(item, "=")
-		if ok && strings.EqualFold(key, "PATH") {
-			if value != "" {
-				prefix += string(os.PathListSeparator) + value
+func workerEnvironment(env, pathEntries []string, providerAPIKeyEnv string, extras []string) ([]string, error) {
+	lookup := func(name string) (string, bool) {
+		for i := len(env) - 1; i >= 0; i-- {
+			key, value, ok := strings.Cut(env[i], "=")
+			if ok && strings.EqualFold(strings.TrimSpace(key), name) {
+				return value, true
 			}
-			out[i] = "PATH=" + prefix
-			return out
+		}
+		return "", false
+	}
+	out := make([]string, 0, 24+len(extras))
+	seen := make(map[string]struct{}, 24+len(extras))
+	add := func(key, value string) error {
+		key = strings.TrimSpace(key)
+		if key == "" || strings.ContainsAny(key, "=\x00") || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("invalid worker environment entry %q", key)
+		}
+		folded := strings.ToLower(key)
+		if _, exists := seen[folded]; exists {
+			return fmt.Errorf("duplicate worker environment key %q", key)
+		}
+		seen[folded] = struct{}{}
+		out = append(out, key+"="+value)
+		return nil
+	}
+
+	for _, key := range []string{
+		"SystemRoot", "WINDIR", "SystemDrive", "ComSpec", "PATHEXT",
+		"USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH",
+		"LOCALAPPDATA", "APPDATA", "TEMP", "TMP",
+		"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData",
+	} {
+		if value, ok := lookup(key); ok && value != "" {
+			if err := add(key, value); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return append(out, "PATH="+prefix)
+
+	pathValue := strings.Join(pathEntries, string(os.PathListSeparator))
+	if hostPath, ok := lookup("PATH"); ok && hostPath != "" {
+		if pathValue != "" {
+			pathValue += string(os.PathListSeparator)
+		}
+		pathValue += hostPath
+	}
+	if pathValue != "" {
+		if err := add("PATH", pathValue); err != nil {
+			return nil, err
+		}
+	}
+
+	providerAPIKeyEnv = strings.TrimSpace(providerAPIKeyEnv)
+	if providerAPIKeyEnv != "" {
+		if value, ok := lookup(providerAPIKeyEnv); ok {
+			if err := add(providerAPIKeyEnv, value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	for _, item := range extras {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			return nil, fmt.Errorf("worker environment extra must be KEY=value: %q", item)
+		}
+		if err := add(key, value); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }

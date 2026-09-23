@@ -159,9 +159,10 @@ func TestRuntimeE2EMCPSubmitWorkerVerifyIntegrate(t *testing.T) {
 	defer s.Close()
 
 	runtime, err := NewRuntime(s, RuntimeConfig{
-		DataRoot:        dataRoot,
-		Executable:      os.Args[0],
-		WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		DataRoot:                dataRoot,
+		Executable:              os.Args[0],
+		WorkerArguments:         []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
 		Provider: worker.ProviderConfig{
 			BaseURL:        provider.URL + "/v1",
 			APIKeyEnv:      apiKeyEnv,
@@ -478,9 +479,10 @@ func TestRuntimeE2EExternalHarnessWorkerVerifyIntegrate(t *testing.T) {
 
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
-		Provider:          worker.ProviderConfig{BrainMode: worker.BrainHarness},
-		HarnessExecutable: harnessExe,
-		HarnessArguments:  []string{"-test.run=^TestRuntimeE2EExternalHarnessHelper$"},
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
+		Provider:                worker.ProviderConfig{BrainMode: worker.BrainHarness},
+		HarnessExecutable:       harnessExe,
+		HarnessArguments:        []string{"-test.run=^TestRuntimeE2EExternalHarnessHelper$"},
 		VerificationProfiles: []verification.Profile{{ID: "harness-go", Commands: []verification.Command{
 			{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 		}}},
@@ -660,8 +662,9 @@ func TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate(t *testing.T) {
 	defer s.Close()
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
-		Provider:     worker.ProviderConfig{BrainMode: worker.BrainWeb},
-		AgentProfile: agent.Profile{BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
+		Provider:                worker.ProviderConfig{BrainMode: worker.BrainWeb},
+		AgentProfile:            agent.Profile{BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
 		VerificationProfiles: []verification.Profile{{ID: "go-standard", Commands: []verification.Command{
 			{Name: goExe, Args: []string{"test", "-v", "-count=1", "./..."}, Cwd: "."},
 			{Name: goExe, Args: []string{"vet", "./..."}, Cwd: "."},
@@ -859,10 +862,11 @@ func TestRuntimeE2EWebWaitCapacityAllowsThirdReadyTask(t *testing.T) {
 	defer s.Close()
 	runtime, err := NewRuntime(s, RuntimeConfig{
 		DataRoot: dataRoot, Executable: os.Args[0], WorkerArguments: []string{"-test.run=^TestRuntimeE2EWorkerHelper$"},
-		Provider:             worker.ProviderConfig{BrainMode: worker.BrainWeb},
-		AgentProfile:         agent.Profile{BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
-		VerificationProfiles: []verification.Profile{{ID: "web-wait-noop", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
-		SandboxReadPaths:     []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
+		WorkerEnvironmentExtras: []string{"MAR_RUNTIME_E2E_WORKER=1"},
+		Provider:                worker.ProviderConfig{BrainMode: worker.BrainWeb},
+		AgentProfile:            agent.Profile{BaseInstructions: "Execute exactly the bounded MAR Goal Contract using the available coding tools."},
+		VerificationProfiles:    []verification.Profile{{ID: "web-wait-noop", Commands: []verification.Command{{Name: goExe, Args: []string{"test", "./..."}, Cwd: "."}}}},
+		SandboxReadPaths:        []string{goRoot, sharedModCache}, WorkerPathEntries: []string{goBin}, GoModuleCache: sharedModCache,
 		LeaseDuration: 20 * time.Second, WorkerStopTimeout: 10 * time.Second,
 		ResourceGovernor: resourcegov.Config{MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100, MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30, MaxHeavyJobs: 2, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 2},
 		Scheduler:        scheduler.Config{AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1},
