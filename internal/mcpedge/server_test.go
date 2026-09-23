@@ -94,6 +94,9 @@ func (f *fakeBackend) ApplyProjectPatch(_ context.Context, req service.ProjectPa
 func (f *fakeBackend) RunProjectCommand(_ context.Context, projectID, executable string, args []string, cwd string, timeoutSeconds, maxOutputBytes int) (service.ProjectCommandResult, error) {
 	return service.ProjectCommandResult{ProjectID: projectID, Executable: executable, Args: args, Cwd: cwd, Output: "ok", ExitCode: 0}, nil
 }
+func (f *fakeBackend) ApplyAndVerifyProject(_ context.Context, projectID string, changes []service.ProjectOwnedChange, verification []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error) {
+	return service.ProjectApplyVerifyResult{ProjectID: projectID, Changes: []service.ProjectChangeResult{}, Verification: []service.ProjectCommandResult{}, Passed: true}, nil
+}
 func (f *fakeBackend) StageProjectPaths(_ context.Context, projectID string, paths []string) (service.ProjectGitActionResult, error) {
 	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_stage", Paths: paths}, nil
 }
@@ -628,5 +631,29 @@ func TestBrainTurnDeltaModeIsOptInAndPreservesDefaultPayload(t *testing.T) {
 	}
 	if !invalid.IsError {
 		t.Fatal("delta context without structured response mode was accepted")
+	}
+}
+
+func TestCallActionApplyAndVerify(t *testing.T) {
+	content := "created\n"
+	value, err := callAction(context.Background(), &fakeBackend{}, actionArgs{
+		Operation: "apply_and_verify",
+		ProjectID: "mar",
+		Changes: []actionChangeArgs{{
+			Path: "created.txt", ExpectedSHA256: "ABSENT", Content: &content,
+		}},
+		Verify: []actionVerifyArgs{{
+			Executable: "go", Args: []string{"test", "./..."}, Cwd: ".",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := value["apply_and_verify"].(service.ProjectApplyVerifyResult)
+	if !ok {
+		t.Fatalf("unexpected result type: %T", value["apply_and_verify"])
+	}
+	if !result.Passed || result.ProjectID != "mar" {
+		t.Fatalf("unexpected apply_and_verify result: %+v", result)
 	}
 }

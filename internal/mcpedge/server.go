@@ -37,6 +37,7 @@ type Backend interface {
 	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
 	CommitProject(context.Context, string, string) (service.ProjectGitActionResult, error)
 	PushProject(context.Context, string, string) (service.ProjectGitActionResult, error)
+	ApplyAndVerifyProject(context.Context, string, []service.ProjectOwnedChange, []service.ProjectVerifyCommand) (service.ProjectApplyVerifyResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
@@ -112,23 +113,42 @@ type projectArgs struct {
 	MaxResults int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
 }
 
-type actionArgs struct {
-	Operation      string   `json:"operation" jsonschema:"write, patch, run, git_stage, git_commit, or git_push"`
-	ProjectID      string   `json:"project_id"`
-	Path           string   `json:"path,omitempty"`
-	ExpectedSHA256 string   `json:"expected_sha256,omitempty"`
-	Search         string   `json:"search,omitempty"`
-	Replacement    string   `json:"replacement,omitempty"`
-	Content        string   `json:"content,omitempty"`
-	ExpectedCount  int      `json:"expected_count,omitempty"`
-	Executable     string   `json:"executable,omitempty"`
+type actionChangeArgs struct {
+	Path           string  `json:"path"`
+	ExpectedSHA256 string  `json:"expected_sha256"`
+	Search         string  `json:"search,omitempty"`
+	Replacement    string  `json:"replacement,omitempty"`
+	ExpectedCount  int     `json:"expected_count,omitempty"`
+	Content        *string `json:"content,omitempty"`
+}
+
+type actionVerifyArgs struct {
+	Executable     string   `json:"executable"`
 	Args           []string `json:"args,omitempty"`
 	Cwd            string   `json:"cwd,omitempty"`
 	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
 	MaxOutputBytes int      `json:"max_output_bytes,omitempty"`
-	Paths          []string `json:"paths,omitempty"`
-	Message        string   `json:"message,omitempty"`
-	Remote         string   `json:"remote,omitempty"`
+}
+
+type actionArgs struct {
+	Operation      string             `json:"operation" jsonschema:"write, patch, run, apply_and_verify, git_stage, git_commit, or git_push"`
+	ProjectID      string             `json:"project_id"`
+	Path           string             `json:"path,omitempty"`
+	ExpectedSHA256 string             `json:"expected_sha256,omitempty"`
+	Search         string             `json:"search,omitempty"`
+	Replacement    string             `json:"replacement,omitempty"`
+	Content        string             `json:"content,omitempty"`
+	ExpectedCount  int                `json:"expected_count,omitempty"`
+	Executable     string             `json:"executable,omitempty"`
+	Args           []string           `json:"args,omitempty"`
+	Cwd            string             `json:"cwd,omitempty"`
+	TimeoutSeconds int                `json:"timeout_seconds,omitempty"`
+	MaxOutputBytes int                `json:"max_output_bytes,omitempty"`
+	Paths          []string           `json:"paths,omitempty"`
+	Message        string             `json:"message,omitempty"`
+	Remote         string             `json:"remote,omitempty"`
+	Changes        []actionChangeArgs `json:"changes,omitempty"`
+	Verify         []actionVerifyArgs `json:"verify,omitempty"`
 }
 
 type taskDomainArgs struct {
@@ -168,7 +188,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, apply_and_verify, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callAction(ctx, backend, args)
 			if err != nil {
@@ -319,6 +339,26 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 			return nil, err
 		}
 		return map[string]any{"run": result}, nil
+	case "apply_and_verify":
+		changes := make([]service.ProjectOwnedChange, 0, len(args.Changes))
+		for _, change := range args.Changes {
+			changes = append(changes, service.ProjectOwnedChange{
+				Path: change.Path, ExpectedSHA256: change.ExpectedSHA256, Search: change.Search,
+				Replacement: change.Replacement, ExpectedCount: change.ExpectedCount, Content: change.Content,
+			})
+		}
+		verification := make([]service.ProjectVerifyCommand, 0, len(args.Verify))
+		for _, task := range args.Verify {
+			verification = append(verification, service.ProjectVerifyCommand{
+				Executable: task.Executable, Args: task.Args, Cwd: task.Cwd,
+				TimeoutSeconds: task.TimeoutSeconds, MaxOutputBytes: task.MaxOutputBytes,
+			})
+		}
+		result, err := backend.ApplyAndVerifyProject(ctx, projectID, changes, verification)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"apply_and_verify": result}, nil
 	case "git_stage":
 		result, err := backend.StageProjectPaths(ctx, projectID, args.Paths)
 		if err != nil {
@@ -338,7 +378,7 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be write, patch, run, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, run, apply_and_verify, git_stage, git_commit, or git_push")
 	}
 }
 
