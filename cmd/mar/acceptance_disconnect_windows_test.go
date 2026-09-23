@@ -215,15 +215,16 @@ func TestMain(m *testing.M) {
 			// Production CLI defaults remain unchanged; only this helper injects
 			// the same deterministic resource envelope used by lower-level T7.
 			err = runMCPRuntime(context.Background(), mcpRuntimeOptions{
-				DBPath:          os.Getenv("MAR_T7_DB"),
-				DataRoot:        os.Getenv("MAR_T7_DATA_ROOT"),
-				BrainMode:       string(worker.BrainProvider),
-				ProviderBaseURL: os.Getenv("MAR_T7_PROVIDER"),
-				APIKeyEnv:       "MAR_T7_CLI_KEY",
-				Model:           "t7-model",
-				Reasoning:       "high",
-				GoPath:          os.Getenv("MAR_T7_GO"),
-				MaxWorkers:      1,
+				DBPath:                  os.Getenv("MAR_T7_DB"),
+				DataRoot:                os.Getenv("MAR_T7_DATA_ROOT"),
+				BrainMode:               string(worker.BrainProvider),
+				ProviderBaseURL:         os.Getenv("MAR_T7_PROVIDER"),
+				APIKeyEnv:               "MAR_T7_CLI_KEY",
+				Model:                   "t7-model",
+				Reasoning:               "high",
+				GoPath:                  os.Getenv("MAR_T7_GO"),
+				WorkerEnvironmentExtras: []string{"MAR_T7_CLI_HELPER=1"},
+				MaxWorkers:              1,
 				ResourceGovernor: &resourcegov.Config{
 					MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100,
 					MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30,

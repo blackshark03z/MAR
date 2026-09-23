@@ -246,17 +246,18 @@ func run(ctx context.Context, args []string) error {
 }
 
 type mcpRuntimeOptions struct {
-	DBPath           string
-	DataRoot         string
-	BrainMode        string
-	ProviderBaseURL  string
-	APIKeyEnv        string
-	Model            string
-	Reasoning        string
-	GoPath           string
-	MaxWorkers       int
-	ResourceGovernor *resourcegov.Config
-	Scheduler        *scheduler.Config
+	DBPath                  string
+	DataRoot                string
+	BrainMode               string
+	ProviderBaseURL         string
+	APIKeyEnv               string
+	Model                   string
+	Reasoning               string
+	GoPath                  string
+	WorkerEnvironmentExtras []string
+	MaxWorkers              int
+	ResourceGovernor        *resourcegov.Config
+	Scheduler               *scheduler.Config
 }
 
 const defaultWorkerInstructions = `You are the bounded MAR coding worker for one immutable Goal Contract. Work only inside the assigned task workspace and granted authority. Inspect relevant context before editing. Use only the provided authority-gated coding tools for reads, writes, bounded public network reads, typed Git operations and allowed verification commands. Remote Git writes are allowed only when the typed push tool is explicitly provided; never force, delete, rewrite Git history, deploy, widen the Goal Contract, or mutate authoritative integration state. Checkpoint meaningful progress. Finish only with finish_task using completed_candidate, blocked, cancelled, or budget_exhausted; completed_candidate means ready for MAR verification, not verified or integrated.`
@@ -353,15 +354,16 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 			ReasoningEffort:  opts.Reasoning,
 			BaseInstructions: defaultWorkerInstructions,
 		},
-		VerificationProfiles: builtinVerificationProfiles(goExecutable, pythonExecutable),
-		SandboxReadPaths:     sandboxReadPaths,
-		WorkerPathEntries:    workerPathEntries,
-		GoModuleCache:        goModuleCacheDir,
-		GoBuildCache:         filepath.Join(dataRoot, "runtime", "go-build-cache"),
-		LeaseDuration:        time.Minute,
-		WorkerStopTimeout:    10 * time.Second,
-		ResourceGovernor:     governorConfig,
-		Scheduler:            schedulerConfig,
+		VerificationProfiles:    builtinVerificationProfiles(goExecutable, pythonExecutable),
+		SandboxReadPaths:        sandboxReadPaths,
+		WorkerPathEntries:       workerPathEntries,
+		WorkerEnvironmentExtras: append([]string(nil), opts.WorkerEnvironmentExtras...),
+		GoModuleCache:           goModuleCacheDir,
+		GoBuildCache:            filepath.Join(dataRoot, "runtime", "go-build-cache"),
+		LeaseDuration:           time.Minute,
+		WorkerStopTimeout:       10 * time.Second,
+		ResourceGovernor:        governorConfig,
+		Scheduler:               schedulerConfig,
 		Daemon: orchestrator.DaemonConfig{
 			PollInterval:         250 * time.Millisecond,
 			ControlPollInterval:  200 * time.Millisecond,
