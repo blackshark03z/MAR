@@ -103,3 +103,47 @@ func TestProjectActionFailsClosedOnPolicyHashAndTraversal(t *testing.T) {
 		t.Fatalf("expected policy rejection, got %v", err)
 	}
 }
+
+func TestProjectActionWriteCreatesAndReplacesWithRevisionGuard(t *testing.T) {
+	svc, root, projectID, _ := newProjectContextFixture(t, "fast-write", map[string]string{
+		"go.mod": "module example.com/fastwrite\n\ngo 1.27\n",
+	})
+	if err := svc.store.PutProjectPolicy(context.Background(), domain.ProjectPolicy{
+		ProjectID: projectID, LocalFileWrite: true, LocalGitWrite: true, NetworkAllowed: true, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := svc.WriteProjectFile(context.Background(), ProjectWriteRequest{
+		ProjectID: projectID, Path: "created.txt", ExpectedSHA256: "ABSENT", Content: "first\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created.Created || created.BeforeSHA256 != "" || created.Bytes != len("first\n") {
+		t.Fatalf("unexpected create result: %+v", created)
+	}
+	first := sha256.Sum256([]byte("first\n"))
+	replaced, err := svc.WriteProjectFile(context.Background(), ProjectWriteRequest{
+		ProjectID: projectID, Path: "created.txt", ExpectedSHA256: hex.EncodeToString(first[:]), Content: "second\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Created || replaced.BeforeSHA256 != hex.EncodeToString(first[:]) {
+		t.Fatalf("unexpected replace result: %+v", replaced)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "created.txt"))
+	if err != nil || string(raw) != "second\n" {
+		t.Fatalf("unexpected written file: %q err=%v", raw, err)
+	}
+	if _, err := svc.WriteProjectFile(context.Background(), ProjectWriteRequest{
+		ProjectID: projectID, Path: "created.txt", ExpectedSHA256: "ABSENT", Content: "bad\n",
+	}); err == nil {
+		t.Fatal("expected ABSENT precondition to reject existing file")
+	}
+	if _, err := svc.WriteProjectFile(context.Background(), ProjectWriteRequest{
+		ProjectID: projectID, Path: "../escape.txt", ExpectedSHA256: "ABSENT", Content: "bad\n",
+	}); err == nil {
+		t.Fatal("expected write traversal rejection")
+	}
+}

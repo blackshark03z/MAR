@@ -124,7 +124,7 @@ Normal `tools/list` exposes seven canonical domain tools:
 
 `project`, `action`, `submit`, `task`, `control`, `brain_turn`, `brain_respond`.
 
-`project` is the bounded read-only discovery surface. `action` is the Trusted Owner Fast Path for ordinary development: exact-hash patch, argv-only bounded run, Git stage/commit, and non-force push gated by project policy, with no durable Goal/task/brain lifecycle. `submit`, `task`, and `control` retain the governed high-assurance workflow; `brain_turn` and `brain_respond` remain its external-cognition relay.
+`project` is the bounded read-only discovery surface. `action` is the Trusted Owner Fast Path for ordinary development: hash-guarded create/replace, exact-hash patch, argv-only bounded run, Git stage/commit, and non-force push gated by project policy, with no durable Goal/task/brain lifecycle. `submit`, `task`, and `control` retain the governed high-assurance workflow; `brain_turn` and `brain_respond` remain its external-cognition relay.
 
 Use `action` by default for normal single-owner edit/test/commit work. Use the governed Goal path when independent candidate verification, publication authorization, or recovery guarantees are actually required.
 

@@ -24,6 +24,22 @@ const (
 	maxFastOutputBytes        = 1 << 20
 )
 
+type ProjectWriteRequest struct {
+	ProjectID      string
+	Path           string
+	ExpectedSHA256 string
+	Content        string
+}
+
+type ProjectWriteResult struct {
+	ProjectID    string `json:"project_id"`
+	Path         string `json:"path"`
+	BeforeSHA256 string `json:"before_sha256,omitempty"`
+	AfterSHA256  string `json:"after_sha256"`
+	Created      bool   `json:"created"`
+	Bytes        int    `json:"bytes"`
+}
+
 type ProjectPatchRequest struct {
 	ProjectID      string
 	Path           string
@@ -60,6 +76,118 @@ type ProjectGitActionResult struct {
 	Remote    string   `json:"remote,omitempty"`
 	Branch    string   `json:"branch,omitempty"`
 	Output    string   `json:"output,omitempty"`
+}
+
+func (s *TaskService) WriteProjectFile(ctx context.Context, req ProjectWriteRequest) (ProjectWriteResult, error) {
+	project, policy, err := s.fastProject(ctx, req.ProjectID)
+	if err != nil {
+		return ProjectWriteResult{}, err
+	}
+	if !policy.LocalFileWrite {
+		return ProjectWriteResult{}, errors.New("project local_file_write policy is disabled")
+	}
+	if strings.TrimSpace(req.Path) == "" {
+		return ProjectWriteResult{}, errors.New("write path is required")
+	}
+	payload := []byte(req.Content)
+	if int64(len(payload)) > maxProjectReadBytes {
+		return ProjectWriteResult{}, errors.New("write content exceeds fast-path text size limit")
+	}
+	if !utf8.Valid(payload) || strings.IndexByte(req.Content, 0) >= 0 {
+		return ProjectWriteResult{}, errors.New("write content must be UTF-8 text")
+	}
+	target, err := safeProjectWriteTarget(project, req.Path)
+	if err != nil {
+		return ProjectWriteResult{}, err
+	}
+	expected := strings.TrimSpace(req.ExpectedSHA256)
+	created := false
+	beforeHex := ""
+	switch {
+	case strings.EqualFold(expected, "ABSENT"):
+		if _, err := os.Lstat(target); err == nil {
+			return ProjectWriteResult{}, errors.New("write target already exists; expected ABSENT")
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return ProjectWriteResult{}, fmt.Errorf("inspect write target: %w", err)
+		}
+		f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			return ProjectWriteResult{}, fmt.Errorf("create write target: %w", err)
+		}
+		if _, err := f.Write(payload); err != nil {
+			_ = f.Close()
+			_ = os.Remove(target)
+			return ProjectWriteResult{}, fmt.Errorf("write new target: %w", err)
+		}
+		if err := f.Close(); err != nil {
+			return ProjectWriteResult{}, fmt.Errorf("close new target: %w", err)
+		}
+		created = true
+	default:
+		expected = strings.ToLower(expected)
+		if len(expected) != 64 {
+			return ProjectWriteResult{}, errors.New("expected_sha256 must be ABSENT or an exact SHA-256 hex digest")
+		}
+		info, err := os.Stat(target)
+		if err != nil {
+			return ProjectWriteResult{}, fmt.Errorf("inspect write target: %w", err)
+		}
+		if !info.Mode().IsRegular() || info.Size() > maxProjectReadBytes {
+			return ProjectWriteResult{}, errors.New("write target must be one bounded regular text file")
+		}
+		current, err := os.ReadFile(target)
+		if err != nil {
+			return ProjectWriteResult{}, fmt.Errorf("read write target: %w", err)
+		}
+		if !utf8.Valid(current) || strings.IndexByte(string(current), 0) >= 0 {
+			return ProjectWriteResult{}, errors.New("write target must be UTF-8 text")
+		}
+		before := sha256.Sum256(current)
+		beforeHex = hex.EncodeToString(before[:])
+		if beforeHex != expected {
+			return ProjectWriteResult{}, fmt.Errorf("write revision mismatch: expected %s got %s", expected, beforeHex)
+		}
+		if err := os.WriteFile(target, payload, info.Mode().Perm()); err != nil {
+			return ProjectWriteResult{}, fmt.Errorf("replace write target: %w", err)
+		}
+	}
+	after := sha256.Sum256(payload)
+	rel, _ := filepath.Rel(project.Root, target)
+	return ProjectWriteResult{
+		ProjectID:    project.ID,
+		Path:         filepath.ToSlash(rel),
+		BeforeSHA256: beforeHex,
+		AfterSHA256:  hex.EncodeToString(after[:]),
+		Created:      created,
+		Bytes:        len(payload),
+	}, nil
+}
+
+func safeProjectWriteTarget(project domain.Project, requestedPath string) (string, error) {
+	requestedPath = strings.TrimSpace(requestedPath)
+	if requestedPath == "" {
+		return "", errors.New("write path is required")
+	}
+	base := filepath.Base(requestedPath)
+	if base == "." || base == ".." || base == string(filepath.Separator) || strings.TrimSpace(base) == "" {
+		return "", errors.New("write path must name a file")
+	}
+	parentRequest := filepath.Dir(requestedPath)
+	parent, err := safeProjectReadTarget(project, parentRequest)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(parent)
+	if err != nil || !info.IsDir() {
+		return "", errors.New("write parent must be an existing project directory")
+	}
+	target := filepath.Join(parent, base)
+	if _, err := os.Lstat(target); err == nil {
+		return safeProjectReadTarget(project, requestedPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("inspect write target: %w", err)
+	}
+	return target, nil
 }
 
 func (s *TaskService) ApplyProjectPatch(ctx context.Context, req ProjectPatchRequest) (ProjectPatchResult, error) {

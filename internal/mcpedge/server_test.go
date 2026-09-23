@@ -85,6 +85,9 @@ func (f *fakeBackend) ProjectGitDiff(_ context.Context, projectID, path string) 
 	}
 	return service.ProjectGitDiffResult{ProjectID: projectID, Path: path, Diff: "diff --git a/README.md b/README.md\n"}, nil
 }
+func (f *fakeBackend) WriteProjectFile(_ context.Context, req service.ProjectWriteRequest) (service.ProjectWriteResult, error) {
+	return service.ProjectWriteResult{ProjectID: req.ProjectID, Path: req.Path, AfterSHA256: "after", Created: req.ExpectedSHA256 == "ABSENT", Bytes: len(req.Content)}, nil
+}
 func (f *fakeBackend) ApplyProjectPatch(_ context.Context, req service.ProjectPatchRequest) (service.ProjectPatchResult, error) {
 	return service.ProjectPatchResult{ProjectID: req.ProjectID, Path: req.Path, BeforeSHA256: req.ExpectedSHA256, AfterSHA256: "after", Replacements: req.ExpectedCount}, nil
 }

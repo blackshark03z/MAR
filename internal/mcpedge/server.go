@@ -30,6 +30,7 @@ type Backend interface {
 	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
 	ProjectGitStatus(context.Context, string) (service.ProjectGitStatusResult, error)
 	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
+	WriteProjectFile(context.Context, service.ProjectWriteRequest) (service.ProjectWriteResult, error)
 	ApplyProjectPatch(context.Context, service.ProjectPatchRequest) (service.ProjectPatchResult, error)
 	RunProjectCommand(context.Context, string, string, []string, string, int, int) (service.ProjectCommandResult, error)
 	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
@@ -111,12 +112,13 @@ type projectArgs struct {
 }
 
 type actionArgs struct {
-	Operation      string   `json:"operation" jsonschema:"patch, run, git_stage, git_commit, or git_push"`
+	Operation      string   `json:"operation" jsonschema:"write, patch, run, git_stage, git_commit, or git_push"`
 	ProjectID      string   `json:"project_id"`
 	Path           string   `json:"path,omitempty"`
 	ExpectedSHA256 string   `json:"expected_sha256,omitempty"`
 	Search         string   `json:"search,omitempty"`
 	Replacement    string   `json:"replacement,omitempty"`
+	Content        string   `json:"content,omitempty"`
 	ExpectedCount  int      `json:"expected_count,omitempty"`
 	Executable     string   `json:"executable,omitempty"`
 	Args           []string `json:"args,omitempty"`
@@ -165,7 +167,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=patch, run, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callAction(ctx, backend, args)
 			if err != nil {
@@ -292,28 +294,44 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		return nil, errors.New("project_id is required")
 	}
 	switch strings.ToLower(strings.TrimSpace(args.Operation)) {
+	case "write":
+		result, err := backend.WriteProjectFile(ctx, service.ProjectWriteRequest{ProjectID: projectID, Path: args.Path, ExpectedSHA256: args.ExpectedSHA256, Content: args.Content})
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"write": result}, nil
 	case "patch":
 		result, err := backend.ApplyProjectPatch(ctx, service.ProjectPatchRequest{ProjectID: projectID, Path: args.Path, ExpectedSHA256: args.ExpectedSHA256, Search: args.Search, Replacement: args.Replacement, ExpectedCount: args.ExpectedCount})
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"patch": result}, nil
 	case "run":
 		result, err := backend.RunProjectCommand(ctx, projectID, args.Executable, args.Args, args.Cwd, args.TimeoutSeconds, args.MaxOutputBytes)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"run": result}, nil
 	case "git_stage":
 		result, err := backend.StageProjectPaths(ctx, projectID, args.Paths)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"git_stage": result}, nil
 	case "git_commit":
 		result, err := backend.CommitProject(ctx, projectID, args.Message)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"git_commit": result}, nil
 	case "git_push":
 		result, err := backend.PushProject(ctx, projectID, args.Remote)
-		if err != nil { return nil, err }
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be patch, run, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, run, git_stage, git_commit, or git_push")
 	}
 }
 
