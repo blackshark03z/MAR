@@ -65,6 +65,26 @@ func TestCanonicalProjectToolPreservesContextAndReadSemantics(t *testing.T) {
 	if !strings.Contains(string(raw), `"query":"needle"`) || !strings.Contains(string(raw), "README.md") {
 		t.Fatalf("canonical project search changed semantics: %s", raw)
 	}
+	manyResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "read_many", "reads": []any{map[string]any{"path": "README.md", "start_line": 1, "end_line": 1}, map[string]any{"path": "TASK.md", "start_line": 2, "end_line": 2}}}})
+	if err != nil || manyResult.IsError {
+		t.Fatalf("canonical project read_many failed: err=%v result=%+v", err, manyResult)
+	}
+	raw, _ = json.Marshal(manyResult.StructuredContent)
+	if !strings.Contains(string(raw), "README.md") || !strings.Contains(string(raw), "TASK.md") || !strings.Contains(string(raw), `"start_line":1`) || !strings.Contains(string(raw), `"start_line":2`) {
+		t.Fatalf("canonical project read_many changed semantics: %s", raw)
+	}
+	emptyResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "read_many", "reads": []any{}}})
+	if err != nil || !emptyResult.IsError {
+		t.Fatalf("canonical project read_many must reject zero reads: err=%v result=%+v", err, emptyResult)
+	}
+	tooMany := make([]any, 17)
+	for i := range tooMany {
+		tooMany[i] = map[string]any{"path": "README.md"}
+	}
+	tooManyResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "read_many", "reads": tooMany}})
+	if err != nil || !tooManyResult.IsError {
+		t.Fatalf("canonical project read_many must reject more than 16 reads: err=%v result=%+v", err, tooManyResult)
+	}
 }
 
 func TestCanonicalTaskToolPreservesBoundedReadSemantics(t *testing.T) {

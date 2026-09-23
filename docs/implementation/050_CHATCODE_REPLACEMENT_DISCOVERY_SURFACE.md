@@ -9,9 +9,10 @@ Remove the main pre-submit usability gap between direct MAR and ChatCode without
 
 ## Change
 
-The existing canonical MCP `project` tool remains one tool and gains two bounded read-only capabilities:
+The existing canonical MCP `project` tool remains one tool and gains bounded read-only productivity capabilities inspired by proven ChatCode workflows:
 
 - `operation=read` accepts optional `start_line` / `end_line`;
+- `operation=read_many` batches 1..16 existing bounded file/range reads into one round trip;
 - `operation=search` performs bounded UTF-8 text search under one registered project/subtree.
 
 The canonical public tool count remains six.
@@ -46,6 +47,7 @@ Mutation still flows through `submit -> brain_turn/brain_respond -> isolated wor
 
 - canonical MCP discovery remains exactly six tools and under the existing schema budget;
 - ranged reads preserve normal full-read compatibility;
+- `read_many` reuses the same confinement/UTF-8/size/range semantics and rejects cardinality outside 1..16;
 - bounded search returns project-relative line matches;
 - traversal is rejected;
 - Git metadata is not searched;

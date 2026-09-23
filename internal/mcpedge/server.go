@@ -85,15 +85,22 @@ type brainTurnFastArgs struct {
 	TaskID string `json:"task_id" jsonschema:"MAR durable task id"`
 }
 
+type projectReadRange struct {
+	Path      string `json:"path"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+}
+
 type projectArgs struct {
-	Operation  string `json:"operation" jsonschema:"context, read, search, attach, or list"`
-	ProjectID  string `json:"project_id,omitempty"`
-	Path       string `json:"path,omitempty"`
-	Query      string `json:"query,omitempty"`
-	StartLine  int    `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
-	EndLine    int    `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
-	MaxEntries int    `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
-	MaxResults int    `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
+	Operation  string             `json:"operation" jsonschema:"context, read, read_many, search, attach, or list"`
+	ProjectID  string             `json:"project_id,omitempty"`
+	Path       string             `json:"path,omitempty"`
+	Query      string             `json:"query,omitempty"`
+	StartLine  int                `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
+	EndLine    int                `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
+	Reads      []projectReadRange `json:"reads,omitempty" jsonschema:"1..16 bounded file/range reads for read_many"`
+	MaxEntries int                `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
+	MaxResults int                `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
 }
 
 type taskDomainArgs struct {
@@ -125,7 +132,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read full or bounded line ranges, search text, or list one bounded directory. Use operation=context, read, search, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read one or many bounded file ranges, search text, or list one bounded directory. Use operation=context, read, read_many, search, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -194,6 +201,23 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"file": result}, nil
+	case "read_many":
+		if len(args.Reads) == 0 || len(args.Reads) > 16 {
+			return nil, errors.New("project read_many requires 1..16 reads")
+		}
+		files := make([]service.ProjectReadResult, 0, len(args.Reads))
+		for _, read := range args.Reads {
+			result, err := backend.ReadProjectFile(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(read.Path))
+			if err != nil {
+				return nil, err
+			}
+			result, err = boundedProjectReadRange(result, read.StartLine, read.EndLine)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, result)
+		}
+		return map[string]any{"files": files}, nil
 	case "search":
 		result, err := backend.SearchProjectText(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path), args.Query, args.MaxResults)
 		if err != nil {
@@ -213,7 +237,7 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, search, attach, or list")
+		return nil, errors.New("project operation must be context, read, read_many, search, attach, or list")
 	}
 }
 
