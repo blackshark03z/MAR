@@ -168,6 +168,18 @@ function TrendChart({ samples }: { samples: TokenSample[] }) {
     <polyline points={points('output')} className="chart-output-line"/>
   </svg>
 }
+function ActivityTrendChart({calls,now}:{calls:OperationCall[];now:number}) {
+  const width=820,height=235,px=28,py=24,buckets=40,bucketMs=1000,values=Array(buckets).fill(0)
+  for(const call of calls){const age=now-call.startedAt;if(age<0||age>=buckets*bucketMs)continue;const idx=buckets-1-Math.floor(age/bucketMs);values[idx]++}
+  const max=Math.max(1,...values)
+  const points=values.map((v,i)=>{const x=px+i*(width-px*2)/(buckets-1);const y=height-py-(v/max)*(height-py*2);return `${x.toFixed(1)},${y.toFixed(1)}`}).join(' ')
+  const sweepX=px+((now%bucketMs)/bucketMs)*(width-px*2)
+  return <svg className="trend-chart heartbeat-chart activity-heartbeat" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Observed MCP execution activity over the last 40 seconds">
+    {[.25,.5,.75,1].map(v=><line key={v} x1={px} x2={width-px} y1={height-py-v*(height-py*2)} y2={height-py-v*(height-py*2)} className="chart-grid-line"/>)}
+    <polyline points={points} className="chart-activity-line"/>
+    <line x1={sweepX} x2={sweepX} y1={py} y2={height-py} className="chart-sweep"/>
+  </svg>
+}
 function ExecutionPulse({calls,now}:{calls:OperationCall[];now:number}){
   const buckets=20,bucketMs=2000,values=Array(buckets).fill(0)
   for(const call of calls){const age=now-call.startedAt;if(age<0||age>=buckets*bucketMs)continue;const idx=buckets-1-Math.floor(age/bucketMs);values[idx]++}
@@ -238,10 +250,10 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
     </section>
     <div className="cockpit-grid">
       <section className="panel telemetry-deck">
-        <div className="panel-heading"><div className="panel-title"><Activity size={20}/><div><h2>Token heartbeat</h2><small>Observed throughput · not estimated from tool calls</small></div></div><span className="deck-live"><span className="live-dot"/>streaming</span></div>
-        <div className="chart-kpis"><div><span>Live</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : '—'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : '—'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : '—'}</b></div><div><span>Turns</span><b>{agg.tokenTasks ? fmtNumber(agg.turns) : '—'}</b></div></div>
-        <div className="chart-wrap cockpit-chart"><TrendChart samples={tokenSamples}/></div>
-        <div className="chart-legend"><span><i className="blue"/>Input/min</span><span><i className="green"/>Output/min</span></div>
+        <div className="panel-heading"><div className="panel-title"><Activity size={20}/><div><h2>{agg.tokenTasks?'Token heartbeat':'Execution heartbeat'}</h2><small>{agg.tokenTasks?'Observed Web Brain token throughput':'Fast-path ChatGPT does not expose token counters · showing real MCP activity'}</small></div></div><span className="deck-live"><span className="live-dot"/>{agg.tokenTasks?'token telemetry':'activity telemetry'}</span></div>
+        <div className="chart-kpis"><div><span>Live tokens</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : 'N/A'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : 'N/A'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : 'N/A'}</b></div><div><span>{agg.tokenTasks?'Turns':'MCP calls'}</span><b>{agg.tokenTasks ? fmtNumber(agg.turns) : fmtNumber(operationCalls.filter(c=>now-c.startedAt<40000&&now-c.startedAt>=0).length)}</b></div></div>
+        <div className="chart-wrap cockpit-chart">{agg.tokenTasks?<TrendChart samples={tokenSamples}/>:<ActivityTrendChart calls={operationCalls} now={now}/>}</div>
+        <div className="chart-legend">{agg.tokenTasks?<><span><i className="blue"/>Input/min</span><span><i className="green"/>Output/min</span></>:<><span><i className="blue"/>Observed MCP calls / second</span><span className="legend-note">Token counters unavailable on fast-path</span></>}</div>
       </section>
       <section className="panel execution-lane">
         <div className="panel-heading"><div className="panel-title"><Workflow size={20}/><div><h2>Execution lane</h2><small>What MAR is doing now</small></div></div><button className="text-button" onClick={()=>setView('tasks')}>Open tasks <ExternalLink size={14}/></button></div>

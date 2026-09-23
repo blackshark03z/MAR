@@ -13110,6 +13110,54 @@ function TrendChart({ samples }) {
 		]
 	});
 }
+function ActivityTrendChart({ calls, now }) {
+	const width = 820, height = 235, px = 28, py = 24, buckets = 40, bucketMs = 1e3, values = Array(buckets).fill(0);
+	for (const call of calls) {
+		const age = now - call.startedAt;
+		if (age < 0 || age >= buckets * bucketMs) continue;
+		const idx = 39 - Math.floor(age / bucketMs);
+		values[idx]++;
+	}
+	const max = Math.max(1, ...values);
+	const points = values.map((v, i) => {
+		const x = px + i * 764 / 39;
+		const y = 211 - v / max * 187;
+		return `${x.toFixed(1)},${y.toFixed(1)}`;
+	}).join(" ");
+	const sweepX = px + now % bucketMs / bucketMs * 764;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("svg", {
+		className: "trend-chart heartbeat-chart activity-heartbeat",
+		viewBox: `0 0 ${width} ${height}`,
+		preserveAspectRatio: "none",
+		role: "img",
+		"aria-label": "Observed MCP execution activity over the last 40 seconds",
+		children: [
+			[
+				.25,
+				.5,
+				.75,
+				1
+			].map((v) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("line", {
+				x1: px,
+				x2: 792,
+				y1: 211 - v * 187,
+				y2: 211 - v * 187,
+				className: "chart-grid-line"
+			}, v)),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("polyline", {
+				points,
+				className: "chart-activity-line"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("line", {
+				x1: sweepX,
+				x2: sweepX,
+				y1: py,
+				y2: 211,
+				className: "chart-sweep"
+			})
+		]
+	});
+}
 function ExecutionPulse({ calls, now }) {
 	const buckets = 20, bucketMs = 2e3, values = Array(buckets).fill(0);
 	for (const call of calls) {
@@ -13324,28 +13372,34 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 						className: "panel-heading",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 							className: "panel-title",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "Token heartbeat" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "Observed throughput · not estimated from tool calls" })] })]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: agg.tokenTasks ? "Token heartbeat" : "Execution heartbeat" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: agg.tokenTasks ? "Observed Web Brain token throughput" : "Fast-path ChatGPT does not expose token counters · showing real MCP activity" })] })]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 							className: "deck-live",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), "streaming"]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), agg.tokenTasks ? "token telemetry" : "activity telemetry"]
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "chart-kpis",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "—" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.input)}` : "—" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.output)}` : "—" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Turns" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? fmtNumber(agg.turns) : "—" })] })
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live tokens" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "N/A" })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.input)}` : "N/A" })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.output)}` : "N/A" })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: agg.tokenTasks ? "Turns" : "MCP calls" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? fmtNumber(agg.turns) : fmtNumber(operationCalls.filter((c) => now - c.startedAt < 4e4 && now - c.startedAt >= 0).length) })] })
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "chart-wrap cockpit-chart",
-						children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TrendChart, { samples: tokenSamples })
+						children: agg.tokenTasks ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(TrendChart, { samples: tokenSamples }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ActivityTrendChart, {
+							calls: operationCalls,
+							now
+						})
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "chart-legend",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input/min"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output/min"] })]
+						children: agg.tokenTasks ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Input/min"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "green" }), "Output/min"] })] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("i", { className: "blue" }), "Observed MCP calls / second"] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "legend-note",
+							children: "Token counters unavailable on fast-path"
+						})] })
 					})
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
