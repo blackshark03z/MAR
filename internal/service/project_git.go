@@ -35,13 +35,13 @@ func (s *TaskService) ProjectGitStatus(ctx context.Context, projectID string) (P
 	if err != nil {
 		return ProjectGitStatusResult{}, err
 	}
-	identity, err := runProjectGit(ctx, project.Root, "rev-parse", "HEAD", "--abbrev-ref", "HEAD")
+	head, err := runProjectGit(ctx, project.Root, "rev-parse", "HEAD")
 	if err != nil {
 		return ProjectGitStatusResult{}, err
 	}
-	identityLines := strings.Fields(identity)
-	if len(identityLines) != 2 {
-		return ProjectGitStatusResult{}, fmt.Errorf("git rev-parse returned %d identity fields", len(identityLines))
+	branch, err := runProjectGit(ctx, project.Root, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return ProjectGitStatusResult{}, err
 	}
 	status, err := runProjectGit(ctx, project.Root, "status", "--porcelain=v1", "--untracked-files=all")
 	if err != nil {
@@ -50,8 +50,8 @@ func (s *TaskService) ProjectGitStatus(ctx context.Context, projectID string) (P
 	status, truncated := boundProjectGitOutput(status)
 	return ProjectGitStatusResult{
 		ProjectID: project.ID,
-		Head:      identityLines[0],
-		Branch:    identityLines[1],
+		Head:      strings.TrimSpace(head),
+		Branch:    strings.TrimSpace(branch),
 		Porcelain: status,
 		Truncated: truncated,
 	}, nil
