@@ -104,6 +104,62 @@ func TestProjectActionFailsClosedOnPolicyHashAndTraversal(t *testing.T) {
 	}
 }
 
+func TestProjectActionFilesystemFlowDoesNotRequireNetwork(t *testing.T) {
+	svc, root, projectID, _ := newProjectContextFixture(t, "fast-fs", map[string]string{
+		"go.mod":     "module example.com/fastfs\n\ngo 1.27\n",
+		"source.txt": "payload\n",
+	})
+	if err := svc.store.PutProjectPolicy(context.Background(), domain.ProjectPolicy{
+		ProjectID: projectID, LocalFileWrite: true, NetworkAllowed: false, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	mkdir, err := svc.CreateProjectDirectory(context.Background(), projectID, "nested")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mkdir.Operation != "mkdir" || mkdir.Path != "nested" {
+		t.Fatalf("unexpected mkdir result: %+v", mkdir)
+	}
+	if info, err := os.Stat(filepath.Join(root, "nested")); err != nil || !info.IsDir() {
+		t.Fatalf("nested directory missing: info=%+v err=%v", info, err)
+	}
+	before := sha256.Sum256([]byte("payload\n"))
+	digest := hex.EncodeToString(before[:])
+	rename, err := svc.RenameProjectFile(context.Background(), projectID, "source.txt", "nested/moved.txt", digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rename.Operation != "rename" || rename.Destination != "nested/moved.txt" || rename.SHA256 != digest {
+		t.Fatalf("unexpected rename result: %+v", rename)
+	}
+	if _, err := os.Stat(filepath.Join(root, "source.txt")); !os.IsNotExist(err) {
+		t.Fatalf("rename left source behind: %v", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(root, "nested", "moved.txt")); err != nil || string(raw) != "payload\n" {
+		t.Fatalf("unexpected renamed file: %q err=%v", raw, err)
+	}
+	if _, err := svc.RemoveProjectFile(context.Background(), projectID, "nested/moved.txt", strings.Repeat("0", 64)); err == nil || !strings.Contains(err.Error(), "revision mismatch") {
+		t.Fatalf("expected remove hash mismatch, got %v", err)
+	}
+	removed, err := svc.RemoveProjectFile(context.Background(), projectID, "nested/moved.txt", digest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed.Operation != "remove" || removed.SHA256 != digest {
+		t.Fatalf("unexpected remove result: %+v", removed)
+	}
+	if _, err := os.Stat(filepath.Join(root, "nested", "moved.txt")); !os.IsNotExist(err) {
+		t.Fatalf("remove left file behind: %v", err)
+	}
+	if _, err := svc.RunProjectCommand(context.Background(), projectID, "git", []string{"status"}, ".", 30, 1024); err == nil || !strings.Contains(err.Error(), "network_allowed") {
+		t.Fatalf("host run unexpectedly bypassed network policy: %v", err)
+	}
+	if _, err := svc.CreateProjectDirectory(context.Background(), projectID, "../escape"); err == nil {
+		t.Fatal("expected mkdir traversal rejection")
+	}
+}
+
 func TestProjectActionWriteCreatesAndReplacesWithRevisionGuard(t *testing.T) {
 	svc, root, projectID, _ := newProjectContextFixture(t, "fast-write", map[string]string{
 		"go.mod": "module example.com/fastwrite\n\ngo 1.27\n",

@@ -21,6 +21,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"mar/internal/domain"
+	"mar/internal/resourcegov"
+	"mar/internal/scheduler"
 	"mar/internal/service"
 	"mar/internal/store"
 	"mar/internal/worker"
@@ -208,16 +210,28 @@ func TestMain(m *testing.M) {
 		if len(os.Args) > 1 && os.Args[1] == "worker-run" {
 			err = worker.RunChild(context.Background(), os.Stdin, os.Stdout)
 		} else {
-			err = run(context.Background(), []string{
-				"mcp-stdio",
-				"-brain", "provider",
-				"-db", os.Getenv("MAR_T7_DB"),
-				"-data-root", os.Getenv("MAR_T7_DATA_ROOT"),
-				"-provider-base-url", os.Getenv("MAR_T7_PROVIDER"),
-				"-api-key-env", "MAR_T7_CLI_KEY",
-				"-model", "t7-model",
-				"-go", os.Getenv("MAR_T7_GO"),
-				"-max-workers", "1",
+			// Keep this acceptance focused on stdio disconnect safety instead of
+			// coupling it to the host's momentary production RAM/disk reserve.
+			// Production CLI defaults remain unchanged; only this helper injects
+			// the same deterministic resource envelope used by lower-level T7.
+			err = runMCPRuntime(context.Background(), mcpRuntimeOptions{
+				DBPath:          os.Getenv("MAR_T7_DB"),
+				DataRoot:        os.Getenv("MAR_T7_DATA_ROOT"),
+				BrainMode:       string(worker.BrainProvider),
+				ProviderBaseURL: os.Getenv("MAR_T7_PROVIDER"),
+				APIKeyEnv:       "MAR_T7_CLI_KEY",
+				Model:           "t7-model",
+				Reasoning:       "high",
+				GoPath:          os.Getenv("MAR_T7_GO"),
+				MaxWorkers:      1,
+				ResourceGovernor: &resourcegov.Config{
+					MaxCPUPercent: 100, MaxMemoryLoadPercent: 100, MaxIOPressurePercent: 100,
+					MinFreeRAMBytes: 1, MinFreeDiskBytes: 1, MaxMARDiskBytes: 1 << 30,
+					MaxHeavyJobs: 1, MaxHeavyJobsPerProject: 1, MaxHeavyJobsInteractive: 1,
+				},
+				Scheduler: &scheduler.Config{
+					AgingInterval: time.Minute, WorkspaceRAMReservation: 1, WorkspaceDiskReservation: 1,
+				},
 			})
 		}
 		if err != nil {

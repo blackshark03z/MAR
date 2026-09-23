@@ -34,6 +34,9 @@ type Backend interface {
 	ProjectGitDiff(context.Context, string, string) (service.ProjectGitDiffResult, error)
 	WriteProjectFile(context.Context, service.ProjectWriteRequest) (service.ProjectWriteResult, error)
 	ApplyProjectPatch(context.Context, service.ProjectPatchRequest) (service.ProjectPatchResult, error)
+	CreateProjectDirectory(context.Context, string, string) (service.ProjectFSActionResult, error)
+	RemoveProjectFile(context.Context, string, string, string) (service.ProjectFSActionResult, error)
+	RenameProjectFile(context.Context, string, string, string, string) (service.ProjectFSActionResult, error)
 	RunProjectCommand(context.Context, string, string, []string, string, int, int) (service.ProjectCommandResult, error)
 	RunProjectCommands(context.Context, string, []service.ProjectVerifyCommand) (service.ProjectCommandBatchResult, error)
 	StageProjectPaths(context.Context, string, []string) (service.ProjectGitActionResult, error)
@@ -139,9 +142,10 @@ type actionVerifyArgs struct {
 }
 
 type actionArgs struct {
-	Operation      string             `json:"operation" jsonschema:"write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
+	Operation      string             `json:"operation" jsonschema:"write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
 	ProjectID      string             `json:"project_id"`
 	Path           string             `json:"path,omitempty"`
+	Destination    string             `json:"destination,omitempty"`
 	ExpectedSHA256 string             `json:"expected_sha256,omitempty"`
 	Search         string             `json:"search,omitempty"`
 	Replacement    string             `json:"replacement,omitempty"`
@@ -200,7 +204,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callAction(ctx, backend, args)
 			if err != nil {
@@ -357,6 +361,24 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 			return nil, err
 		}
 		return map[string]any{"patch": result}, nil
+	case "mkdir":
+		result, err := backend.CreateProjectDirectory(ctx, projectID, args.Path)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"mkdir": result}, nil
+	case "remove":
+		result, err := backend.RemoveProjectFile(ctx, projectID, args.Path, args.ExpectedSHA256)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"remove": result}, nil
+	case "rename":
+		result, err := backend.RenameProjectFile(ctx, projectID, args.Path, args.Destination, args.ExpectedSHA256)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"rename": result}, nil
 	case "run":
 		result, err := backend.RunProjectCommand(ctx, projectID, args.Executable, args.Args, args.Cwd, args.TimeoutSeconds, args.MaxOutputBytes)
 		if err != nil {
@@ -430,7 +452,7 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be write, patch, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
 	}
 }
 

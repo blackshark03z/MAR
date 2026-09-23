@@ -57,6 +57,14 @@ type ProjectPatchResult struct {
 	Replacements int    `json:"replacements"`
 }
 
+type ProjectFSActionResult struct {
+	ProjectID   string `json:"project_id"`
+	Operation   string `json:"operation"`
+	Path        string `json:"path"`
+	Destination string `json:"destination,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
+}
+
 type ProjectCommandResult struct {
 	ProjectID       string   `json:"project_id"`
 	Executable      string   `json:"executable"`
@@ -188,6 +196,131 @@ func safeProjectWriteTarget(project domain.Project, requestedPath string) (strin
 		return "", fmt.Errorf("inspect write target: %w", err)
 	}
 	return target, nil
+}
+
+func (s *TaskService) CreateProjectDirectory(ctx context.Context, projectID, path string) (ProjectFSActionResult, error) {
+	project, policy, err := s.fastProject(ctx, projectID)
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if !policy.LocalFileWrite {
+		return ProjectFSActionResult{}, errors.New("project local_file_write policy is disabled")
+	}
+	clean, err := cleanFastGitPath(path)
+	if err != nil || clean == "." {
+		return ProjectFSActionResult{}, errors.New("mkdir path must be one project-relative directory")
+	}
+	target, err := safeProjectWriteTarget(project, filepath.FromSlash(clean))
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if _, err := os.Lstat(target); err == nil {
+		return ProjectFSActionResult{}, errors.New("mkdir target already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ProjectFSActionResult{}, fmt.Errorf("inspect mkdir target: %w", err)
+	}
+	if err := os.Mkdir(target, 0o755); err != nil {
+		return ProjectFSActionResult{}, fmt.Errorf("create project directory: %w", err)
+	}
+	return ProjectFSActionResult{ProjectID: project.ID, Operation: "mkdir", Path: clean}, nil
+}
+
+func (s *TaskService) RemoveProjectFile(ctx context.Context, projectID, path, expectedSHA256 string) (ProjectFSActionResult, error) {
+	project, policy, err := s.fastProject(ctx, projectID)
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if !policy.LocalFileWrite {
+		return ProjectFSActionResult{}, errors.New("project local_file_write policy is disabled")
+	}
+	clean, target, digest, err := fastProjectFileIdentity(project, path)
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if err := requireFastFileSHA256(expectedSHA256, digest); err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if err := os.Remove(target); err != nil {
+		return ProjectFSActionResult{}, fmt.Errorf("remove project file: %w", err)
+	}
+	return ProjectFSActionResult{ProjectID: project.ID, Operation: "remove", Path: clean, SHA256: digest}, nil
+}
+
+func (s *TaskService) RenameProjectFile(ctx context.Context, projectID, path, destination, expectedSHA256 string) (ProjectFSActionResult, error) {
+	project, policy, err := s.fastProject(ctx, projectID)
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if !policy.LocalFileWrite {
+		return ProjectFSActionResult{}, errors.New("project local_file_write policy is disabled")
+	}
+	clean, source, digest, err := fastProjectFileIdentity(project, path)
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if err := requireFastFileSHA256(expectedSHA256, digest); err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	destinationClean, err := cleanFastGitPath(destination)
+	if err != nil || destinationClean == "." {
+		return ProjectFSActionResult{}, errors.New("rename destination must be one project-relative file path")
+	}
+	destinationTarget, err := safeProjectWriteTarget(project, filepath.FromSlash(destinationClean))
+	if err != nil {
+		return ProjectFSActionResult{}, err
+	}
+	if _, err := os.Lstat(destinationTarget); err == nil {
+		return ProjectFSActionResult{}, errors.New("rename destination already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return ProjectFSActionResult{}, fmt.Errorf("inspect rename destination: %w", err)
+	}
+	if err := os.Rename(source, destinationTarget); err != nil {
+		return ProjectFSActionResult{}, fmt.Errorf("rename project file: %w", err)
+	}
+	return ProjectFSActionResult{ProjectID: project.ID, Operation: "rename", Path: clean, Destination: destinationClean, SHA256: digest}, nil
+}
+
+func fastProjectFileIdentity(project domain.Project, path string) (string, string, string, error) {
+	clean, err := cleanFastGitPath(path)
+	if err != nil || clean == "." {
+		return "", "", "", errors.New("file path must be one project-relative file")
+	}
+	lexical := filepath.Join(project.Root, filepath.FromSlash(clean))
+	lexicalInfo, err := os.Lstat(lexical)
+	if err != nil {
+		return "", "", "", fmt.Errorf("inspect project file: %w", err)
+	}
+	if lexicalInfo.Mode()&os.ModeSymlink != 0 {
+		return "", "", "", errors.New("fast-path filesystem actions reject symlink files")
+	}
+	target, err := safeProjectReadTarget(project, filepath.FromSlash(clean))
+	if err != nil {
+		return "", "", "", err
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", "", "", fmt.Errorf("inspect project file: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Size() > maxProjectReadBytes {
+		return "", "", "", errors.New("fast-path filesystem actions require one bounded regular file")
+	}
+	payload, err := os.ReadFile(target)
+	if err != nil {
+		return "", "", "", fmt.Errorf("read project file identity: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return clean, target, hex.EncodeToString(digest[:]), nil
+}
+
+func requireFastFileSHA256(expected, actual string) error {
+	expected = strings.ToLower(strings.TrimSpace(expected))
+	if len(expected) != 64 {
+		return errors.New("expected_sha256 must be an exact SHA-256 hex digest")
+	}
+	if expected != actual {
+		return fmt.Errorf("file revision mismatch: expected %s got %s", expected, actual)
+	}
+	return nil
 }
 
 func (s *TaskService) ApplyProjectPatch(ctx context.Context, req ProjectPatchRequest) (ProjectPatchResult, error) {

@@ -246,15 +246,17 @@ func run(ctx context.Context, args []string) error {
 }
 
 type mcpRuntimeOptions struct {
-	DBPath          string
-	DataRoot        string
-	BrainMode       string
-	ProviderBaseURL string
-	APIKeyEnv       string
-	Model           string
-	Reasoning       string
-	GoPath          string
-	MaxWorkers      int
+	DBPath           string
+	DataRoot         string
+	BrainMode        string
+	ProviderBaseURL  string
+	APIKeyEnv        string
+	Model            string
+	Reasoning        string
+	GoPath           string
+	MaxWorkers       int
+	ResourceGovernor *resourcegov.Config
+	Scheduler        *scheduler.Config
 }
 
 const defaultWorkerInstructions = `You are the bounded MAR coding worker for one immutable Goal Contract. Work only inside the assigned task workspace and granted authority. Inspect relevant context before editing. Use only the provided authority-gated coding tools for reads, writes, bounded public network reads, typed Git operations and allowed verification commands. Remote Git writes are allowed only when the typed push tool is explicitly provided; never force, delete, rewrite Git history, deploy, widen the Goal Contract, or mutate authoritative integration state. Checkpoint meaningful progress. Finish only with finish_task using completed_candidate, blocked, cancelled, or budget_exhausted; completed_candidate means ready for MAR verification, not verified or integrated.`
@@ -315,6 +317,28 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		return err
 	}
 	defer s.Close()
+	governorConfig := resourcegov.Config{
+		MaxCPUPercent:           85,
+		MaxMemoryLoadPercent:    85,
+		MaxIOPressurePercent:    90,
+		MinFreeRAMBytes:         1 << 30,
+		MinFreeDiskBytes:        2 << 30,
+		MaxMARDiskBytes:         20 << 30,
+		MaxHeavyJobs:            opts.MaxWorkers,
+		MaxHeavyJobsPerProject:  opts.MaxWorkers,
+		MaxHeavyJobsInteractive: 1,
+	}
+	if opts.ResourceGovernor != nil {
+		governorConfig = *opts.ResourceGovernor
+	}
+	schedulerConfig := scheduler.Config{
+		AgingInterval:            5 * time.Minute,
+		WorkspaceRAMReservation:  256 << 20,
+		WorkspaceDiskReservation: 256 << 20,
+	}
+	if opts.Scheduler != nil {
+		schedulerConfig = *opts.Scheduler
+	}
 	runtime, err := orchestrator.NewRuntime(s, orchestrator.RuntimeConfig{
 		DataRoot:   dataRoot,
 		Executable: executable,
@@ -336,22 +360,8 @@ func runMCPRuntime(ctx context.Context, opts mcpRuntimeOptions) error {
 		GoBuildCache:         filepath.Join(dataRoot, "runtime", "go-build-cache"),
 		LeaseDuration:        time.Minute,
 		WorkerStopTimeout:    10 * time.Second,
-		ResourceGovernor: resourcegov.Config{
-			MaxCPUPercent:           85,
-			MaxMemoryLoadPercent:    85,
-			MaxIOPressurePercent:    90,
-			MinFreeRAMBytes:         1 << 30,
-			MinFreeDiskBytes:        2 << 30,
-			MaxMARDiskBytes:         20 << 30,
-			MaxHeavyJobs:            opts.MaxWorkers,
-			MaxHeavyJobsPerProject:  opts.MaxWorkers,
-			MaxHeavyJobsInteractive: 1,
-		},
-		Scheduler: scheduler.Config{
-			AgingInterval:            5 * time.Minute,
-			WorkspaceRAMReservation:  256 << 20,
-			WorkspaceDiskReservation: 256 << 20,
-		},
+		ResourceGovernor:     governorConfig,
+		Scheduler:            schedulerConfig,
 		Daemon: orchestrator.DaemonConfig{
 			PollInterval:         250 * time.Millisecond,
 			ControlPollInterval:  200 * time.Millisecond,

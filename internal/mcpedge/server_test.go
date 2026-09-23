@@ -95,6 +95,15 @@ func (f *fakeBackend) WriteProjectFile(_ context.Context, req service.ProjectWri
 func (f *fakeBackend) ApplyProjectPatch(_ context.Context, req service.ProjectPatchRequest) (service.ProjectPatchResult, error) {
 	return service.ProjectPatchResult{ProjectID: req.ProjectID, Path: req.Path, BeforeSHA256: req.ExpectedSHA256, AfterSHA256: "after", Replacements: req.ExpectedCount}, nil
 }
+func (f *fakeBackend) CreateProjectDirectory(_ context.Context, projectID, path string) (service.ProjectFSActionResult, error) {
+	return service.ProjectFSActionResult{ProjectID: projectID, Operation: "mkdir", Path: path}, nil
+}
+func (f *fakeBackend) RemoveProjectFile(_ context.Context, projectID, path, expectedSHA256 string) (service.ProjectFSActionResult, error) {
+	return service.ProjectFSActionResult{ProjectID: projectID, Operation: "remove", Path: path, SHA256: expectedSHA256}, nil
+}
+func (f *fakeBackend) RenameProjectFile(_ context.Context, projectID, path, destination, expectedSHA256 string) (service.ProjectFSActionResult, error) {
+	return service.ProjectFSActionResult{ProjectID: projectID, Operation: "rename", Path: path, Destination: destination, SHA256: expectedSHA256}, nil
+}
 func (f *fakeBackend) RunProjectCommand(_ context.Context, projectID, executable string, args []string, cwd string, timeoutSeconds, maxOutputBytes int) (service.ProjectCommandResult, error) {
 	return service.ProjectCommandResult{ProjectID: projectID, Executable: executable, Args: args, Cwd: cwd, Output: "ok", ExitCode: 0}, nil
 }
@@ -676,6 +685,35 @@ func TestCallActionApplyAndVerify(t *testing.T) {
 		t.Fatalf("unexpected apply_and_verify result: %+v", result)
 	}
 }
+
+func TestCallActionFilesystemOperations(t *testing.T) {
+	backend := &fakeBackend{}
+	mkdir, err := callAction(context.Background(), backend, actionArgs{Operation: "mkdir", ProjectID: "mar", Path: "nested"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mkdirResult, ok := mkdir["mkdir"].(service.ProjectFSActionResult)
+	if !ok || mkdirResult.Operation != "mkdir" || mkdirResult.Path != "nested" {
+		t.Fatalf("unexpected mkdir result: %#v", mkdir["mkdir"])
+	}
+	remove, err := callAction(context.Background(), backend, actionArgs{Operation: "remove", ProjectID: "mar", Path: "old.txt", ExpectedSHA256: strings.Repeat("a", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeResult, ok := remove["remove"].(service.ProjectFSActionResult)
+	if !ok || removeResult.Operation != "remove" || removeResult.SHA256 != strings.Repeat("a", 64) {
+		t.Fatalf("unexpected remove result: %#v", remove["remove"])
+	}
+	rename, err := callAction(context.Background(), backend, actionArgs{Operation: "rename", ProjectID: "mar", Path: "old.txt", Destination: "nested/new.txt", ExpectedSHA256: strings.Repeat("b", 64)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	renameResult, ok := rename["rename"].(service.ProjectFSActionResult)
+	if !ok || renameResult.Operation != "rename" || renameResult.Destination != "nested/new.txt" {
+		t.Fatalf("unexpected rename result: %#v", rename["rename"])
+	}
+}
+
 func TestProjectAttachExplicitNetworkAllowed(t *testing.T) {
 	session := connectTestMCP(t, &fakeBackend{})
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{
