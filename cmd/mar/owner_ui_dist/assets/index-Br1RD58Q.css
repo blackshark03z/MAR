@@ -399,4 +399,46 @@ table{color:#bac4cf}th{color:#939fac;font-weight:600}
 input,textarea,select{font-weight:400}
 ::placeholder{color:#74808e;opacity:1}
 
+/* final comfort pass — avoid high-contrast halation and micro-text */
+:root{
+  --text:#cbd3dc;
+  --muted:#929eac;
+  --subtle:#7d8997;
+}
+body{color:var(--text);font-size:14px}
+.page-header h1{color:#dce2e8}
+.panel-title h2{color:#d3dae2}
+.command-context strong,.rail-brand strong{color:#d7dee6}
+.now-answer strong,.overview-answer h2,.now-metrics b,.overview-rail b{color:#d8dfe6}
+.flow-row strong,.task-item-top strong,.workspace-title strong,.provider-metrics b,.connection-head h2,.detail-head h2{color:#d2dae2}
+.chart-kpis b,.metric-box b{color:#cfd7df}
+.rail-nav button.active{color:#dce3ea}
+.primary-button{color:#edf2f6}
+
+.command-context span{font-size:10px}
+.rail-brand span,.rail-scope>span{font-size:10px;letter-spacing:.07em}
+.rail-foot{font-size:9px;letter-spacing:.05em}
+.command-signal,.command-stat{font-size:10px}
+.command-signal b{font-size:9px}
+.page-kicker{font-size:10px;letter-spacing:.07em}
+.now-answer span,.overview-answer>div:last-child>span,.now-metrics span,.overview-rail span{font-size:9.5px}
+.now-answer p,.overview-answer p,.now-metrics small,.overview-rail small{font-size:10px}
+.panel-title small,.panel-subtitle{font-size:10px}
+.deck-live{font-size:10px;letter-spacing:.045em;text-transform:none}
+.chart-kpis span,.metric-box span{font-size:10px}
+.chart-legend,.activity-pulse-wrap{font-size:10px}
+.flow-row strong{font-size:12.5px}
+.flow-row small,.task-item-meta{font-size:10px}
+.status-badge,.support-chip,.connection-chip{font-size:10px}
+.operation-row{font-size:10.5px}
+.operation-row small,.operation-outcome{font-size:9.5px}
+.operation-row code{font-size:10px}
+.provider-head p{font-size:10px}
+.provider-metrics span{font-size:9.5px}
+.workspace-card small,.policy-checks,.connection-summary,.connection-link>span,.connection-hint{font-size:10px}
+.detail-head code,.detail-tabs button,.task-message,.subtle-card,.evidence summary{font-size:10.5px}
+.eyebrow{font-size:9.5px}
+.empty-state strong{font-size:12px}.empty-state p{font-size:10.5px}
+.task-item-top strong{font-size:11.5px;line-height:1.45}
+
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.001ms!important}}
