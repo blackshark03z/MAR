@@ -52,6 +52,9 @@ type fakeIntegrationGit struct {
 	descendant              bool
 	updateCalls             int
 	resetCalls              int
+	candidateStageCalls     int
+	candidateDeleteCalls    int
+	privateRefs             map[string]string
 	staged                  bool
 	unstaged                bool
 	untracked               bool
@@ -68,7 +71,22 @@ func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...
 	case "symbolic-ref":
 		return g.ref, nil
 	case "rev-parse":
-		return g.head, nil
+		if len(args) < 2 {
+			return "", errors.New("missing rev-parse target")
+		}
+		target := strings.TrimSuffix(args[len(args)-1], "^{commit}")
+		if target == g.ref {
+			return g.head, nil
+		}
+		if strings.HasPrefix(target, "refs/mar/integrations/") {
+			if g.privateRefs != nil {
+				if revision, ok := g.privateRefs[target]; ok {
+					return revision, nil
+				}
+			}
+			return "", errors.New("private integration ref not found")
+		}
+		return target, nil
 	case "status":
 		if g.clean {
 			return "", nil
@@ -94,9 +112,43 @@ func (g *fakeIntegrationGit) Run(_ context.Context, _ string, _ string, args ...
 			return "owner-untracked.txt\x00", nil
 		}
 		return "", nil
+	case "for-each-ref":
+		if len(args) != 3 {
+			return "", fmt.Errorf("unexpected for-each-ref args: %v", args)
+		}
+		if g.privateRefs != nil {
+			return g.privateRefs[args[2]], nil
+		}
+		return "", nil
 	case "update-ref":
 		if len(args) != 4 {
 			return "", fmt.Errorf("unexpected update-ref args: %v", args)
+		}
+		if args[1] == "-d" {
+			ref := args[2]
+			if !strings.HasPrefix(ref, "refs/mar/integrations/") {
+				return "", fmt.Errorf("unexpected private ref delete: %v", args)
+			}
+			if g.privateRefs == nil || g.privateRefs[ref] != args[3] {
+				return "", errors.New("private integration ref delete precondition failed")
+			}
+			delete(g.privateRefs, ref)
+			g.candidateDeleteCalls++
+			return "", nil
+		}
+		if strings.HasPrefix(args[1], "refs/mar/integrations/") {
+			if strings.Trim(args[3], "0") != "" {
+				return "", errors.New("private integration ref creation requires zero old oid")
+			}
+			if g.privateRefs == nil {
+				g.privateRefs = make(map[string]string)
+			}
+			if _, exists := g.privateRefs[args[1]]; exists {
+				return "", errors.New("private integration ref already exists")
+			}
+			g.privateRefs[args[1]] = args[2]
+			g.candidateStageCalls++
+			return "", nil
 		}
 		if args[1] != g.ref || g.head != args[3] {
 			return "", errors.New("compare-and-advance precondition failed")
@@ -321,6 +373,9 @@ func TestRecoverDispatchedBeforeCASAdvancesOnceAndFinalizes(t *testing.T) {
 	if git.updateCalls != 1 || git.head != h.candidate {
 		t.Fatalf("CAS advancement count/head mismatch: calls=%d head=%s", git.updateCalls, git.head)
 	}
+	if git.candidateStageCalls != 1 || git.candidateDeleteCalls != 1 || len(git.privateRefs) != 0 {
+		t.Fatalf("private candidate ref lifecycle mismatch: stage=%d delete=%d refs=%v", git.candidateStageCalls, git.candidateDeleteCalls, git.privateRefs)
+	}
 	task, err := h.store.GetTask(context.Background(), h.task.ID)
 	if err != nil || task.State != domain.TaskComplete {
 		t.Fatalf("task did not finalize COMPLETE: task=%+v err=%v", task, err)
@@ -395,6 +450,9 @@ func TestIntegrationStopsBeforeCheckoutMutationWhenOwnerWorkAppearsAfterCAS(t *t
 			}
 			if git.updateCalls != 1 || git.resetCalls != 0 {
 				t.Fatalf("unexpected checkout mutation after Owner %s work: update=%d sync=%d", tc.name, git.updateCalls, git.resetCalls)
+			}
+			if git.candidateStageCalls != 1 || git.candidateDeleteCalls != 0 || len(git.privateRefs) != 1 {
+				t.Fatalf("recoverable private candidate ref was not retained after Owner %s sync conflict: stage=%d delete=%d refs=%v", tc.name, git.candidateStageCalls, git.candidateDeleteCalls, git.privateRefs)
 			}
 			if observedAttempt.Status != domain.IntegrationDispatched {
 				t.Fatalf("integration should remain recoverable/dispatched, got %s", observedAttempt.Status)
@@ -683,6 +741,88 @@ func TestPreparedAttemptRejectsEvidenceThatBecomesStaleBeforeDispatch(t *testing
 	}
 	if blockedAttempt.Status != domain.IntegrationBlocked || blockedResult.IntegrationStatus != "BLOCKED" || git.updateCalls != 0 {
 		t.Fatalf("stale evidence reached integration side effect: attempt=%+v result=%+v calls=%d", blockedAttempt, blockedResult, git.updateCalls)
+	}
+}
+
+func TestPreparedAttemptRejectsFreshResultCandidateOIDMismatch(t *testing.T) {
+	h := newIntegrationHarness(t)
+	defer h.store.Close()
+	ctx := context.Background()
+	attempt, err := h.store.PrepareIntegrationAttempt(ctx, domain.IntegrationAttempt{
+		ID:                 "integration-attempt-oid-mismatch",
+		TaskID:             h.task.ID,
+		ProjectID:          h.project.ID,
+		ExpectedRef:        "refs/heads/main",
+		ExpectedHead:       h.base,
+		TaskResultID:       h.result.ID,
+		TaskResultVersion:  h.result.Version,
+		TaskResultRevision: h.result.FinalRevision,
+		CandidateRevision:  h.result.FinalRevision,
+		EvidenceID:         h.result.EvidenceID,
+	}, h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatched := h.result
+	mismatched.FinalRevision = h.base
+	git := &fakeIntegrationGit{ref: attempt.ExpectedRef, head: h.base, clean: true, descendant: true}
+	gate := &fakeFreshResultGate{result: mismatched, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	blockedAttempt, blockedResult, err := manager.RecoverAttempt(ctx, attempt.ID)
+	if !errors.Is(err, ErrIntegrationBlocked) {
+		t.Fatalf("fresh result with mismatched candidate OID did not block integration: %v", err)
+	}
+	if blockedAttempt.Status != domain.IntegrationBlocked || blockedResult.IntegrationStatus != "BLOCKED" {
+		t.Fatalf("candidate OID mismatch did not persist blocked outcome: attempt=%+v result=%+v", blockedAttempt, blockedResult)
+	}
+	if git.updateCalls != 0 || git.candidateStageCalls != 0 {
+		t.Fatalf("candidate OID mismatch reached Git publication side effects: canonical=%d private=%d", git.updateCalls, git.candidateStageCalls)
+	}
+}
+
+func TestPreparedCandidateAnchorIsCleanedWhenCancellationWinsBeforeDispatch(t *testing.T) {
+	h := newIntegrationHarness(t)
+	defer h.store.Close()
+	ctx := context.Background()
+	attempt, err := h.store.PrepareIntegrationAttempt(ctx, domain.IntegrationAttempt{
+		ID:                 "integration-attempt-cancel-race",
+		TaskID:             h.task.ID,
+		ProjectID:          h.project.ID,
+		ExpectedRef:        "refs/heads/main",
+		ExpectedHead:       h.base,
+		TaskResultID:       h.result.ID,
+		TaskResultVersion:  h.result.Version,
+		TaskResultRevision: h.result.FinalRevision,
+		CandidateRevision:  h.result.FinalRevision,
+		EvidenceID:         h.result.EvidenceID,
+	}, h.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := h.store.RequestTaskCancellation(ctx, "control-cancel-before-dispatch", h.task.ID, "cancel-before-dispatch", json.RawMessage(`{"reason":"test"}`), h.now.Add(time.Second)); err != nil || !created {
+		t.Fatalf("cancel before dispatch failed: created=%v err=%v", created, err)
+	}
+	git := &fakeIntegrationGit{ref: attempt.ExpectedRef, head: h.base, clean: true, descendant: true}
+	gate := &fakeFreshResultGate{result: h.result, fresh: true}
+	manager, err := newManagerWithGit(h.store, gate, git)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _, err = manager.RecoverAttempt(ctx, attempt.ID)
+	if !errors.Is(err, store.ErrStateConflict) {
+		t.Fatalf("cancellation did not win before publication dispatch: %v", err)
+	}
+	if git.updateCalls != 0 || git.candidateStageCalls != 1 || git.candidateDeleteCalls != 1 || len(git.privateRefs) != 0 {
+		t.Fatalf("cancelled publication left Git side effects: canonical=%d stage=%d delete=%d refs=%v", git.updateCalls, git.candidateStageCalls, git.candidateDeleteCalls, git.privateRefs)
+	}
+	task, err := h.store.GetTask(ctx, h.task.ID)
+	if err != nil || task.State != domain.TaskCancelled {
+		t.Fatalf("task did not remain CANCELLED after dispatch loss: task=%+v err=%v", task, err)
 	}
 }
 

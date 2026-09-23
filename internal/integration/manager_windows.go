@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -325,9 +326,15 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 		return attempt, result, ErrIntegrationBlocked
 	}
 
+	candidateRef := ""
+	anchorEnsured := false
+	if attempt.CandidateRevision != attempt.ExpectedHead {
+		candidateRef = integrationCandidateRef(attempt.ID)
+	}
+
 	if attempt.Status == domain.IntegrationPrepared {
 		freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, attempt.TaskID)
-		if gateErr != nil || !fresh || freshResult.ID != attempt.TaskResultID || freshResult.EvidenceID != attempt.EvidenceID {
+		if gateErr != nil || !freshResultMatchesAttempt(freshResult, fresh, attempt) {
 			reason := "verification evidence became stale before integration dispatch"
 			if gateErr != nil {
 				reason += ": " + gateErr.Error()
@@ -359,11 +366,21 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 				}
 				return m.blockAttempt(ctx, attempt, project.Root, reason)
 			}
+			if _, anchorErr := m.ensureCandidateAnchor(ctx, attempt, project.Root, candidateRef); anchorErr != nil {
+				return m.blockAttempt(ctx, attempt, project.Root, "verified candidate could not be staged on a private integration ref: "+anchorErr.Error())
+			}
+			anchorEnsured = true
 		}
-		attempt, err = m.store.MarkIntegrationDispatched(ctx, attempt.ID, m.now().UTC())
-		if err != nil {
-			return domain.IntegrationAttempt{}, domain.TaskResult{}, err
+		dispatched, dispatchErr := m.store.MarkIntegrationDispatched(ctx, attempt.ID, m.now().UTC())
+		if dispatchErr != nil {
+			if anchorEnsured {
+				if cleanupErr := m.deleteCandidateAnchor(ctx, attempt, project.Root, candidateRef); cleanupErr != nil {
+					dispatchErr = errors.Join(dispatchErr, cleanupErr)
+				}
+			}
+			return domain.IntegrationAttempt{}, domain.TaskResult{}, dispatchErr
 		}
+		attempt = dispatched
 	}
 
 	if attempt.Status != domain.IntegrationDispatched {
@@ -373,9 +390,15 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 	if err != nil {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
 	}
+	if candidateRef != "" && head == attempt.ExpectedHead && !anchorEnsured {
+		if _, anchorErr := m.ensureCandidateAnchor(ctx, attempt, project.Root, candidateRef); anchorErr != nil {
+			return m.blockAttempt(ctx, attempt, project.Root, "dispatched candidate could not be staged on a private integration ref: "+anchorErr.Error())
+		}
+		anchorEnsured = true
+	}
 	if attempt.CandidateRevision == attempt.ExpectedHead {
 		freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, attempt.TaskID)
-		if gateErr != nil || !fresh || freshResult.ID != attempt.TaskResultID || freshResult.EvidenceID != attempt.EvidenceID {
+		if gateErr != nil || !freshResultMatchesAttempt(freshResult, fresh, attempt) {
 			reason := "verification evidence became stale before no-op integration finalization"
 			if gateErr != nil {
 				reason += ": " + gateErr.Error()
@@ -398,7 +421,7 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 	advancedRef := false
 	if head == attempt.ExpectedHead {
 		freshResult, fresh, gateErr := m.gate.LatestFreshResult(ctx, attempt.TaskID)
-		if gateErr != nil || !fresh || freshResult.ID != attempt.TaskResultID || freshResult.EvidenceID != attempt.EvidenceID {
+		if gateErr != nil || !freshResultMatchesAttempt(freshResult, fresh, attempt) {
 			reason := "verification evidence became stale while dispatched but before authoritative ref advancement"
 			if gateErr != nil {
 				reason += ": " + gateErr.Error()
@@ -466,6 +489,11 @@ func (m *Manager) driveAttempt(ctx context.Context, attempt domain.IntegrationAt
 			}
 		}
 	}
+	if candidateRef != "" {
+		if cleanupErr := m.deleteCandidateAnchor(ctx, attempt, project.Root, candidateRef); cleanupErr != nil {
+			return attempt, domain.TaskResult{}, fmt.Errorf("release private integration candidate ref: %w", cleanupErr)
+		}
+	}
 	result, err := m.store.FinalizeIntegrationApplied(ctx, attempt.ID, attempt.CandidateRevision, newID("result"), m.now().UTC())
 	if err != nil {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
@@ -487,7 +515,13 @@ func (m *Manager) blockAttempt(ctx context.Context, attempt domain.IntegrationAt
 	if err != nil {
 		return domain.IntegrationAttempt{}, domain.TaskResult{}, err
 	}
-	return blocked, result, fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
+	blockErr := fmt.Errorf("%w: %s", ErrIntegrationBlocked, reason)
+	if attempt.CandidateRevision != attempt.ExpectedHead {
+		if cleanupErr := m.deleteCandidateAnchor(ctx, attempt, root, integrationCandidateRef(attempt.ID)); cleanupErr != nil {
+			blockErr = errors.Join(blockErr, cleanupErr)
+		}
+	}
+	return blocked, result, blockErr
 }
 
 func (m *Manager) symbolicHead(ctx context.Context, taskID, root string) (string, error) {
@@ -508,6 +542,95 @@ func (m *Manager) refHead(ctx context.Context, taskID, root, ref string) (string
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
+}
+
+func freshResultMatchesAttempt(result domain.TaskResult, fresh bool, attempt domain.IntegrationAttempt) bool {
+	return fresh &&
+		result.Verdict == domain.ResultVerified &&
+		result.ID == attempt.TaskResultID &&
+		result.Version == attempt.TaskResultVersion &&
+		result.EvidenceID == attempt.EvidenceID &&
+		result.FinalRevision == attempt.TaskResultRevision &&
+		result.FinalRevision == attempt.CandidateRevision
+}
+
+func integrationCandidateRef(attemptID string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(attemptID)))
+	return "refs/mar/integrations/" + hex.EncodeToString(sum[:16])
+}
+
+func (m *Manager) privateRefOID(ctx context.Context, taskID, root, ref string) (string, bool, error) {
+	out, err := m.git.Run(ctx, taskID, root, "for-each-ref", "--format=%(objectname)", ref)
+	if err != nil {
+		return "", false, err
+	}
+	oid := strings.TrimSpace(out)
+	if oid == "" {
+		return "", false, nil
+	}
+	return oid, true, nil
+}
+
+func (m *Manager) ensureCandidateAnchor(ctx context.Context, attempt domain.IntegrationAttempt, root, ref string) (string, error) {
+	if ref == "" || attempt.CandidateRevision == attempt.ExpectedHead {
+		return "", nil
+	}
+	resolved, err := m.refHead(ctx, attempt.TaskID, root, attempt.CandidateRevision)
+	if err != nil {
+		return "", fmt.Errorf("resolve verified candidate commit %s: %w", attempt.CandidateRevision, err)
+	}
+	if !strings.EqualFold(resolved, attempt.CandidateRevision) {
+		return "", fmt.Errorf("verified candidate OID mismatch: expected=%s observed=%s", attempt.CandidateRevision, resolved)
+	}
+	if observed, ok, err := m.privateRefOID(ctx, attempt.TaskID, root, ref); err != nil {
+		return "", err
+	} else if ok {
+		if !strings.EqualFold(observed, resolved) {
+			return "", fmt.Errorf("private integration ref %s points to %s instead of %s", ref, observed, resolved)
+		}
+		return ref, nil
+	}
+	zero := strings.Repeat("0", len(resolved))
+	if _, err := m.git.Run(ctx, attempt.TaskID, root, "update-ref", ref, resolved, zero); err != nil {
+		observed, ok, observeErr := m.privateRefOID(ctx, attempt.TaskID, root, ref)
+		if observeErr == nil && ok && strings.EqualFold(observed, resolved) {
+			return ref, nil
+		}
+		return "", fmt.Errorf("create private integration ref %s: %w", ref, err)
+	}
+	observed, ok, err := m.privateRefOID(ctx, attempt.TaskID, root, ref)
+	if err != nil || !ok || !strings.EqualFold(observed, resolved) {
+		if err == nil {
+			err = fmt.Errorf("observed=%s present=%t", observed, ok)
+		}
+		return "", fmt.Errorf("verify private integration ref %s: %w", ref, err)
+	}
+	return ref, nil
+}
+
+func (m *Manager) deleteCandidateAnchor(ctx context.Context, attempt domain.IntegrationAttempt, root, ref string) error {
+	if ref == "" || attempt.CandidateRevision == attempt.ExpectedHead {
+		return nil
+	}
+	observed, ok, err := m.privateRefOID(ctx, attempt.TaskID, root, ref)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	if !strings.EqualFold(observed, attempt.CandidateRevision) {
+		return fmt.Errorf("private integration ref %s changed: expected=%s observed=%s", ref, attempt.CandidateRevision, observed)
+	}
+	if _, err := m.git.Run(ctx, attempt.TaskID, root, "update-ref", "-d", ref, attempt.CandidateRevision); err != nil {
+		return fmt.Errorf("delete private integration ref %s: %w", ref, err)
+	}
+	if observed, ok, err := m.privateRefOID(ctx, attempt.TaskID, root, ref); err != nil {
+		return err
+	} else if ok {
+		return fmt.Errorf("private integration ref %s remains after delete at %s", ref, observed)
+	}
+	return nil
 }
 
 func (m *Manager) projectClean(ctx context.Context, taskID, root string) (bool, error) {
