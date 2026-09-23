@@ -27,6 +27,7 @@ type Backend interface {
 	PendingWebTurn(context.Context, string) (domain.WebTurn, bool, error)
 	RespondWebTurn(context.Context, string, string, model.Message, string) (domain.WebTurn, bool, error)
 	ReadProjectFile(context.Context, string, string) (service.ProjectReadResult, error)
+	SearchProjectText(context.Context, string, string, string, int) (service.ProjectSearchResult, error)
 	ListProjectDirectory(context.Context, string, string, int) (service.ProjectListResult, error)
 	AttachLocalPath(context.Context, string) (service.ProjectAttachResult, error)
 	ProjectContext(context.Context, string) ([]service.ProjectContextItem, error)
@@ -85,10 +86,14 @@ type brainTurnFastArgs struct {
 }
 
 type projectArgs struct {
-	Operation  string `json:"operation" jsonschema:"context, read, attach, or list"`
+	Operation  string `json:"operation" jsonschema:"context, read, search, attach, or list"`
 	ProjectID  string `json:"project_id,omitempty"`
 	Path       string `json:"path,omitempty"`
+	Query      string `json:"query,omitempty"`
+	StartLine  int    `json:"start_line,omitempty" jsonschema:"1-based first line for bounded read; omitted means full file"`
+	EndLine    int    `json:"end_line,omitempty" jsonschema:"inclusive last line for bounded read; 0 means through EOF"`
 	MaxEntries int    `json:"max_entries,omitempty" jsonschema:"bounded directory entry cap for list"`
+	MaxResults int    `json:"max_results,omitempty" jsonschema:"bounded text-match cap for search"`
 }
 
 type taskDomainArgs struct {
@@ -120,7 +125,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "mar", Version: serverVersion}, nil)
 	server.AddReceivingMiddleware(legacyToolAliasMiddleware())
 
-	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, read registered project context/files, or list one bounded directory. Use operation=context, read, attach, or list."},
+	mcp.AddTool(server, &mcp.Tool{Name: "project", Description: "Attach a local path for read-only research, inspect registered project context, read full or bounded line ranges, search text, or list one bounded directory. Use operation=context, read, search, attach, or list."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args projectArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callProject(ctx, backend, args)
 			if err != nil {
@@ -184,7 +189,17 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		if err != nil {
 			return nil, err
 		}
+		result, err = boundedProjectReadRange(result, args.StartLine, args.EndLine)
+		if err != nil {
+			return nil, err
+		}
 		return map[string]any{"file": result}, nil
+	case "search":
+		result, err := backend.SearchProjectText(ctx, strings.TrimSpace(args.ProjectID), strings.TrimSpace(args.Path), args.Query, args.MaxResults)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"search": result}, nil
 	case "attach":
 		result, err := backend.AttachLocalPath(ctx, strings.TrimSpace(args.Path))
 		if err != nil {
@@ -198,8 +213,44 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 		}
 		return map[string]any{"directory": result}, nil
 	default:
-		return nil, errors.New("project operation must be context, read, attach, or list")
+		return nil, errors.New("project operation must be context, read, search, attach, or list")
 	}
+}
+
+func boundedProjectReadRange(result service.ProjectReadResult, startLine, endLine int) (service.ProjectReadResult, error) {
+	if startLine <= 0 && endLine <= 0 {
+		return result, nil
+	}
+	if startLine <= 0 {
+		startLine = 1
+	}
+	if endLine < 0 || (endLine > 0 && endLine < startLine) {
+		return service.ProjectReadResult{}, errors.New("invalid project read line range")
+	}
+	lines := strings.SplitAfter(result.Content, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	if len(lines) == 0 {
+		if startLine > 1 {
+			return service.ProjectReadResult{}, errors.New("start_line exceeds file line count")
+		}
+		result.StartLine = 1
+		result.EndLine = 0
+		return result, nil
+	}
+	if startLine > len(lines) {
+		return service.ProjectReadResult{}, errors.New("start_line exceeds file line count")
+	}
+	last := len(lines)
+	if endLine > 0 && endLine < last {
+		last = endLine
+	}
+	result.Content = strings.Join(lines[startLine-1:last], "")
+	result.StartLine = startLine
+	result.EndLine = last
+	result.Truncated = startLine > 1 || last < len(lines)
+	return result, nil
 }
 
 func callTask(ctx context.Context, backend Backend, args taskDomainArgs) (map[string]any, error) {

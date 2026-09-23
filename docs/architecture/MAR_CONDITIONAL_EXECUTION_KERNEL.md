@@ -62,10 +62,10 @@ Durable MAR truth must not require a harness-specific model ID, provider identit
 ## Migration rule
 
 1. Preserve current V1/V1.x behavior as historical/release compatibility.
-2. Stop adding provider/session/cognition features unless a governed-runtime invariant requires them and commodity harnesses cannot supply the behavior outside the kernel.
+2. Keep provider/session/cognition/productivity features outside kernel authority by default. They may be retained, ported, rewritten, or improved in MAR's productivity layer when representative workflows show material value.
 3. Measure responsibility/code paths before deletion.
-4. Introduce replaceable harness boundaries only where they enable retirement of MAR-owned harness code.
-5. Prefer deletion over compatibility glue.
+4. Introduce replaceable harness boundaries where they improve portability or permit simpler implementations without regressing useful workflow capability.
+5. Apply REUSE BEFORE DELETE: prefer a proven replacement or measured evidence of non-value before retiring useful compatibility/productivity behavior.
 6. Re-run safety, recovery and exact-candidate evidence gates for every kernel reduction.
 
 ## Acceptance

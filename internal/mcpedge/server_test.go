@@ -71,7 +71,16 @@ func (f *fakeBackend) ReadProjectFile(_ context.Context, projectID, path string)
 	if projectID == "" {
 		projectID = "inferred-project"
 	}
-	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "small file\n", SizeBytes: 11}, nil
+	return service.ProjectReadResult{ProjectID: projectID, Path: path, Content: "first\nsecond\nthird\n", SizeBytes: 19}, nil
+}
+func (f *fakeBackend) SearchProjectText(_ context.Context, projectID, path, query string, maxResults int) (service.ProjectSearchResult, error) {
+	if projectID == "" {
+		return service.ProjectSearchResult{}, errors.New("project_id is required for project search")
+	}
+	if strings.TrimSpace(query) == "" {
+		return service.ProjectSearchResult{}, errors.New("search query is required")
+	}
+	return service.ProjectSearchResult{ProjectID: projectID, Path: path, Query: query, Matches: []service.ProjectSearchMatch{{Path: "README.md", Line: 2, Text: "needle"}}}, nil
 }
 func (f *fakeBackend) ProjectContext(_ context.Context, projectID string) ([]service.ProjectContextItem, error) {
 	if projectID == "" {

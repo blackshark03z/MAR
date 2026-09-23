@@ -22,6 +22,9 @@ type ProjectReadResult struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
 	SizeBytes int64  `json:"size_bytes"`
+	StartLine int    `json:"start_line,omitempty"`
+	EndLine   int    `json:"end_line,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
 }
 
 func (s *TaskService) ReadProjectFile(ctx context.Context, projectID, requestedPath string) (ProjectReadResult, error) {

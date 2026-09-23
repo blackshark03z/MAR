@@ -49,6 +49,22 @@ func TestCanonicalProjectToolPreservesContextAndReadSemantics(t *testing.T) {
 	if !strings.Contains(string(raw), "inferred-project") || !strings.Contains(string(raw), "README.md") {
 		t.Fatalf("canonical project read changed semantics: %s", raw)
 	}
+	rangeResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "read", "path": "README.md", "start_line": 2, "end_line": 2}})
+	if err != nil || rangeResult.IsError {
+		t.Fatalf("canonical ranged project read failed: err=%v result=%+v", err, rangeResult)
+	}
+	raw, _ = json.Marshal(rangeResult.StructuredContent)
+	if !strings.Contains(string(raw), "second\\n") || !strings.Contains(string(raw), `"start_line":2`) || !strings.Contains(string(raw), `"end_line":2`) {
+		t.Fatalf("canonical ranged read changed semantics: %s", raw)
+	}
+	searchResult, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "project", Arguments: map[string]any{"operation": "search", "project_id": "mar", "query": "needle", "max_results": 10}})
+	if err != nil || searchResult.IsError {
+		t.Fatalf("canonical project search failed: err=%v result=%+v", err, searchResult)
+	}
+	raw, _ = json.Marshal(searchResult.StructuredContent)
+	if !strings.Contains(string(raw), `"query":"needle"`) || !strings.Contains(string(raw), "README.md") {
+		t.Fatalf("canonical project search changed semantics: %s", raw)
+	}
 }
 
 func TestCanonicalTaskToolPreservesBoundedReadSemantics(t *testing.T) {

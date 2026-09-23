@@ -1,16 +1,18 @@
-# Current SoT — 2026-09-22
+# Current SoT — 2026-09-23
 
-## Forward architecture — FROZEN
+## Forward architecture — FREEZE AFTER BOUNDED FIXES
 
-Canonical stability authority: `docs/architecture/MAR_ARCHITECTURE_STABILITY_POLICY.md`. Canonical kernel boundary: `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
+Canonical stability authority: `docs/architecture/MAR_ARCHITECTURE_STABILITY_POLICY.md`. Canonical kernel boundary: `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`. ChatCode-replacement product boundary: `docs/architecture/MAR_CHATCODE_REPLACEMENT_TARGET.md`.
 
-Forward architecture is frozen as: **ChatWeb = default cognition/brain; CADS = intent/design/acceptance authority; direct ChatCode-like execution = default path; MAR = optional governed execution kernel only when accepted runtime properties require it.**
+Forward target: **ChatWeb = default cognition/brain; CADS = intent/design/acceptance authority; MAR = the smallest trustworthy local execution bridge; external harnesses are replaceable executors; ChatCode is compatibility/bootstrap only and must not be a required forward dependency.**
 
-Normal development is not a MAR lifecycle. Ordinary bounded work may execute directly with no MAR task/workspace/run-epoch/checkpoint. MAR is entered only for governed properties such as isolated mutation, durable recovery, concurrent-writer fencing, durable execution authority, resource governance, or crash-safe integration.
+Read-only local-project research may use MAR's bounded `project` surface without creating a durable coding lifecycle. Mutation-capable work enters the governed path so authority, isolation, candidate identity, verification and publication remain MAR-owned rather than ChatWeb- or harness-owned.
 
-MAR must not grow another default model/provider/planner/session layer. Current provider mode, Web-brain relay, Project Brain/cognition projection and related session surfaces are compatibility behavior only. The external executable seam proved at `c94d359` is retained as a replaceable execution seam; it is **not** authority to make OMP/Codex/Claude/Gemini a second default brain beneath ChatWeb. OMP auth/model integration is therefore closed unless an explicit delegated-worker Goal reopens it.
+Architecture closure is finite rather than open-ended. The remaining blockers are bounded to publication/cancellation linearization, private non-canonical staging, fresh exact-OID verification, OID handoff/import, CAS-at-ref publication semantics, fail-closed launch environment defaults, and the durable-state deletion boundary. ChatCode replacement adds one product proof: a fresh Web client must complete the normal local-repository workflow through MAR with no ChatCode process/plugin in the path.
 
-Architecture improvement now follows only: `measure -> one bounded deficit -> patch/delete -> verify -> benchmark -> keep/revert`. Research by itself does not reopen the top-level architecture. Prefer deletion and lifecycle reduction over adapters or new orchestration.
+The MAR trust kernel must not depend on a specific model/provider/planner/session implementation. Above that kernel, MAR may retain, port, rewrite, or add productivity capabilities such as Project Brain, context assembly, research helpers, provider/session adapters, and ChatCode-inspired ergonomics when they materially improve the real owner workflow. These capabilities remain non-authoritative with respect to safety, verification, and publication. The external executable seam proved at `c94d359` remains a replaceable execution seam rather than a second safety authority.
+
+Architecture improvement follows **REUSE BEFORE DELETE**: `identify proven capability -> port/rewrite/adapt where useful -> measure -> improve -> verify -> benchmark -> keep/revert`. Research by itself does not reopen the top-level architecture, but a useful existing capability is not removed merely because it is outside the trust kernel. Deletion requires either a proven replacement or measured evidence that the capability is unnecessary; simplification must not regress workflow capability or measured performance.
 
 Current simplification progress:
 - Web cognition no longer requires or persists a specific model identity; evidence: `docs/research/040_WEB_MODEL_IDENTITY_DELEGATION.md`.
@@ -27,7 +29,7 @@ These are bounded post-freeze responsibility-delegation slices, not architecture
 - External Harness no longer inherits MAR compatibility-cognition convergence ceilings (model decisions/tool calls/tokens), while semantic no-progress, cumulative execution time and attempt limits remain fail-closed. Evidence: `docs/research/048_EXTERNAL_HARNESS_CONVERGENCE_BUDGET_DECOUPLING.md`.
 - External Harness execution no longer depends on the mixed compatibility HarnessConfig cognition projection; executable/arguments are consumed directly from StartRequest while the legacy wire shape remains unchanged. Evidence: `docs/research/049_EXTERNAL_HARNESS_CONFIG_DECOUPLING.md`.
 
-Next MAR implementation work: remove/delegate one compatibility cognition responsibility at a time while preserving existing behavior and safety evidence. Do not open another broad architecture research loop.
+Next MAR implementation work: close the bounded architecture fixes while completing practical ChatCode replacement. Treat ChatCode as a reference implementation: preserve or port capabilities that already make the workflow fast and useful, then improve them behind MAR's stronger trust boundary. The current discovery slice is retained; the six-tool MCP surface is a starting shape, not a permanent feature ceiling. Do not open another broad architecture research loop, and do not delete working capability without replacement or measured justification.
 
 ## Architecture simplification decision
 

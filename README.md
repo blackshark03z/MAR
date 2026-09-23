@@ -1,6 +1,6 @@
 # MAR
 
-MAR is a single-owner, single-machine **optional governed execution kernel**. It is used when a Goal requires durable isolation/recovery/fencing/resource/integration properties that a direct coding harness does not supply. MCP and current cognition surfaces are adapters, not durable task authority and not a reason to route every coding task through MAR.
+MAR is a single-owner, single-machine **trustworthy local execution bridge** for external cognition. Read-only project discovery stays lightweight; mutation-capable work enters MAR's governed authority/isolation/verification/publication path. MCP and cognition surfaces are adapters, never durable task authority. ChatCode may remain a temporary bootstrap/compatibility transport during migration, but it is not a required forward dependency.
 
 The accepted V1 safety architecture remains frozen under `docs/architecture/MAR_V1_Architecture_FROZEN/`. Forward architecture evolution is governed by `docs/architecture/MAR_ARCHITECTURE_CONSTITUTION.md`, `docs/architecture/MAR_EXTERNAL_COGNITION_CONTRACT.md`, and the conditional-entry amendment `docs/architecture/MAR_CONDITIONAL_EXECUTION_KERNEL.md`.
 
@@ -120,13 +120,13 @@ Engineering acceptance is criterion-bound and machine-observed. V1 supports `out
 
 ## MCP control surface
 
-The public task-oriented MCP surface is intentionally limited to:
+Normal `tools/list` exposes exactly six canonical domain tools:
 
-`submit`, `status`, `steer`, `input`, `cancel`, `result`, `inspect`, `brain_turn`, `brain_respond`.
+`project`, `submit`, `task`, `control`, `brain_turn`, `brain_respond`.
 
-The first seven tools are durable task control/read operations. `brain_turn` and `brain_respond` are a typed reasoning relay for Web-brain mode: they do not expose direct filesystem, Git mutation, or command authority to the MCP client.
+`project` is the bounded read-only pre-submit/research surface: context, local-path attach, directory list, UTF-8 file read (including bounded line ranges), and bounded text search. It does not grant mutation authority. `submit`, `task`, and `control` own durable work submission/status/control semantics. `brain_turn` and `brain_respond` are the typed external-cognition relay.
 
-Low-level coding primitives such as repository reads/writes, Git inspection, and allowed command execution remain inside the worker runtime under the immutable Goal Contract and Windows sandbox.
+Low-level mutation primitives such as file writes, Git mutation, and allowed command execution remain inside the worker runtime under the immutable Goal Contract and Windows sandbox. This keeps ChatWeb useful enough to replace ChatCode as the normal local bridge without exposing a second mutation authority.
 
 ## Project Brain V1
 

@@ -14,24 +14,28 @@ Owner / ChatWeb model
         v
 CADS intent / design / acceptance
         |
+        v
+MAR productivity / compatibility surface
+        |
         +------------------------------+
         | ordinary bounded work        | governed runtime properties needed
         v                              v
-direct ChatCode-like execution      MAR kernel
-                                       |
-                                       v
-                              deterministic tools / executors
-                                       |
-                                       v
-                                    candidate
-                                       |
-                                       v
-                              independent acceptance
+direct bounded execution           MAR trust kernel
+        |                              |
+        +---------------+--------------+
+                        v
+               tools / executors
+                        |
+                        v
+                     candidate
+                        |
+                        v
+              independent acceptance
 ```
 
 Default cognition remains outside MAR. ChatWeb is the default planning/reasoning brain for the owner workflow.
 
-MAR is not a second agent framework. MAR is an optional governed execution kernel.
+MAR is not required to become a second internal AI agent framework. The MAR product may include a productivity/convenience layer inspired by proven ChatCode capabilities; the governed trust kernel remains conditional and authoritative only for the runtime properties it enforces.
 
 ## Stable responsibility split
 
@@ -55,7 +59,9 @@ Owns:
 
 ### MAR
 
-Owns only governed runtime properties when explicitly selected:
+At the product boundary MAR may own useful local-development productivity surfaces such as project discovery, context retrieval, research helpers, adapters, task convenience, and ChatCode-inspired workflow features when they materially improve the owner journey.
+
+Its trust kernel owns governed runtime properties when explicitly selected:
 - authority and revocation;
 - OS/process/filesystem isolation;
 - stale-writer fencing;
@@ -65,17 +71,17 @@ Owns only governed runtime properties when explicitly selected:
 - crash-safe promotion/integration;
 - recovery/reconciliation.
 
-MAR does not own provider/model/session/subagent/context strategy by default.
+Productivity features do not become kernel authority merely because MAR ships them. Provider/model/session/subagent/context strategy remains replaceable rather than a prerequisite for kernel correctness.
 
 ## Direct path
 
-Ordinary bounded development should remain ChatCode-like:
+Ordinary bounded development may use MAR's ChatCode-replacement productivity surface without entering the governed task lifecycle:
 
 ```text
-ChatWeb -> tool execution -> repo/shell/git -> candidate -> acceptance
+ChatWeb -> MAR productivity surface -> bounded tool execution -> candidate -> acceptance
 ```
 
-No MAR task lifecycle is required unless a governed runtime property is actually needed.
+No governed MAR task lifecycle is required unless a governed runtime property is actually needed. This preserves the fast happy path while removing ChatCode as a required dependency.
 
 ## MAR governed path
 
