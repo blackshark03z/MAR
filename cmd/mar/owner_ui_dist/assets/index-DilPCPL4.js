@@ -13158,8 +13158,8 @@ function TrendChart({ samples }) {
 		]
 	});
 }
-function ExecutionPulse({ calls }) {
-	const now = Date.now(), buckets = 20, bucketMs = 2e3, values = Array(buckets).fill(0);
+function ExecutionPulse({ calls, now }) {
+	const buckets = 20, bucketMs = 2e3, values = Array(buckets).fill(0);
 	for (const call of calls) {
 		const age = now - call.startedAt;
 		if (age < 0 || age >= buckets * bucketMs) continue;
@@ -13280,6 +13280,11 @@ function Shell({ view, setView, runtime, workspace, setWorkspace, projects, chil
 	});
 }
 function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspace }) {
+	const [now, setNow] = (0, import_react.useState)(() => Date.now());
+	(0, import_react.useEffect)(() => {
+		const timer = setInterval(() => setNow(Date.now()), 250);
+		return () => clearInterval(timer);
+	}, []);
 	const scoped = workspace ? tasks.filter((t) => t.project_id === workspace) : tasks;
 	const flows = scoped.filter(isTaskActive);
 	const agg = liveAggregate(scoped);
@@ -13306,7 +13311,7 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 				})]
 			}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { children: "Giám sát realtime các luồng xử lý, kết nối và hiệu suất của MAR." })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "last-update",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { size: 14 }), "2 giây / lần"]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RefreshCw, { size: 14 }), "Live · snapshot 1 giây"]
 			})]
 		}),
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -13424,7 +13429,7 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 						] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [
 							call.connectorName,
 							" · running ",
-							fmtDuration(Math.max(0, (Date.now() - call.startedAt) / 1e3))
+							fmtDuration(Math.max(0, (now - call.startedAt) / 1e3))
 						] })] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 							className: "status-badge info",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 12 }), "Tool"]
@@ -13454,7 +13459,10 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Activity, { size: 20 }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { children: "MCP activity" })]
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 					className: "activity-pulse-wrap",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExecutionPulse, { calls: operationCalls }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(ExecutionPulse, {
+						calls: operationCalls,
+						now
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
 						recentCalls.length,
 						" recent",
 						droppedCalls ? ` · ${fmtNumber(droppedCalls)} dropped` : ""
@@ -14915,7 +14923,7 @@ function App() {
 		]);
 		const timer = setInterval(async () => {
 			await Promise.allSettled([reloadRuntime(), reloadTasks()]);
-		}, 2e3);
+		}, 1e3);
 		const usageTimer = setInterval(reloadUsage, 3e4);
 		const onHashChange = () => {
 			const next = window.location.hash.replace("#/", "") || "live";
@@ -14952,7 +14960,7 @@ function App() {
 			}].slice(-40));
 		};
 		tick();
-		const timer = setInterval(tick, 2e3);
+		const timer = setInterval(tick, 1e3);
 		return () => clearInterval(timer);
 	}, []);
 	(0, import_react.useEffect)(() => {
