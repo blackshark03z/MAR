@@ -143,7 +143,7 @@ type actionVerifyArgs struct {
 }
 
 type actionArgs struct {
-	Operation      string             `json:"operation" jsonschema:"write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push"`
+	Operation      string             `json:"operation" jsonschema:"write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_stage_commit, git_commit, or git_push"`
 	ProjectID      string             `json:"project_id"`
 	Path           string             `json:"path,omitempty"`
 	Destination    string             `json:"destination,omitempty"`
@@ -205,7 +205,7 @@ func NewServer(backend Backend) (*mcp.Server, error) {
 			}
 			return nil, value, nil
 		})
-	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
+	mcp.AddTool(server, &mcp.Tool{Name: "action", Description: "Trusted Owner Fast Path for ordinary development without creating a MAR task. Use operation=write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_stage_commit, git_commit, or git_push. Governed submit/task remains available for high-assurance work."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, args actionArgs) (*mcp.CallToolResult, map[string]any, error) {
 			value, err := callAction(ctx, backend, args)
 			if err != nil {
@@ -453,6 +453,18 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 			return nil, err
 		}
 		return map[string]any{"git_stage": result}, nil
+	case "git_stage_commit":
+		staged, err := backend.StageProjectPaths(ctx, projectID, args.Paths)
+		if err != nil {
+			return nil, err
+		}
+		committed, err := backend.CommitProject(ctx, projectID, args.Message)
+		if err != nil {
+			return nil, err
+		}
+		committed.Operation = "git_stage_commit"
+		committed.Paths = append([]string(nil), staged.Paths...)
+		return map[string]any{"git_stage_commit": committed}, nil
 	case "git_commit":
 		result, err := backend.CommitProject(ctx, projectID, args.Message)
 		if err != nil {
@@ -466,7 +478,7 @@ func callAction(ctx context.Context, backend Backend, args actionArgs) (map[stri
 		}
 		return map[string]any{"git_push": result}, nil
 	default:
-		return nil, errors.New("action operation must be write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_commit, or git_push")
+		return nil, errors.New("action operation must be write, patch, mkdir, remove, rename, run, run_many, apply_and_verify, git_branch_list, git_branch_create, git_worktree_create, git_stage, git_stage_commit, git_commit, or git_push")
 	}
 }
 

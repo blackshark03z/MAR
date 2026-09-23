@@ -21,6 +21,7 @@ type fakeBackend struct {
 	steerKey    string
 	steer       domain.SteerPayload
 	submitCalls int
+	gitCalls    []string
 }
 
 func (f *fakeBackend) Submit(_ context.Context, key string, contract domain.GoalContract) (domain.Task, bool, error) {
@@ -123,9 +124,11 @@ func (f *fakeBackend) CreateProjectWorktree(_ context.Context, projectID, baseli
 	return service.ProjectWorktreeResult{ProjectID: projectID, Path: "C:/tmp/worktree", Baseline: baseline, Head: baseline, Purpose: purpose}, nil
 }
 func (f *fakeBackend) StageProjectPaths(_ context.Context, projectID string, paths []string) (service.ProjectGitActionResult, error) {
+	f.gitCalls = append(f.gitCalls, "stage")
 	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_stage", Paths: paths}, nil
 }
 func (f *fakeBackend) CommitProject(_ context.Context, projectID, message string) (service.ProjectGitActionResult, error) {
+	f.gitCalls = append(f.gitCalls, "commit")
 	return service.ProjectGitActionResult{ProjectID: projectID, Operation: "git_commit", Revision: "abc123", Output: message}, nil
 }
 func (f *fakeBackend) PushProject(_ context.Context, projectID, remote string) (service.ProjectGitActionResult, error) {
@@ -683,6 +686,29 @@ func TestCallActionApplyAndVerify(t *testing.T) {
 	}
 	if !result.Passed || result.ProjectID != "mar" {
 		t.Fatalf("unexpected apply_and_verify result: %+v", result)
+	}
+}
+
+func TestCallActionGitStageCommit(t *testing.T) {
+	backend := &fakeBackend{}
+	value, err := callAction(context.Background(), backend, actionArgs{
+		Operation: "git_stage_commit",
+		ProjectID: "mar",
+		Paths:     []string{"README.md", "TASK.md"},
+		Message:   "compound commit",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := value["git_stage_commit"].(service.ProjectGitActionResult)
+	if !ok {
+		t.Fatalf("unexpected git_stage_commit result type: %T", value["git_stage_commit"])
+	}
+	if result.Operation != "git_stage_commit" || result.Revision != "abc123" || result.Output != "compound commit" || len(result.Paths) != 2 {
+		t.Fatalf("unexpected git_stage_commit result: %+v", result)
+	}
+	if strings.Join(backend.gitCalls, ",") != "stage,commit" {
+		t.Fatalf("git_stage_commit call order changed: %v", backend.gitCalls)
 	}
 }
 
