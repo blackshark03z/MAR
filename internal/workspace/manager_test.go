@@ -334,10 +334,34 @@ func TestBlockedDirtyWorkspaceCheckpointCompactsAndRehydratesExactContent(t *tes
 	if err != nil || !ok || after.State != domain.WorkspaceCheckpointRehydrated || after.RehydratedAt == nil {
 		t.Fatalf("checkpoint rehydrate was not durably finalized: checkpoint=%+v ok=%v err=%v", after, ok, err)
 	}
+	reconciled, err := manager.ReconcileCheckpointTransactions(ctx, 8)
+	if err != nil || reconciled != 1 { t.Fatalf("rehydrated checkpoint ref release failed: count=%d err=%v", reconciled, err) }
+	released, ok, err := s.LatestWorkspaceCheckpoint(ctx, task.ID)
+	if err != nil || !ok || released.RefName != "released:"+checkpoint.RefName { t.Fatalf("checkpoint release receipt mismatch: checkpoint=%+v ok=%v err=%v", released, ok, err) }
+	if got := gitOut(t, repo, "for-each-ref", "--format=%(refname)", checkpoint.RefName); got != "" { t.Fatalf("rehydrated checkpoint ref still exists: %q", got) }
+	if replayed, err := manager.ReconcileCheckpointTransactions(ctx, 8); err != nil || replayed != 0 { t.Fatalf("released checkpoint remained cleanup candidate: count=%d err=%v", replayed, err) }
 	finalTask, err := svc.Status(ctx, task.ID)
 	if err != nil || finalTask.State != domain.TaskWorkspaceReady {
 		t.Fatalf("rehydrated task not WORKSPACE_READY: task=%+v err=%v", finalTask, err)
 	}
+}
+
+func TestRehydratedCheckpointRefReleaseRejectsOIDMismatch(t *testing.T) {
+	ctx := context.Background(); repo, base := makeRepo(t); s, svc, manager := workspaceHarness(t, repo); defer s.Close()
+	task := waitingTask(t, svc, "workspace-checkpoint-release-mismatch", repo, base)
+	ws, err := manager.EnsureMutable(ctx, task.ID); if err != nil { t.Fatal(err) }
+	attempt, err := svc.BeginAttempt(ctx, task.ID, "worker-release-mismatch", "supervisor-release-mismatch", time.Minute); if err != nil { t.Fatal(err) }
+	if err := os.WriteFile(filepath.Join(ws.Path, "seed.txt"), []byte("rehydrated mismatch\n"), 0o600); err != nil { t.Fatal(err) }
+	if err := svc.TransitionForAttempt(ctx, task.ID, attempt.ID, attempt.RunEpoch, domain.TaskBlocked); err != nil { t.Fatal(err) }
+	if err := s.ConfirmAttemptTerminated(ctx, task.ID, attempt.ID, attempt.RunEpoch, "checkpoint-release-mismatch", time.Now().UTC()); err != nil { t.Fatal(err) }
+	checkpoint, _, err := manager.CheckpointBlocked(ctx, task.ID); if err != nil { t.Fatal(err) }
+	if checkpoint.SnapshotRevision == base { t.Fatal("dirty checkpoint did not produce distinct snapshot revision") }
+	if err := svc.RecoverBlockedChoice(ctx, task.ID); err != nil { t.Fatal(err) }
+	if _, err := manager.EnsureMutable(ctx, task.ID); err != nil { t.Fatal(err) }
+	gitRun(t, repo, "update-ref", checkpoint.RefName, base, checkpoint.SnapshotRevision)
+	if reconciled, err := manager.ReconcileCheckpointTransactions(ctx, 8); err != nil || reconciled != 0 { t.Fatalf("mismatched ref must fail closed without global failure: count=%d err=%v", reconciled, err) }
+	after, ok, err := s.LatestWorkspaceCheckpoint(ctx, task.ID); if err != nil || !ok || after.RefName != checkpoint.RefName { t.Fatalf("mismatched ref was incorrectly released: checkpoint=%+v ok=%v err=%v", after, ok, err) }
+	if got := gitOut(t, repo, "rev-parse", checkpoint.RefName); got != base { t.Fatalf("mismatched checkpoint ref was mutated: got=%s want=%s", got, base) }
 }
 
 func TestCheckpointRecoveryBeforeSnapshotRecordRestoresReady(t *testing.T) {

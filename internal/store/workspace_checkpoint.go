@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"mar/internal/domain"
@@ -33,6 +34,51 @@ LIMIT ?`, string(domain.WorkspaceCheckpointing), limit)
 		out = append(out, taskID)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLite) ListRehydratedCheckpointRefReleaseCandidates(ctx context.Context, limit int) ([]domain.WorkspaceCheckpoint, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT checkpoint_id, task_id, project_id, snapshot_revision, ref_name, state
+FROM workspace_checkpoints
+WHERE state = ? AND ref_name LIKE 'refs/mar/checkpoints/%'
+ORDER BY COALESCE(rehydrated_at, created_at) ASC, checkpoint_id ASC
+LIMIT ?`, string(domain.WorkspaceCheckpointRehydrated), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list rehydrated checkpoint ref release candidates: %w", err)
+	}
+	defer rows.Close()
+	var out []domain.WorkspaceCheckpoint
+	for rows.Next() {
+		var c domain.WorkspaceCheckpoint
+		var state string
+		if err := rows.Scan(&c.ID, &c.TaskID, &c.ProjectID, &c.SnapshotRevision, &c.RefName, &state); err != nil {
+			return nil, err
+		}
+		c.State = domain.WorkspaceCheckpointState(state)
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+func (s *SQLite) FinishWorkspaceCheckpointRefRelease(ctx context.Context, checkpointID, expectedRef string) error {
+	expectedRef = strings.TrimSpace(expectedRef)
+	if strings.TrimSpace(checkpointID) == "" || !strings.HasPrefix(expectedRef, "refs/mar/checkpoints/") {
+		return ErrStateConflict
+	}
+	releasedRef := "released:" + expectedRef
+	res, err := s.db.ExecContext(ctx, `UPDATE workspace_checkpoints SET ref_name = ? WHERE checkpoint_id = ? AND state = ? AND ref_name = ?`,
+		releasedRef, checkpointID, string(domain.WorkspaceCheckpointRehydrated), expectedRef)
+	if err != nil {
+		return fmt.Errorf("finalize workspace checkpoint ref release: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows != 1 {
+		return ErrStateConflict
+	}
+	return nil
 }
 
 func (s *SQLite) ListBlockedWorkspaceCheckpointCandidates(ctx context.Context, limit int) ([]string, error) {

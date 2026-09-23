@@ -257,6 +257,19 @@ func (m *Manager) ReconcileCheckpointTransactions(ctx context.Context, limit int
 		}
 		reconciled++
 	}
+	remaining := limit - reconciled
+	if remaining <= 0 { return reconciled, firstErr }
+	candidateLimit := remaining * 4
+	if candidateLimit < remaining { candidateLimit = remaining }
+	checkpoints, err := m.store.ListRehydratedCheckpointRefReleaseCandidates(ctx, candidateLimit)
+	if err != nil { return reconciled, errors.Join(firstErr, err) }
+	for _, checkpoint := range checkpoints {
+		if reconciled >= limit { break }
+		// Ref release is retention, not execution authority. Any task-local
+		// failure keeps the ref intact and must not block unrelated scheduling.
+		if err := m.releaseRehydratedCheckpointRef(ctx, checkpoint); err != nil { continue }
+		reconciled++
+	}
 	return reconciled, firstErr
 }
 
@@ -334,6 +347,35 @@ func (m *Manager) reconcileCheckpointTransaction(ctx context.Context, taskID str
 	}
 	_, _ = m.git(ctx, taskID, repoRoot, "worktree", "prune")
 	return m.store.FinishWorkspaceCheckpoint(ctx, taskID, checkpoint.ID, m.now().UTC())
+}
+
+func (m *Manager) releaseRehydratedCheckpointRef(ctx context.Context, checkpoint domain.WorkspaceCheckpoint) error {
+	if checkpoint.State != domain.WorkspaceCheckpointRehydrated || !strings.HasPrefix(checkpoint.RefName, "refs/mar/checkpoints/") || strings.TrimSpace(checkpoint.SnapshotRevision) == "" { return ErrCheckpointUnsafe }
+	project, err := m.store.GetProject(ctx, checkpoint.ProjectID)
+	if err != nil { return err }
+	lock := m.projectLock(project.ID); lock.Lock(); defer lock.Unlock()
+	repoRoot, err := m.gitTopLevel(ctx, checkpoint.TaskID, project.Root)
+	if err != nil { return err }
+	observe := func() (string, error) {
+		out, err := m.git(ctx, checkpoint.TaskID, repoRoot, "for-each-ref", "--format=%(objectname)", checkpoint.RefName)
+		return strings.TrimSpace(out), err
+	}
+	observed, err := observe()
+	if err != nil { return err }
+	if observed != "" && !strings.EqualFold(observed, checkpoint.SnapshotRevision) {
+		return fmt.Errorf("%w: checkpoint ref %s points to %s instead of %s", ErrCheckpointUnsafe, checkpoint.RefName, observed, checkpoint.SnapshotRevision)
+	}
+	if observed != "" {
+		if _, err := m.git(ctx, checkpoint.TaskID, repoRoot, "update-ref", "-d", checkpoint.RefName, checkpoint.SnapshotRevision); err != nil {
+			after, inspectErr := observe()
+			if inspectErr == nil && after == "" { return m.store.FinishWorkspaceCheckpointRefRelease(ctx, checkpoint.ID, checkpoint.RefName) }
+			return err
+		}
+	}
+	after, err := observe()
+	if err != nil { return err }
+	if after != "" { return fmt.Errorf("%w: checkpoint ref %s remains after delete at %s", ErrCheckpointUnsafe, checkpoint.RefName, after) }
+	return m.store.FinishWorkspaceCheckpointRefRelease(ctx, checkpoint.ID, checkpoint.RefName)
 }
 
 func (m *Manager) CheckpointBlockedWorkspaces(ctx context.Context, limit int) (int, int64, error) {

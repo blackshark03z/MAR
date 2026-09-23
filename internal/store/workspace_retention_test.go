@@ -14,6 +14,11 @@ func TestCompleteWorkspaceRemovalPersistsRemovedDispositionAtomically(t *testing
 	ctx := context.Background()
 	s, taskID, workspaceID := completeWorkspaceRetentionFixture(t, domain.AttemptPhysicallyTerminated, "INTEGRATED", "RETAINED")
 	defer s.Close()
+	checkpointID := "checkpoint-retention-rehydrated"
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO workspace_checkpoints(checkpoint_id,task_id,workspace_id,project_id,version,original_head,snapshot_revision,ref_name,status_hash,dirty,state,created_at,compacted_at,rehydrated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		checkpointID, taskID, workspaceID, "project-retention", 1, "candidate", "candidate", "released:refs/mar/checkpoints/retention/test", "status-hash", 0, string(domain.WorkspaceCheckpointRehydrated), time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano), time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
 
 	candidates, err := s.ListTerminalWorkspaceRemovalCandidates(ctx, 10)
 	if err != nil {
@@ -48,6 +53,26 @@ func TestCompleteWorkspaceRemovalPersistsRemovedDispositionAtomically(t *testing
 	}
 	if got := result.PassFailEvidence[len(result.PassFailEvidence)-1]; got != "workspace:"+workspaceID+":REMOVED" {
 		t.Fatalf("workspace removal evidence missing from result: %q", got)
+	}
+	for table, want := range map[string]int{
+		"tasks": 1, "execution_attempts": 1, "verification_evidence": 1, "workspace_checkpoints": 1, "task_results": 2,
+	} {
+		var count int
+		key := "task_id"
+		if table == "tasks" {
+			key = "id"
+		}
+		query := "SELECT COUNT(*) FROM " + table + " WHERE " + key + " = ?"
+		if err := s.db.QueryRowContext(ctx, query, taskID).Scan(&count); err != nil {
+			t.Fatalf("count retained durable rows in %s: %v", table, err)
+		}
+		if count != want {
+			t.Fatalf("workspace reclaim crossed durable deletion boundary for %s: got=%d want=%d", table, count, want)
+		}
+	}
+	checkpoint, ok, err := s.LatestWorkspaceCheckpoint(ctx, taskID)
+	if err != nil || !ok || checkpoint.ID != checkpointID || checkpoint.State != domain.WorkspaceCheckpointRehydrated {
+		t.Fatalf("workspace reclaim lost durable checkpoint receipt: checkpoint=%+v ok=%v err=%v", checkpoint, ok, err)
 	}
 	candidates, err = s.ListTerminalWorkspaceRemovalCandidates(ctx, 10)
 	if err != nil {

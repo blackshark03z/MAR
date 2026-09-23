@@ -1,7 +1,7 @@
 # Slice 058 — Fail-Closed Worker Launch Environment
 
 **Date:** 2026-09-23  
-**Status:** IMPLEMENTED CANDIDATE  
+**Status:** VERIFIED / ACTIVATED
 **Scope:** governed worker-process launch only; Trusted Owner Fast Path is unchanged.
 
 ## Goal
@@ -120,4 +120,21 @@ Current candidate evidence:
 - WebBrain E2E `TestRuntimeE2EWebBrainMCPWorkerVerifyIntegrate` — PASS;
 - detached result: `provider=0, harness=0, web=0`.
 
-Full exact-HEAD release qualification is still required before this blocker is marked closed.
+## Release evidence
+
+The first full-suite attempt at `7f931a972f4ffcdda63c25508513e79ee04dcdbc` exposed two classes:
+
+- CLI T7 did not reach the provider because the self-hosting test binary relied on ambient `MAR_T7_CLI_HELPER`; this was a real test-harness regression from the new fail-closed boundary, not a reason to re-open ambient inheritance. The CLI-only runtime seam was changed to pass that marker through explicit `WorkerEnvironmentExtras`.
+- a verification-package failure cluster did not reproduce in isolation; the whole verification package later passed in the final full gate.
+
+After the explicit CLI helper fix, exact revision `2dee9f1e2129cce0c4a49dde10c18a1801c144b7` completed:
+
+- full `go test -p 1 -count=1 -timeout 300s ./...` — PASS;
+- `go vet -p 1 ./...` — PASS;
+- `go build -p 1 ./...` — PASS;
+- `git diff --check` — PASS;
+- identical HEAD before/after and clean working tree.
+
+Local HEAD and `origin/master` matched. The same exact revision was activated live and reported `HEALTHY / ALIGNED / trusted_for_release=true`, with manifest identity ALIGNED and the OpenAI Secure Tunnel connected / ready / healthy.
+
+The fail-closed worker launch environment blocker is therefore closed.
