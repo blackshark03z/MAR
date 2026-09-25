@@ -59,6 +59,23 @@ func TestExecutionAdmissionBalancesProjectsBeforeFillingBacklog(t *testing.T) {
 	drainTrackingDaemon(t, daemon, cancel)
 }
 
+func TestIdleResourcePressureSkipsSensorWithoutActiveExecution(t *testing.T) {
+	sensor := &mutableDaemonSensor{snapshot: healthyDaemonSnapshot()}
+	governor := daemonGovernor(t, sensor, 1, 1)
+	store := &fakeDaemonStore{tasks: map[string]domain.Task{}, workspace: map[string]domain.Workspace{}, attempts: map[string]domain.ExecutionAttempt{}}
+	daemon, err := NewDaemon(store, &fakeDaemonService{store: store}, fakePreflightDriver{}, &fakeSchedulerDriver{}, &fakeReadyRunner{started: make(chan struct{}), stopped: make(chan struct{})}, &fakeIntegrationRecoverer{}, governor, DaemonConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sensor.snapshotCount()
+	if err := daemon.enforceResourcePressure(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := sensor.snapshotCount(); got != before {
+		t.Fatalf("idle pressure check touched resource sensor: before=%d after=%d", before, got)
+	}
+}
+
 func TestResourcePressureMonitorRunsWhileSchedulerStepIsBlocked(t *testing.T) {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()

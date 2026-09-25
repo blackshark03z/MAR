@@ -492,6 +492,9 @@ func (d *Daemon) monitorCancellation(ctx context.Context, taskID string, cancel 
 }
 
 func (d *Daemon) enforceResourcePressure(ctx context.Context) error {
+	if d.activeCount() == 0 {
+		return nil
+	}
 	decision, err := d.governor.Pressure(ctx)
 	if err != nil {
 		return err

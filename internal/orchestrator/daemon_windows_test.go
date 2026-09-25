@@ -328,14 +328,22 @@ func (r *fakeIntegrationRecoverer) RetryBlockedVerifiedIntegration(context.Conte
 }
 
 type mutableDaemonSensor struct {
-	mu       sync.Mutex
-	snapshot resourcegov.Snapshot
+	mu        sync.Mutex
+	snapshot  resourcegov.Snapshot
+	snapshots int
 }
 
 func (s *mutableDaemonSensor) Snapshot(context.Context) (resourcegov.Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.snapshots++
 	return s.snapshot, nil
+}
+
+func (s *mutableDaemonSensor) snapshotCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.snapshots
 }
 
 func (s *mutableDaemonSensor) set(snapshot resourcegov.Snapshot) {
