@@ -51,6 +51,53 @@ FROM tasks WHERE state = ? ORDER BY updated_at ASC, created_at ASC, rowid ASC`, 
 	return tasks, rows.Err()
 }
 
+func (s *SQLite) ListBlockedTasksWithFreshSteer(ctx context.Context) ([]domain.Task, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT t.id, t.idempotency_key, t.contract_json, t.contract_hash, t.state, t.run_epoch, t.created_at, t.updated_at, c.created_at
+FROM tasks t
+JOIN task_controls c ON c.task_id = t.id
+WHERE t.state = ?
+  AND c.kind = ?
+  AND c.version = (
+      SELECT MAX(latest.version)
+      FROM task_controls latest
+      WHERE latest.task_id = t.id
+  )
+ORDER BY t.updated_at ASC, t.created_at ASC, t.rowid ASC`, string(domain.TaskBlocked), string(domain.ControlSteer))
+	if err != nil {
+		return nil, fmt.Errorf("list blocked tasks with fresh steer: %w", err)
+	}
+	defer rows.Close()
+	var tasks []domain.Task
+	for rows.Next() {
+		var task domain.Task
+		var payload []byte
+		var state, created, updated, controlCreated string
+		if err := rows.Scan(&task.ID, &task.IdempotencyKey, &payload, &task.ContractHash, &state, &task.RunEpoch, &created, &updated, &controlCreated); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(payload, &task.Contract); err != nil {
+			return nil, fmt.Errorf("decode blocked task with fresh steer: %w", err)
+		}
+		task.State = domain.TaskState(state)
+		if task.CreatedAt, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			return nil, err
+		}
+		if task.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated); err != nil {
+			return nil, err
+		}
+		controlStamp, err := time.Parse(time.RFC3339Nano, controlCreated)
+		if err != nil {
+			return nil, err
+		}
+		if !controlStamp.After(task.UpdatedAt) {
+			continue
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, rows.Err()
+}
+
 func (s *SQLite) ListProjectScheduleStates(ctx context.Context) (map[string]ProjectScheduleState, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT project_id, last_dispatched_at, dispatch_count FROM project_scheduler_state`)
 	if err != nil {

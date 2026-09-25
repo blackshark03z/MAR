@@ -68,6 +68,64 @@ func TestTaskCancellationLinearizesBeforeIntegrationDispatch(t *testing.T) {
 	}
 }
 
+func TestListBlockedTasksWithFreshSteerPreservesControlSemantics(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	project := domain.Project{ID: "blocked-steer-project", Root: t.TempDir(), CreatedAt: now}
+	if _, _, err := s.RegisterProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	newBlocked := func(id string) domain.Task {
+		contract := domain.GoalContract{Goal: id, Acceptance: []string{"bounded"}, ProjectID: project.ID, BaseRevision: "base", VerificationProfile: "test", Priority: "P2"}
+		hash, err := contract.Hash()
+		if err != nil {
+			t.Fatal(err)
+		}
+		task := domain.Task{ID: id, IdempotencyKey: id + "-submit", Contract: contract, ContractHash: hash, State: domain.TaskSubmitted, CreatedAt: now, UpdatedAt: now}
+		if _, _, err := s.SubmitTask(ctx, task); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.db.ExecContext(ctx, "UPDATE tasks SET state = ?, updated_at = ? WHERE id = ?", string(domain.TaskBlocked), now.Format(time.RFC3339Nano), id); err != nil {
+			t.Fatal(err)
+		}
+		task.State = domain.TaskBlocked
+		return task
+	}
+	steerPayload, _ := json.Marshal(domain.SteerPayload{Kind: domain.SteerContext, Message: "continue"})
+	cancelPayload, _ := json.Marshal(domain.CancelPayload{Reason: "later control"})
+
+	fresh := newBlocked("blocked-fresh")
+	if _, created, err := s.PublishTaskControl(ctx, "fresh-steer", fresh.ID, "fresh-steer-key", domain.ControlSteer, steerPayload, []domain.TaskState{domain.TaskBlocked}, now.Add(time.Second)); err != nil || !created {
+		t.Fatalf("publish fresh steer: created=%v err=%v", created, err)
+	}
+
+	stale := newBlocked("blocked-stale")
+	if _, created, err := s.PublishTaskControl(ctx, "stale-steer", stale.ID, "stale-steer-key", domain.ControlSteer, steerPayload, []domain.TaskState{domain.TaskBlocked}, now.Add(-time.Second)); err != nil || !created {
+		t.Fatalf("publish stale steer: created=%v err=%v", created, err)
+	}
+
+	superseded := newBlocked("blocked-superseded")
+	if _, created, err := s.PublishTaskControl(ctx, "superseded-steer", superseded.ID, "superseded-steer-key", domain.ControlSteer, steerPayload, []domain.TaskState{domain.TaskBlocked}, now.Add(time.Second)); err != nil || !created {
+		t.Fatalf("publish superseded steer: created=%v err=%v", created, err)
+	}
+	if _, created, err := s.PublishTaskControl(ctx, "superseded-cancel", superseded.ID, "superseded-cancel-key", domain.ControlCancel, cancelPayload, []domain.TaskState{domain.TaskBlocked}, now.Add(2*time.Second)); err != nil || !created {
+		t.Fatalf("publish superseding control: created=%v err=%v", created, err)
+	}
+
+	got, err := s.ListBlockedTasksWithFreshSteer(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ID != fresh.ID {
+		t.Fatalf("fresh blocked steer filter mismatch: %+v", got)
+	}
+}
+
 func TestTaskControlPersistsAcrossReopenAndRejectsTamper(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "mar.db")

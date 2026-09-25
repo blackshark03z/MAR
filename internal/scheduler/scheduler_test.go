@@ -384,6 +384,38 @@ func TestIdleSchedulerBackfillsBlockedWorkspaceCheckpoints(t *testing.T) {
 	}
 }
 
+func TestIdleSchedulerThrottlesBlockedWorkspaceCheckpointMaintenance(t *testing.T) {
+	s, _, sch, workspace := schedulerHarness(t, healthyHost())
+	defer s.Close()
+	workspace.checkpointCount = idleCheckpointBatch
+	now := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	sch.now = func() time.Time { return now }
+
+	if _, err := sch.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sch.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	workspace.mu.Lock()
+	calls := workspace.checkpointCalls
+	workspace.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("idle checkpoint repeated inside maintenance interval: calls=%d want 1", calls)
+	}
+
+	now = now.Add(idleCheckpointInterval)
+	if _, err := sch.Step(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	workspace.mu.Lock()
+	calls = workspace.checkpointCalls
+	workspace.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("idle checkpoint did not resume after maintenance interval: calls=%d want 2", calls)
+	}
+}
+
 func TestIdleSchedulerSkipsCheckpointBackfillWhileResourceClaimIsActive(t *testing.T) {
 	s, err := store.Open(filepath.Join(t.TempDir(), "mar.db"))
 	if err != nil {

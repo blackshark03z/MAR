@@ -62,7 +62,8 @@ func (c Config) validate() error {
 type StepAction string
 
 const (
-	idleCheckpointBatch = 2
+	idleCheckpointBatch    = 2
+	idleCheckpointInterval = 30 * time.Second
 
 	ActionIdle            StepAction = "IDLE"
 	ActionWaitingResource StepAction = "WAITING_RESOURCE"
@@ -83,12 +84,13 @@ type StepResult struct {
 }
 
 type Scheduler struct {
-	store     *store.SQLite
-	governor  *resourcegov.Governor
-	workspace WorkspaceProvisioner
-	cfg       Config
-	now       func() time.Time
-	mu        sync.Mutex
+	store              *store.SQLite
+	governor           *resourcegov.Governor
+	workspace          WorkspaceProvisioner
+	cfg                Config
+	now                func() time.Time
+	lastIdleCheckpoint time.Time
+	mu                 sync.Mutex
 }
 
 func New(s *store.SQLite, governor *resourcegov.Governor, workspace WorkspaceProvisioner, cfg Config) (*Scheduler, error) {
@@ -129,6 +131,11 @@ func (s *Scheduler) Step(ctx context.Context) (StepResult, error) {
 	}
 	if len(waiting) == 0 {
 		result := StepResult{Action: ActionIdle}
+		now := s.now().UTC()
+		if !s.lastIdleCheckpoint.IsZero() && now.Sub(s.lastIdleCheckpoint) < idleCheckpointInterval {
+			return result, nil
+		}
+		s.lastIdleCheckpoint = now
 		if checkpointer, ok := s.workspace.(blockedWorkspaceCheckpointer); ok {
 			ran, gateErr := s.governor.RunIfIdleExclusive(func() error {
 				var checkpointErr error

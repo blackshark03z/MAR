@@ -21,6 +21,7 @@ import (
 
 type taskStateStore interface {
 	ListTasksByState(context.Context, domain.TaskState) ([]domain.Task, error)
+	ListBlockedTasksWithFreshSteer(context.Context) ([]domain.Task, error)
 	GetWorkspaceByTask(context.Context, string) (domain.Workspace, error)
 	CurrentAttemptByTask(context.Context, string) (domain.ExecutionAttempt, bool, error)
 }
@@ -279,7 +280,7 @@ func (d *Daemon) drivePreflight(ctx context.Context) error {
 }
 
 func (d *Daemon) driveBlockedChoices(ctx context.Context) error {
-	tasks, err := d.store.ListTasksByState(ctx, domain.TaskBlocked)
+	tasks, err := d.store.ListBlockedTasksWithFreshSteer(ctx)
 	if err != nil {
 		return err
 	}

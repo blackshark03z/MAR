@@ -38,6 +38,10 @@ func (s *fakeDaemonStore) ListTasksByState(_ context.Context, state domain.TaskS
 	return out, nil
 }
 
+func (s *fakeDaemonStore) ListBlockedTasksWithFreshSteer(ctx context.Context) ([]domain.Task, error) {
+	return s.ListTasksByState(ctx, domain.TaskBlocked)
+}
+
 func (s *fakeDaemonStore) GetWorkspaceByTask(_ context.Context, taskID string) (domain.Workspace, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
