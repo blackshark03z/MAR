@@ -237,6 +237,10 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
   const droppedCalls = droppedOperationCount(runtime)
   const rates = tokenRates(tokenSamples)
   const latestTokenRate = rates.length ? rates[rates.length-1].total : 0
+  const callsLastMinute = operationCalls.filter(c=>now-c.startedAt>=0&&now-c.startedAt<60000)
+  const completedLastMinute = callsLastMinute.filter(c=>!!c.completedAt)
+  const latencySamples = completedLastMinute.map(c=>Number(c.durationMs)).filter(v=>Number.isFinite(v)&&v>=0)
+  const avgToolLatency = latencySamples.length ? latencySamples.reduce((a,b)=>a+b,0)/latencySamples.length : null
   return <>
     <div className="page-header live-header"><div><div className="title-row"><h1>Live Operations</h1><span className="live-state"><span className="live-dot"/>Live</span></div><p>Một màn hình vận hành: đang làm gì, dùng bao nhiêu tài nguyên, và vừa xảy ra chuyện gì.</p></div><div className="last-update"><RefreshCw size={14}/>Snapshot 1s · UI 250ms</div></div>
     <section className={`now-strip ${health.tone}`}>
@@ -245,13 +249,13 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
         <div><span>AI routes</span><b>{connected}/{primary.length}</b><small>{readyRoutes}/{routes.length} routes ready</small></div>
         <div><span>Executing</span><b>{flows.length+activeCalls.length}</b><small>{activeCalls.length} tool · {flows.length} task</small></div>
         <div><span>Waiting AI</span><b>{waitingAI}</b><small>durable web turns</small></div>
-        <div><span>Token rate</span><b>{agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : '—'}</b><small>{usageWindowValue(usage?.today)} today</small></div>
+        <div><span>{agg.tokenTasks?'Token rate':'MCP rate'}</span><b>{agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : `${fmtNumber(callsLastMinute.length)}/m`}</b><small>{agg.tokenTasks?`${usageWindowValue(usage?.today)} today`:`${activeCalls.length} active · ${avgToolLatency===null?'—':`${fmtNumber(Math.round(avgToolLatency))} ms avg`}`}</small></div>
       </div>
     </section>
     <div className="cockpit-grid">
       <section className="panel telemetry-deck">
         <div className="panel-heading"><div className="panel-title"><Activity size={20}/><div><h2>{agg.tokenTasks?'Token heartbeat':'Execution heartbeat'}</h2><small>{agg.tokenTasks?'Observed Web Brain token throughput':'Fast-path ChatGPT does not expose token counters · showing real MCP activity'}</small></div></div><span className="deck-live"><span className="live-dot"/>{agg.tokenTasks?'token telemetry':'activity telemetry'}</span></div>
-        <div className="chart-kpis"><div><span>Live tokens</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.total)}` : 'N/A'}</b></div><div><span>Input</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.input)}` : 'N/A'}</b></div><div><span>Output</span><b>{agg.tokenTasks ? `~${fmtNumber(agg.output)}` : 'N/A'}</b></div><div><span>{agg.tokenTasks?'Turns':'MCP calls'}</span><b>{agg.tokenTasks ? fmtNumber(agg.turns) : fmtNumber(operationCalls.filter(c=>now-c.startedAt<40000&&now-c.startedAt>=0).length)}</b></div></div>
+        <div className="chart-kpis">{agg.tokenTasks?<><div><span>Live tokens</span><b>~{fmtNumber(agg.total)}</b></div><div><span>Input</span><b>~{fmtNumber(agg.input)}</b></div><div><span>Output</span><b>~{fmtNumber(agg.output)}</b></div><div><span>Turns</span><b>{fmtNumber(agg.turns)}</b></div></>:<><div><span>Active calls</span><b>{fmtNumber(activeCalls.length)}</b></div><div><span>Calls / min</span><b>{fmtNumber(callsLastMinute.length)}</b></div><div><span>Completed / min</span><b>{fmtNumber(completedLastMinute.length)}</b></div><div><span>Avg latency</span><b>{avgToolLatency===null?'—':`${fmtNumber(Math.round(avgToolLatency))} ms`}</b></div></>}</div>
         <div className="chart-wrap cockpit-chart">{agg.tokenTasks?<TrendChart samples={tokenSamples}/>:<ActivityTrendChart calls={operationCalls} now={now}/>}</div>
         <div className="chart-legend">{agg.tokenTasks?<><span><i className="blue"/>Input/min</span><span><i className="green"/>Output/min</span></>:<><span><i className="blue"/>Observed MCP calls / second</span><span className="legend-note">Token counters unavailable on fast-path</span></>}</div>
       </section>

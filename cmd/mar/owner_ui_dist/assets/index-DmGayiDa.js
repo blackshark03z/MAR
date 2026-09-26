@@ -13299,6 +13299,10 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 	const droppedCalls = droppedOperationCount(runtime);
 	const rates = tokenRates(tokenSamples);
 	const latestTokenRate = rates.length ? rates[rates.length - 1].total : 0;
+	const callsLastMinute = operationCalls.filter((c) => now - c.startedAt >= 0 && now - c.startedAt < 6e4);
+	const completedLastMinute = callsLastMinute.filter((c) => !!c.completedAt);
+	const latencySamples = completedLastMinute.map((c) => Number(c.durationMs)).filter((v) => Number.isFinite(v) && v >= 0);
+	const avgToolLatency = latencySamples.length ? latencySamples.reduce((a, b) => a + b, 0) / latencySamples.length : null;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 			className: "page-header live-header",
@@ -13358,9 +13362,9 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: "durable web turns" })
 					] }),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Token rate" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : "—" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("small", { children: [usageWindowValue(usage?.today), " today"] })
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: agg.tokenTasks ? "Token rate" : "MCP rate" }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(Math.round(latestTokenRate))}/m` : `${fmtNumber(callsLastMinute.length)}/m` }),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", { children: agg.tokenTasks ? `${usageWindowValue(usage?.today)} today` : `${activeCalls.length} active · ${avgToolLatency === null ? "—" : `${fmtNumber(Math.round(avgToolLatency))} ms avg`}` })
 					] })
 				]
 			})]
@@ -13380,14 +13384,19 @@ function LiveOperations({ runtime, tasks, usage, tokenSamples, setView, workspac
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "live-dot" }), agg.tokenTasks ? "token telemetry" : "activity telemetry"]
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "chart-kpis",
-						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live tokens" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.total)}` : "N/A" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.input)}` : "N/A" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? `~${fmtNumber(agg.output)}` : "N/A" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: agg.tokenTasks ? "Turns" : "MCP calls" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: agg.tokenTasks ? fmtNumber(agg.turns) : fmtNumber(operationCalls.filter((c) => now - c.startedAt < 4e4 && now - c.startedAt >= 0).length) })] })
-						]
+						children: agg.tokenTasks ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Live tokens" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("b", { children: ["~", fmtNumber(agg.total)] })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Input" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("b", { children: ["~", fmtNumber(agg.input)] })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Output" }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("b", { children: ["~", fmtNumber(agg.output)] })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Turns" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: fmtNumber(agg.turns) })] })
+						] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Active calls" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: fmtNumber(activeCalls.length) })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Calls / min" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: fmtNumber(callsLastMinute.length) })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Completed / min" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: fmtNumber(completedLastMinute.length) })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "Avg latency" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("b", { children: avgToolLatency === null ? "—" : `${fmtNumber(Math.round(avgToolLatency))} ms` })] })
+						] })
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 						className: "chart-wrap cockpit-chart",
