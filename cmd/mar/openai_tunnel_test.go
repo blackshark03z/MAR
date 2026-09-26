@@ -517,6 +517,104 @@ func TestTunnelClientAdminProbeAndSecretRedaction(t *testing.T) {
 	}
 }
 
+func TestTunnelControlPlaneStallDetectionUsesUpstreamDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	snapshot := &tunnelControlPlaneHealth{Component: "control-plane", Status: "ok", State: "polling", Details: tunnelControlPlaneDetails{CurrentPollAgeSeconds: 39, DeadlineSeconds: 35}}
+	if stalled, detail := tunnelControlPlaneStalled(snapshot, now); stalled || detail != "" {
+		t.Fatalf("valid long poll was misclassified as stalled: stalled=%v detail=%q", stalled, detail)
+	}
+	snapshot.Details.CurrentPollAgeSeconds = 41
+	if stalled, detail := tunnelControlPlaneStalled(snapshot, now); !stalled || !strings.Contains(detail, "control-plane poll stalled") {
+		t.Fatalf("deadline-exceeded poll was not detected: stalled=%v detail=%q", stalled, detail)
+	}
+	snapshot.State = "backoff"
+	snapshot.Details.CurrentPollAgeSeconds = 300
+	if stalled, detail := tunnelControlPlaneStalled(snapshot, now); stalled || detail != "" {
+		t.Fatalf("upstream backoff must not be force-restarted: stalled=%v detail=%q", stalled, detail)
+	}
+	lastSuccess := now.Add(-41 * time.Second)
+	snapshot.State = "idle"
+	snapshot.Details.LastSuccess = &lastSuccess
+	if stalled, detail := tunnelControlPlaneStalled(snapshot, now); !stalled || !strings.Contains(detail, "state=idle") {
+		t.Fatalf("stale idle poller was not detected: stalled=%v detail=%q", stalled, detail)
+	}
+}
+
+func TestTunnelClientControlPlaneProbeReadsV0015Health(t *testing.T) {
+	requireLoopbackTCP(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health/control-plane" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"schema_version\":1,\"component\":\"control-plane\",\"status\":\"ok\",\"state\":\"polling\",\"details\":{\"last_success\":\"2026-09-26T08:15:04Z\",\"consecutive_failures\":0,\"current_poll_age_seconds\":0.4,\"deadline_seconds\":35}}"))
+	}))
+	defer server.Close()
+
+	snapshot := probeTunnelClientControlPlane(context.Background(), server.URL)
+	if snapshot == nil {
+		t.Fatal("v0.0.15 control-plane health was not parsed")
+	}
+	if snapshot.Component != "control-plane" || snapshot.State != "polling" || snapshot.Details.DeadlineSeconds != 35 || snapshot.Details.LastSuccess == nil {
+		t.Fatalf("unexpected control-plane snapshot: %+v", snapshot)
+	}
+}
+
+func TestOpenAITunnelStalledControlPlanePollUsesBoundedDesiredRecovery(t *testing.T) {
+	m, first, _ := testOpenAITunnelManager(t)
+	config := validOpenAITunnelConfig()
+	config.DesiredRunning = true
+	config.AdminBaseURL = "http://127.0.0.1:1"
+	t.Setenv(config.APIKeyEnv, "test-secret")
+	m.recoveryDelay = func(int) time.Duration { return 0 }
+	m.recoverySettle = 5 * time.Millisecond
+	m.probe = func(context.Context, string, string) (bool, string) { return true, "" }
+	probeCalls := 0
+	m.probeControlPlane = func(context.Context, string) *tunnelControlPlaneHealth {
+		probeCalls++
+		age := 1.0
+		if probeCalls == 1 {
+			age = 41
+		}
+		return &tunnelControlPlaneHealth{Component: "control-plane", Status: "ok", State: "polling", Details: tunnelControlPlaneDetails{CurrentPollAgeSeconds: age, DeadlineSeconds: 35}}
+	}
+	second := newFakeTunnelProcess()
+	starts := 0
+	m.startProcess = func(string, []string, func(string)) (tunnelClientProcess, error) {
+		starts++
+		if starts == 1 {
+			return first, nil
+		}
+		return second, nil
+	}
+	if err := m.Configure(config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshHealth()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		state := m.State()
+		if starts == 2 && state.Running && !state.RecoveryInProgress {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	state := m.State()
+	first.mu.Lock()
+	firstStopped := first.stopped
+	first.mu.Unlock()
+	if !firstStopped || starts != 2 || !state.Running || state.RecoveryAttempts != 1 {
+		t.Fatalf("stalled poll did not use exactly one bounded replacement: firstStopped=%v starts=%d state=%+v", firstStopped, starts, state)
+	}
+	if state.Identifier != config.TunnelID {
+		t.Fatalf("stalled recovery changed tunnel identity: state=%+v", state)
+	}
+}
+
 func TestOpenAITunnelConfigureRejectsNonLoopbackAdminAndInvalidTunnelID(t *testing.T) {
 	base := validOpenAITunnelConfig()
 	cases := []store.OpenAITunnelConfig{base, base}

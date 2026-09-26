@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ const (
 	openAITunnelStopTimeout    = 5 * time.Second
 	openAITunnelRecoveryLimit  = 3
 	openAITunnelRecoverySettle = 2 * time.Second
+	openAITunnelPollStallGrace = 5 * time.Second
 )
 
 type openAITunnelState struct {
@@ -62,6 +64,20 @@ type openAITunnelState struct {
 	NextAction         string               `json:"next_action"`
 	RecentOperations   []mcpRecentOperation `json:"recent_operations,omitempty"`
 	DroppedOperations  int64                `json:"dropped_operations,omitempty"`
+}
+
+type tunnelControlPlaneHealth struct {
+	Component string                    `json:"component"`
+	Status    string                    `json:"status"`
+	State     string                    `json:"state"`
+	Details   tunnelControlPlaneDetails `json:"details"`
+}
+
+type tunnelControlPlaneDetails struct {
+	LastSuccess           *time.Time `json:"last_success,omitempty"`
+	ConsecutiveFailures   uint64     `json:"consecutive_failures"`
+	CurrentPollAgeSeconds float64    `json:"current_poll_age_seconds"`
+	DeadlineSeconds       float64    `json:"deadline_seconds"`
 }
 
 type tunnelClientProcess interface {
@@ -105,10 +121,11 @@ type openAITunnelManager struct {
 	recoverySettle     time.Duration
 	activity           *mcpActivityBuffer
 
-	findClient   func(store.OpenAITunnelConfig, string) (string, error)
-	runCommand   func(context.Context, string, ...string) (string, error)
-	startProcess func(string, []string, func(string)) (tunnelClientProcess, error)
-	probe        func(context.Context, string, string) (bool, string)
+	findClient        func(store.OpenAITunnelConfig, string) (string, error)
+	runCommand        func(context.Context, string, ...string) (string, error)
+	startProcess      func(string, []string, func(string)) (tunnelClientProcess, error)
+	probe             func(context.Context, string, string) (bool, string)
+	probeControlPlane func(context.Context, string) *tunnelControlPlaneHealth
 }
 
 func newOpenAITunnelManager(ctx context.Context, backend mcpedge.Backend, dataRoot string) *openAITunnelManager {
@@ -119,6 +136,7 @@ func newOpenAITunnelManager(ctx context.Context, backend mcpedge.Backend, dataRo
 	m.runCommand = runTunnelClientCommand
 	m.startProcess = startManagedTunnelClient
 	m.probe = probeTunnelClientAdmin
+	m.probeControlPlane = probeTunnelClientControlPlane
 	go m.healthLoop()
 	return m
 }
@@ -681,6 +699,42 @@ func (m *openAITunnelManager) recoverDesiredState() {
 	}
 }
 
+func (m *openAITunnelManager) scheduleStalledRecovery(process tunnelClientProcess) {
+	m.mu.Lock()
+	if process == nil || m.process != process || m.recovering || !m.config.DesiredRunning || m.stopping || m.terminationUnknown || m.ctx.Err() != nil {
+		m.mu.Unlock()
+		return
+	}
+	if m.recoveryAttempts >= openAITunnelRecoveryLimit {
+		if !strings.Contains(m.lastError, "automatic tunnel recovery exhausted") {
+			m.lastError = fmt.Sprintf("automatic tunnel recovery exhausted after %d attempts: %s", openAITunnelRecoveryLimit, strings.TrimSpace(m.lastError))
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.recovering = true
+	m.mu.Unlock()
+	go m.recoverStalledProcess(process)
+}
+
+func (m *openAITunnelManager) recoverStalledProcess(process tunnelClientProcess) {
+	m.mu.Lock()
+	if m.process != process || !m.config.DesiredRunning || m.ctx.Err() != nil {
+		m.recovering = false
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+
+	if err := m.Stop(); err != nil {
+		m.mu.Lock()
+		m.recovering = false
+		m.mu.Unlock()
+		return
+	}
+	m.recoverDesiredState()
+}
+
 func (m *openAITunnelManager) healthLoop() {
 	ticker := time.NewTicker(openAITunnelHealthEvery)
 	defer ticker.Stop()
@@ -702,26 +756,38 @@ func (m *openAITunnelManager) refreshHealth() {
 		return
 	}
 	base := firstNonEmpty(m.config.AdminBaseURL, m.adminDiscovered)
+	process := m.process
 	m.mu.Unlock()
 	if base == "" {
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(m.ctx, openAITunnelProbeTimeout)
 	healthy, healthDetail := m.probe(ctx, base, "/healthz")
 	cancel()
 	ctx, cancel = context.WithTimeout(m.ctx, openAITunnelProbeTimeout)
 	ready, readyDetail := m.probe(ctx, base, "/readyz")
 	cancel()
+
+	var controlPlane *tunnelControlPlaneHealth
+	if m.probeControlPlane != nil {
+		ctx, cancel = context.WithTimeout(m.ctx, openAITunnelProbeTimeout)
+		controlPlane = m.probeControlPlane(ctx, base)
+		cancel()
+	}
+
 	now := time.Now().UTC()
+	stalled, stallDetail := tunnelControlPlaneStalled(controlPlane, now)
+
 	m.mu.Lock()
-	if m.process == nil {
+	if m.process != process {
 		m.mu.Unlock()
 		return
 	}
 	m.lastHealthAt = now
 	m.healthy = healthy
 	m.ready = ready
-	if ready {
+	if ready && !stalled {
 		m.lastSuccessAt = now
 		if m.connectedSince.IsZero() {
 			m.connectedSince = now
@@ -729,12 +795,21 @@ func (m *openAITunnelManager) refreshHealth() {
 	} else {
 		m.connectedSince = time.Time{}
 	}
-	if !healthy || !ready {
+	if stalled {
+		m.healthy = false
+		m.ready = false
+		m.connectedSince = time.Time{}
+		m.lastError = stallDetail
+	} else if !healthy || !ready {
 		m.lastError = joinTunnelProbeDetails(healthDetail, readyDetail)
-	} else if strings.Contains(m.lastError, "healthz") || strings.Contains(m.lastError, "readyz") {
+	} else if strings.Contains(m.lastError, "healthz") || strings.Contains(m.lastError, "readyz") || strings.Contains(m.lastError, "control-plane poll stalled") {
 		m.lastError = ""
 	}
 	m.mu.Unlock()
+
+	if stalled {
+		m.scheduleStalledRecovery(process)
+	}
 }
 
 func joinTunnelProbeDetails(details ...string) string {
@@ -872,6 +947,59 @@ func (w *tunnelOutputWriter) emit(line string) {
 	if w.onLine != nil && line != "" {
 		w.onLine(line)
 	}
+}
+
+func tunnelControlPlaneStalled(snapshot *tunnelControlPlaneHealth, now time.Time) (bool, string) {
+	if snapshot == nil || !strings.EqualFold(strings.TrimSpace(snapshot.Component), "control-plane") {
+		return false, ""
+	}
+	deadline := time.Duration(snapshot.Details.DeadlineSeconds * float64(time.Second))
+	if deadline <= 0 {
+		return false, ""
+	}
+	threshold := deadline + openAITunnelPollStallGrace
+	var age time.Duration
+	switch strings.ToLower(strings.TrimSpace(snapshot.State)) {
+	case "polling":
+		age = time.Duration(snapshot.Details.CurrentPollAgeSeconds * float64(time.Second))
+	case "idle":
+		if snapshot.Details.LastSuccess == nil {
+			return false, ""
+		}
+		age = now.Sub(snapshot.Details.LastSuccess.UTC())
+		if age < 0 {
+			return false, ""
+		}
+	default:
+		return false, ""
+	}
+	if age <= threshold {
+		return false, ""
+	}
+	return true, fmt.Sprintf("control-plane poll stalled: state=%s age=%.1fs exceeds deadline=%.1fs plus grace=%s", snapshot.State, age.Seconds(), deadline.Seconds(), openAITunnelPollStallGrace)
+}
+
+func probeTunnelClientControlPlane(ctx context.Context, baseURL string) *tunnelControlPlaneHealth {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/health/control-plane", nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := (&http.Client{Timeout: openAITunnelProbeTimeout}).Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil
+	}
+	var snapshot tunnelControlPlaneHealth
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&snapshot); err != nil {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(snapshot.Component), "control-plane") {
+		return nil
+	}
+	return &snapshot
 }
 
 func probeTunnelClientAdmin(ctx context.Context, baseURL, path string) (bool, string) {
