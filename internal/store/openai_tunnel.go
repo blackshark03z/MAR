@@ -14,8 +14,12 @@ import (
 )
 
 const (
-	DefaultOpenAITunnelProfile = "mar-openai"
-	DefaultOpenAITunnelKeyEnv  = "CONTROL_PLANE_API_KEY"
+	OpenAITunnelPrimaryID        = "openai-tunnel"
+	OpenAITunnelSecondaryID      = "openai-tunnel-secondary"
+	DefaultOpenAITunnelProfile   = "mar-openai"
+	DefaultOpenAITunnelKeyEnv    = "CONTROL_PLANE_API_KEY"
+	SecondaryOpenAITunnelProfile = "mar-openai-secondary"
+	SecondaryOpenAITunnelKeyEnv  = "CONTROL_PLANE_API_KEY_2"
 )
 
 var (
@@ -36,6 +40,17 @@ type OpenAITunnelConfig struct {
 
 func DefaultOpenAITunnelConfig() OpenAITunnelConfig {
 	return OpenAITunnelConfig{ProfileName: DefaultOpenAITunnelProfile, APIKeyEnv: DefaultOpenAITunnelKeyEnv, UpdatedAt: time.Now().UTC()}
+}
+
+func DefaultOpenAITunnelConfigForID(connectorID string) (OpenAITunnelConfig, error) {
+	switch strings.TrimSpace(connectorID) {
+	case OpenAITunnelPrimaryID:
+		return DefaultOpenAITunnelConfig(), nil
+	case OpenAITunnelSecondaryID:
+		return OpenAITunnelConfig{ProfileName: SecondaryOpenAITunnelProfile, APIKeyEnv: SecondaryOpenAITunnelKeyEnv, UpdatedAt: time.Now().UTC()}, nil
+	default:
+		return OpenAITunnelConfig{}, fmt.Errorf("unsupported OpenAI tunnel connector %q", connectorID)
+	}
 }
 
 func (c OpenAITunnelConfig) Validate() error {
@@ -74,21 +89,35 @@ func (c OpenAITunnelConfig) Validate() error {
 }
 
 func (s *SQLite) EnsureOpenAITunnelConfig(ctx context.Context) (OpenAITunnelConfig, error) {
-	config, err := s.GetOpenAITunnelConfig(ctx)
+	return s.EnsureOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID)
+}
+
+func (s *SQLite) EnsureOpenAITunnelConfigForID(ctx context.Context, connectorID string) (OpenAITunnelConfig, error) {
+	config, err := s.GetOpenAITunnelConfigForID(ctx, connectorID)
 	if err == nil {
 		return config, nil
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return OpenAITunnelConfig{}, err
 	}
-	config = DefaultOpenAITunnelConfig()
-	if err := s.UpsertOpenAITunnelConfig(ctx, config); err != nil {
+	config, err = DefaultOpenAITunnelConfigForID(connectorID)
+	if err != nil {
+		return OpenAITunnelConfig{}, err
+	}
+	if err := s.UpsertOpenAITunnelConfigForID(ctx, connectorID, config); err != nil {
 		return OpenAITunnelConfig{}, err
 	}
 	return config, nil
 }
 
 func (s *SQLite) UpsertOpenAITunnelConfig(ctx context.Context, c OpenAITunnelConfig) error {
+	return s.UpsertOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID, c)
+}
+
+func (s *SQLite) UpsertOpenAITunnelConfigForID(ctx context.Context, connectorID string, c OpenAITunnelConfig) error {
+	if _, err := DefaultOpenAITunnelConfigForID(connectorID); err != nil {
+		return err
+	}
 	c.TunnelID = strings.TrimSpace(c.TunnelID)
 	c.ProfileName = strings.TrimSpace(c.ProfileName)
 	c.APIKeyEnv = strings.TrimSpace(c.APIKeyEnv)
@@ -98,9 +127,9 @@ func (s *SQLite) UpsertOpenAITunnelConfig(ctx context.Context, c OpenAITunnelCon
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO openai_tunnel_config(singleton_id, tunnel_id, profile_name, api_key_env, client_path, admin_base_url, desired_running, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(singleton_id) DO UPDATE SET
+INSERT INTO openai_tunnel_configs(connector_id, tunnel_id, profile_name, api_key_env, client_path, admin_base_url, desired_running, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(connector_id) DO UPDATE SET
   tunnel_id=excluded.tunnel_id,
   profile_name=excluded.profile_name,
   api_key_env=excluded.api_key_env,
@@ -108,27 +137,34 @@ ON CONFLICT(singleton_id) DO UPDATE SET
   admin_base_url=excluded.admin_base_url,
   desired_running=excluded.desired_running,
   updated_at=excluded.updated_at`,
-		c.TunnelID, c.ProfileName, c.APIKeyEnv, c.ClientPath, c.AdminBaseURL, c.DesiredRunning, c.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		strings.TrimSpace(connectorID), c.TunnelID, c.ProfileName, c.APIKeyEnv, c.ClientPath, c.AdminBaseURL, c.DesiredRunning, c.UpdatedAt.UTC().Format(time.RFC3339Nano))
 	if err != nil {
-		return fmt.Errorf("upsert OpenAI tunnel config: %w", err)
+		return fmt.Errorf("upsert OpenAI tunnel config %s: %w", connectorID, err)
 	}
 	return nil
 }
 
 func (s *SQLite) GetOpenAITunnelConfig(ctx context.Context) (OpenAITunnelConfig, error) {
+	return s.GetOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID)
+}
+
+func (s *SQLite) GetOpenAITunnelConfigForID(ctx context.Context, connectorID string) (OpenAITunnelConfig, error) {
+	if _, err := DefaultOpenAITunnelConfigForID(connectorID); err != nil {
+		return OpenAITunnelConfig{}, err
+	}
 	var c OpenAITunnelConfig
 	var desired int
 	var updated string
 	err := s.db.QueryRowContext(ctx, `
 SELECT tunnel_id, profile_name, api_key_env, client_path, admin_base_url, desired_running, updated_at
-FROM openai_tunnel_config WHERE singleton_id = 1`).Scan(
+FROM openai_tunnel_configs WHERE connector_id = ?`, strings.TrimSpace(connectorID)).Scan(
 		&c.TunnelID, &c.ProfileName, &c.APIKeyEnv, &c.ClientPath, &c.AdminBaseURL, &desired, &updated,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return OpenAITunnelConfig{}, ErrNotFound
 	}
 	if err != nil {
-		return OpenAITunnelConfig{}, fmt.Errorf("get OpenAI tunnel config: %w", err)
+		return OpenAITunnelConfig{}, fmt.Errorf("get OpenAI tunnel config %s: %w", connectorID, err)
 	}
 	c.DesiredRunning = desired != 0
 	c.UpdatedAt, err = time.Parse(time.RFC3339Nano, updated)

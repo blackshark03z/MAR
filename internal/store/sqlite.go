@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 17
+const latestSchemaVersion = 18
 
 func SupportedSchemaVersion() int { return latestSchemaVersion }
 
@@ -453,6 +453,23 @@ CREATE INDEX idx_workspace_checkpoints_state ON workspace_checkpoints(state, cre
 `
 	case 17:
 		return s.applyWorkspacePathSharingMigration(ctx)
+	case 18:
+		script = `
+CREATE TABLE openai_tunnel_configs (
+    connector_id TEXT PRIMARY KEY CHECK (connector_id IN ('openai-tunnel','openai-tunnel-secondary')),
+    tunnel_id TEXT NOT NULL DEFAULT '',
+    profile_name TEXT NOT NULL,
+    api_key_env TEXT NOT NULL,
+    client_path TEXT NOT NULL DEFAULT '',
+    admin_base_url TEXT NOT NULL DEFAULT '',
+    desired_running INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+INSERT INTO openai_tunnel_configs(connector_id,tunnel_id,profile_name,api_key_env,client_path,admin_base_url,desired_running,updated_at)
+SELECT 'openai-tunnel',tunnel_id,profile_name,api_key_env,client_path,admin_base_url,desired_running,updated_at FROM openai_tunnel_config WHERE singleton_id=1;
+INSERT OR IGNORE INTO openai_tunnel_configs(connector_id,tunnel_id,profile_name,api_key_env,client_path,admin_base_url,desired_running,updated_at)
+VALUES ('openai-tunnel-secondary','','mar-openai-secondary','CONTROL_PLANE_API_KEY_2','','',0,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+`
 	default:
 		return fmt.Errorf("unknown migration version %d", version)
 	}

@@ -12877,6 +12877,9 @@ function taskTitle(t) {
 function connectionProvider(c) {
 	return c?.id === "claude-web" ? "Claude" : "GPT";
 }
+function isOpenAITunnelConnector(c) {
+	return c?.id === "openai-tunnel" || c?.id === "openai-tunnel-secondary";
+}
 function routeReady(c) {
 	const s = String(c?.status || "").toUpperCase();
 	return !!c && (c.connected === true || c.ready === true || c.route_ready === true || [
@@ -12888,13 +12891,13 @@ function routeReady(c) {
 }
 function connectionUsable(c) {
 	if (!c) return false;
-	if (c.id === "openai-tunnel") return c.connected === true;
+	if (c.id === "openai-tunnel" || c.id === "openai-tunnel-secondary") return c.connected === true;
 	if (c.id === "chatgpt-web" || c.id === "claude-web") return c.usable_from_client === true;
 	return routeReady(c);
 }
 function connectionStageText(c) {
 	if (!c) return "Không có dữ liệu";
-	if (c.id === "openai-tunnel") return c.connected ? "USABLE" : c.ready ? "ROUTE_READY" : String(c.status || "NOT_READY");
+	if (c.id === "openai-tunnel" || c.id === "openai-tunnel-secondary") return c.connected ? "USABLE" : c.ready ? "ROUTE_READY" : String(c.status || "NOT_READY");
 	return String(c.connection_stage || "").toUpperCase() || String(c.status || "NOT_READY");
 }
 function actionableConnection(c) {
@@ -12911,6 +12914,7 @@ function actionableConnection(c) {
 function operationalConnections(runtime) {
 	const wanted = /* @__PURE__ */ new Set([
 		"openai-tunnel",
+		"openai-tunnel-secondary",
 		"chatgpt-web",
 		"claude-web"
 	]);
@@ -14542,6 +14546,111 @@ function WorkspaceCard({ p, reload, selected, onSelect }) {
 		})]
 	});
 }
+function TunnelConfigForm({ c, reload }) {
+	const [tunnelID, setTunnelID] = (0, import_react.useState)(String(c.identifier || "")), [profile, setProfile] = (0, import_react.useState)(String(c.profile_name || "")), [apiKeyEnv, setAPIKeyEnv] = (0, import_react.useState)(String(c.api_key_env || "")), [clientPath, setClientPath] = (0, import_react.useState)(String(c.client_path || "")), [adminBaseURL, setAdminBaseURL] = (0, import_react.useState)(String(c.admin_base_url || "")), [busy, setBusy] = (0, import_react.useState)(false), [message, setMessage] = (0, import_react.useState)(""), [error, setError] = (0, import_react.useState)("");
+	(0, import_react.useEffect)(() => {
+		setTunnelID(String(c.identifier || ""));
+		setProfile(String(c.profile_name || ""));
+		setAPIKeyEnv(String(c.api_key_env || ""));
+		setClientPath(String(c.client_path || ""));
+		setAdminBaseURL(String(c.admin_base_url || ""));
+	}, [
+		c.id,
+		c.identifier,
+		c.profile_name,
+		c.api_key_env,
+		c.client_path,
+		c.admin_base_url
+	]);
+	async function save() {
+		setBusy(true);
+		setMessage("");
+		setError("");
+		try {
+			await connectionAction(`/api/connections/${encodeURIComponent(c.id)}/config`, {
+				tunnel_id: tunnelID.trim(),
+				profile_name: profile.trim(),
+				api_key_env: apiKeyEnv.trim(),
+				client_path: clientPath.trim(),
+				admin_base_url: adminBaseURL.trim()
+			});
+			setMessage(tunnelID.trim() ? "Đã lưu cấu hình và yêu cầu kết nối." : "Đã xóa Tunnel ID; connector sẽ dừng.");
+			await reload();
+		} catch (err) {
+			setError(err?.message || "Không thể lưu tunnel.");
+		} finally {
+			setBusy(false);
+		}
+	}
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "advanced-fields tunnel-config-form",
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Tunnel ID", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+				value: tunnelID,
+				onChange: (e) => setTunnelID(e.target.value),
+				placeholder: "tunnel_…"
+			})] }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["Profile", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+				value: profile,
+				onChange: (e) => setProfile(e.target.value),
+				placeholder: c.id === "openai-tunnel-secondary" ? "mar-openai-secondary" : "mar-openai"
+			})] }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: ["API-key environment", /* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+				value: apiKeyEnv,
+				onChange: (e) => setAPIKeyEnv(e.target.value),
+				placeholder: c.id === "openai-tunnel-secondary" ? "CONTROL_PLANE_API_KEY_2" : "CONTROL_PLANE_API_KEY"
+			})] }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+				"tunnel-client path ",
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "muted",
+					children: "(optional)"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+					value: clientPath,
+					onChange: (e) => setClientPath(e.target.value),
+					placeholder: "D:\\MAR\\.mar\\runtime\\tunnel-client.exe"
+				})
+			] }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", { children: [
+				"Admin URL ",
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "muted",
+					children: "(optional)"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+					value: adminBaseURL,
+					onChange: (e) => setAdminBaseURL(e.target.value),
+					placeholder: "auto-discover"
+				})
+			] }),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("small", {
+				className: "field-help",
+				children: "MAR lưu Tunnel ID/profile/tên biến môi trường; giá trị credential không được lưu trong SQLite."
+			}),
+			message && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "action-feedback success",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CircleCheck, { size: 15 }), message]
+			}),
+			error && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+				className: "action-feedback error",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 15 }), error]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "form-actions",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+					className: "primary-button",
+					disabled: busy,
+					onClick: save,
+					children: [busy ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(LoaderCircle, {
+						className: "spin",
+						size: 16
+					}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Settings, { size: 16 }), "Lưu cấu hình"]
+				})
+			})
+		]
+	});
+}
 function ConnectionsPage({ runtime, reload }) {
 	const conns = runtime?.connections || [];
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
@@ -14578,13 +14687,13 @@ function ConnectionsPage({ runtime, reload }) {
 	] });
 }
 function ConnectionCard({ c, reload }) {
-	const provider = connectionProvider(c), ready = routeReady(c), usable = connectionUsable(c), stage = connectionStageText(c), isTunnel = c.id === "openai-tunnel";
+	const provider = connectionProvider(c), ready = routeReady(c), usable = connectionUsable(c), stage = connectionStageText(c), isTunnel = isOpenAITunnelConnector(c);
 	const [open, setOpen] = (0, import_react.useState)(false), [busy, setBusy] = (0, import_react.useState)(""), [message, setMessage] = (0, import_react.useState)(""), [error, setError] = (0, import_react.useState)("");
 	const url = String(c.stable_url || c.connection_url || c.temporary_url || "").trim();
 	const urlKind = c.stable_url ? "Stable URL" : c.temporary_url ? "Temporary capability URL" : "Connection URL";
 	async function act(action) {
 		let path = "";
-		if (isTunnel) path = `/api/connections/openai-tunnel/${action}`;
+		if (isTunnel) path = `/api/connections/${encodeURIComponent(c.id)}/${action}`;
 		else if (action === "start") path = "/api/connections/web-bridge/start";
 		else if (action === "restart") path = "/api/connections/web-bridge/restart";
 		else if (action === "stop") path = "/api/connections/web-bridge/stop";
@@ -14728,10 +14837,19 @@ function ConnectionCard({ c, reload }) {
 				className: "action-feedback error",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TriangleAlert, { size: 15 }), error]
 			}),
-			open && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
+			open && (isTunnel ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(TunnelConfigForm, {
+				c,
+				reload
+			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("details", {
+				className: "evidence",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("summary", { children: "Raw telemetry" }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
+					className: "connection-raw",
+					children: JSON.stringify(c, null, 2)
+				})]
+			})] }) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("pre", {
 				className: "connection-raw",
 				children: JSON.stringify(c, null, 2)
-			})
+			}))
 		]
 	});
 }

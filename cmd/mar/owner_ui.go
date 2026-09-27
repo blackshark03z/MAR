@@ -46,34 +46,35 @@ type ownerMCPClient interface {
 }
 
 type ownerUIBackend struct {
-	db               *store.SQLite
-	svc              *service.TaskService
-	session          ownerMCPClient
-	mcpMu            sync.Mutex
-	brainMode        string
-	providerBaseURL  string
-	apiKeyEnv        string
-	model            string
-	reasoning        string
-	executable       string
-	dbPath           string
-	dataRoot         string
-	goPath           string
-	maxWorkers       int
-	startedAt        time.Time
-	sessionToken     string
-	bridge           *remoteBridgeManager
-	openAITunnel     *openAITunnelManager
-	sandboxPrepare   func(context.Context, string, string) error
-	sandboxCheck     func(context.Context, string, string) (bool, string)
-	sandboxMu        sync.Mutex
-	sandboxCheckedAt time.Time
-	sandboxReady     bool
-	sandboxDetail    string
-	projectPicker    func(context.Context) (string, error)
-	executionProbe   func(context.Context) error
-	executionPID     int
-	runtimeIdentity  runtimeIdentity
+	db                    *store.SQLite
+	svc                   *service.TaskService
+	session               ownerMCPClient
+	mcpMu                 sync.Mutex
+	brainMode             string
+	providerBaseURL       string
+	apiKeyEnv             string
+	model                 string
+	reasoning             string
+	executable            string
+	dbPath                string
+	dataRoot              string
+	goPath                string
+	maxWorkers            int
+	startedAt             time.Time
+	sessionToken          string
+	bridge                *remoteBridgeManager
+	openAITunnel          *openAITunnelManager
+	openAITunnelSecondary *openAITunnelManager
+	sandboxPrepare        func(context.Context, string, string) error
+	sandboxCheck          func(context.Context, string, string) (bool, string)
+	sandboxMu             sync.Mutex
+	sandboxCheckedAt      time.Time
+	sandboxReady          bool
+	sandboxDetail         string
+	projectPicker         func(context.Context) (string, error)
+	executionProbe        func(context.Context) error
+	executionPID          int
+	runtimeIdentity       runtimeIdentity
 }
 
 type ownerProjectView struct {
@@ -375,16 +376,29 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 	}
 	defer backend.bridge.Close()
 	backend.openAITunnel = newOpenAITunnelManager(ctx, executionBackend, opts.DataRoot)
-	tunnelConfig, err := db.EnsureOpenAITunnelConfig(ctx)
+	tunnelConfig, err := db.EnsureOpenAITunnelConfigForID(ctx, store.OpenAITunnelPrimaryID)
 	if err != nil {
-		return fmt.Errorf("initialize OpenAI tunnel config: %w", err)
+		return fmt.Errorf("initialize primary OpenAI tunnel config: %w", err)
 	}
 	if err := backend.openAITunnel.Configure(tunnelConfig); err != nil {
-		return fmt.Errorf("configure OpenAI tunnel: %w", err)
+		return fmt.Errorf("configure primary OpenAI tunnel: %w", err)
 	}
 	defer backend.openAITunnel.Close()
 	if tunnelConfig.DesiredRunning {
 		go func() { _, _ = backend.openAITunnel.Start() }()
+	}
+
+	backend.openAITunnelSecondary = newOpenAITunnelManager(ctx, executionBackend, opts.DataRoot)
+	secondaryTunnelConfig, err := db.EnsureOpenAITunnelConfigForID(ctx, store.OpenAITunnelSecondaryID)
+	if err != nil {
+		return fmt.Errorf("initialize secondary OpenAI tunnel config: %w", err)
+	}
+	if err := backend.openAITunnelSecondary.Configure(secondaryTunnelConfig); err != nil {
+		return fmt.Errorf("configure secondary OpenAI tunnel: %w", err)
+	}
+	defer backend.openAITunnelSecondary.Close()
+	if secondaryTunnelConfig.DesiredRunning {
+		go func() { _, _ = backend.openAITunnelSecondary.Start() }()
 	}
 	mux := backend.routes()
 	listener, err := net.Listen("tcp", opts.Listen)
@@ -455,6 +469,11 @@ func (b *ownerUIBackend) routes() http.Handler {
 	mux.HandleFunc("POST /api/connections/openai-tunnel/stop", b.stopOpenAITunnel)
 	mux.HandleFunc("POST /api/connections/openai-tunnel/restart", b.restartOpenAITunnel)
 	mux.HandleFunc("POST /api/connections/openai-tunnel/diagnose", b.diagnoseOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel-secondary/config", b.updateSecondaryOpenAITunnelConfig)
+	mux.HandleFunc("POST /api/connections/openai-tunnel-secondary/start", b.startSecondaryOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel-secondary/stop", b.stopSecondaryOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel-secondary/restart", b.restartSecondaryOpenAITunnel)
+	mux.HandleFunc("POST /api/connections/openai-tunnel-secondary/diagnose", b.diagnoseSecondaryOpenAITunnel)
 	mux.HandleFunc("GET /api/usage", b.serveUsage)
 	mux.HandleFunc("GET /api/projects", b.serveProjects)
 	mux.HandleFunc("POST /api/projects/browse", b.browseProjectFolders)
@@ -782,6 +801,18 @@ func (b *ownerUIBackend) currentOpenAITunnelState() openAITunnelState {
 	return b.openAITunnel.State()
 }
 
+func (b *ownerUIBackend) currentSecondaryOpenAITunnelState() openAITunnelState {
+	if b.openAITunnelSecondary == nil {
+		config, _ := store.DefaultOpenAITunnelConfigForID(store.OpenAITunnelSecondaryID)
+		return openAITunnelState{
+			Provider: "openai", Transport: "secure-mcp-tunnel", Status: "MISCONFIGURED",
+			ProfileName: config.ProfileName, APIKeyEnv: config.APIKeyEnv, InstallURL: openAITunnelInstallURL,
+			NextAction: "Thiết lập tunnel ID cho tài khoản GPT thứ hai.",
+		}
+	}
+	return b.openAITunnelSecondary.State()
+}
+
 func (b *ownerUIBackend) updateOpenAITunnelConfig(w http.ResponseWriter, r *http.Request) {
 	if b.db == nil || b.openAITunnel == nil {
 		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("OpenAI tunnel configuration is unavailable"))
@@ -923,6 +954,147 @@ func (b *ownerUIBackend) diagnoseOpenAITunnel(w http.ResponseWriter, r *http.Req
 	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
 }
 
+func (b *ownerUIBackend) updateSecondaryOpenAITunnelConfig(w http.ResponseWriter, r *http.Request) {
+	if b.db == nil || b.openAITunnelSecondary == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("secondary OpenAI tunnel configuration is unavailable"))
+		return
+	}
+	var req ownerOpenAITunnelConfigRequest
+	if err := decodeOwnerJSON(r, &req); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	current, err := b.db.EnsureOpenAITunnelConfigForID(r.Context(), store.OpenAITunnelSecondaryID)
+	if err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	next := current
+	next.TunnelID = strings.TrimSpace(req.TunnelID)
+	if value := strings.TrimSpace(req.ProfileName); value != "" {
+		next.ProfileName = value
+	}
+	if value := strings.TrimSpace(req.APIKeyEnv); value != "" {
+		next.APIKeyEnv = value
+	}
+	next.ClientPath = strings.TrimSpace(req.ClientPath)
+	next.AdminBaseURL = strings.TrimRight(strings.TrimSpace(req.AdminBaseURL), "/")
+	next.DesiredRunning = next.TunnelID != ""
+	next.UpdatedAt = time.Now().UTC()
+	if err := next.Validate(); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	stateBefore := b.openAITunnelSecondary.State()
+	wasActive := stateBefore.Running || stateBefore.Status == "CONNECTING"
+	changed := current.TunnelID != next.TunnelID || current.ProfileName != next.ProfileName || current.APIKeyEnv != next.APIKeyEnv || current.ClientPath != next.ClientPath || current.AdminBaseURL != next.AdminBaseURL
+	if changed && wasActive {
+		if err := b.openAITunnelSecondary.Stop(); err != nil {
+			writeOwnerError(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if err := b.db.UpsertOpenAITunnelConfigForID(r.Context(), store.OpenAITunnelSecondaryID, next); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.openAITunnelSecondary.Configure(next); err != nil {
+		writeOwnerError(w, http.StatusBadRequest, err)
+		return
+	}
+	state := b.openAITunnelSecondary.State()
+	if next.DesiredRunning && !state.Running && state.Configured && state.ClientFound && state.AuthConfigured {
+		if _, err := b.openAITunnelSecondary.Start(); err != nil {
+			writeOwnerError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": b.openAITunnelSecondary.State()})
+}
+
+func (b *ownerUIBackend) setSecondaryOpenAITunnelDesired(ctx context.Context, desired bool) error {
+	if b.db == nil || b.openAITunnelSecondary == nil {
+		return errors.New("secondary OpenAI tunnel configuration is unavailable")
+	}
+	config, err := b.db.EnsureOpenAITunnelConfigForID(ctx, store.OpenAITunnelSecondaryID)
+	if err != nil {
+		return err
+	}
+	config.DesiredRunning = desired
+	config.UpdatedAt = time.Now().UTC()
+	if err := b.db.UpsertOpenAITunnelConfigForID(ctx, store.OpenAITunnelSecondaryID, config); err != nil {
+		return err
+	}
+	return b.openAITunnelSecondary.Configure(config)
+}
+
+func (b *ownerUIBackend) startSecondaryOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnelSecondary == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("secondary OpenAI tunnel is unavailable"))
+		return
+	}
+	state, err := b.openAITunnelSecondary.Start()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	if err := b.setSecondaryOpenAITunnelDesired(r.Context(), true); err != nil {
+		_ = b.openAITunnelSecondary.Stop()
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
+}
+
+func (b *ownerUIBackend) stopSecondaryOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnelSecondary == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("secondary OpenAI tunnel is unavailable"))
+		return
+	}
+	if err := b.setSecondaryOpenAITunnelDesired(r.Context(), false); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := b.openAITunnelSecondary.Stop(); err != nil {
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": b.openAITunnelSecondary.State()})
+}
+
+func (b *ownerUIBackend) restartSecondaryOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnelSecondary == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("secondary OpenAI tunnel is unavailable"))
+		return
+	}
+	state, err := b.openAITunnelSecondary.Restart()
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	if err := b.setSecondaryOpenAITunnelDesired(r.Context(), true); err != nil {
+		_ = b.openAITunnelSecondary.Stop()
+		writeOwnerError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
+}
+
+func (b *ownerUIBackend) diagnoseSecondaryOpenAITunnel(w http.ResponseWriter, r *http.Request) {
+	if b.openAITunnelSecondary == nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, errors.New("secondary OpenAI tunnel is unavailable"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
+	defer cancel()
+	state, err := b.openAITunnelSecondary.Diagnose(ctx)
+	if err != nil {
+		writeOwnerError(w, http.StatusServiceUnavailable, err)
+		return
+	}
+	writeOwnerJSON(w, http.StatusOK, map[string]any{"openai_tunnel": state})
+}
+
 func (b *ownerUIBackend) sandboxProbeWorkspace() string {
 	return filepath.Join(b.dataRoot, "sandbox-host-probe")
 }
@@ -1054,6 +1226,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	providerReady := strings.TrimSpace(b.providerBaseURL) != "" && strings.TrimSpace(b.apiKeyEnv) != "" && strings.TrimSpace(b.model) != "" && strings.TrimSpace(os.Getenv(b.apiKeyEnv)) != ""
 	bridge := b.currentBridgeState()
 	tunnel := b.currentOpenAITunnelState()
+	secondaryTunnel := b.currentSecondaryOpenAITunnelState()
 	executionReady, executionDetail := b.executionRuntimeReadiness(r.Context())
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
@@ -1080,7 +1253,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stdioArgs := b.webStdioArgs()
-	connections := make([]ownerConnectionView, 0, 5)
+	connections := make([]ownerConnectionView, 0, 6)
 	connections = append(connections, ownerConnectionView{
 		ID: "openai-tunnel", Name: "GPT · OpenAI Secure Tunnel", Status: tunnel.Status, Transport: tunnel.Transport,
 		Summary:    "Đường ChatGPT chính. Thiết lập tunnel ID một lần; MAR tự dùng lại cùng identity và tự kết nối lại sau restart.",
@@ -1091,6 +1264,17 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		LastActivityAt: tunnel.LastActivityAt, LastSuccessAt: tunnel.LastSuccessAt, LastHealthAt: tunnel.LastHealthAt,
 		LastError: tunnel.LastError, DiagnosticsSummary: tunnel.DiagnosticsSummary, NextAction: tunnel.NextAction,
 		RecentOperations: tunnel.RecentOperations, DroppedOperations: tunnel.DroppedOperations,
+	})
+	connections = append(connections, ownerConnectionView{
+		ID: store.OpenAITunnelSecondaryID, Name: "GPT 2 · OpenAI Secure Tunnel", Status: secondaryTunnel.Status, Transport: secondaryTunnel.Transport,
+		Summary:    "Tài khoản ChatGPT thứ hai. Tunnel/profile/process/recovery/telemetry độc lập nhưng dùng chung MAR execution backend.",
+		Configured: secondaryTunnel.Configured, Running: secondaryTunnel.Running, Healthy: secondaryTunnel.Healthy, Ready: secondaryTunnel.Ready, Connected: secondaryTunnel.Connected,
+		Identifier: secondaryTunnel.Identifier, ProfileName: secondaryTunnel.ProfileName, APIKeyEnv: secondaryTunnel.APIKeyEnv, AuthConfigured: secondaryTunnel.AuthConfigured,
+		ClientFound: secondaryTunnel.ClientFound, ClientPath: secondaryTunnel.ClientPath, InstallURL: secondaryTunnel.InstallURL, LocalTarget: secondaryTunnel.LocalTarget,
+		AdminBaseURL: secondaryTunnel.AdminBaseURL, DesiredRunning: secondaryTunnel.DesiredRunning, PID: secondaryTunnel.PID, ConnectedSince: secondaryTunnel.ConnectedSince,
+		LastActivityAt: secondaryTunnel.LastActivityAt, LastSuccessAt: secondaryTunnel.LastSuccessAt, LastHealthAt: secondaryTunnel.LastHealthAt,
+		LastError: secondaryTunnel.LastError, DiagnosticsSummary: secondaryTunnel.DiagnosticsSummary, NextAction: secondaryTunnel.NextAction,
+		RecentOperations: secondaryTunnel.RecentOperations, DroppedOperations: secondaryTunnel.DroppedOperations,
 	})
 	for _, connector := range bridge.Connectors {
 		name := "Claude Web"

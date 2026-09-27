@@ -985,7 +985,7 @@ func TestOwnerUIOpenAITunnelConfigLifecyclePersistsDesiredStateWithoutSecret(t *
 
 func TestOwnerUIConnectionHubShowsIndependentGPTAndClaudeMCPLinks(t *testing.T) {
 	bundle := ownerUIContractText()
-	for _, required := range []string{"openai-tunnel", "chatgpt-web", "claude-web", "Secure MCP Tunnel", "Claude Web", "/api/connections/web-bridge/start", "/api/connections/openai-tunnel/", "navigator.clipboard.writeText", "connection-card", "temporary_url", "connection_url", "Sao chép link", "action-feedback"} {
+	for _, required := range []string{"openai-tunnel", "openai-tunnel-secondary", "chatgpt-web", "claude-web", "Secure MCP Tunnel", "Claude Web", "/api/connections/web-bridge/start", "/api/connections/", "navigator.clipboard.writeText", "connection-card", "temporary_url", "connection_url", "Sao chép link", "action-feedback"} {
 		if !strings.Contains(bundle, required) {
 			t.Fatalf("React Connection Hub is missing %q", required)
 		}
@@ -1441,6 +1441,15 @@ func TestOwnerUIStatefulSessionTelemetryFailsClosedOnCardinalityOverflow(t *test
 	manager.mu.Unlock()
 	if state.ActiveSessionsAvailable || state.ActiveSessions != 0 || state.ActiveSessionsReason != "CARDINALITY_LIMIT" {
 		t.Fatalf("saturated session telemetry must fail closed instead of exposing a partial count: %+v", state)
+	}
+}
+
+func TestOwnerUIRuntimeExposesIndependentSecondaryGPTTunnel(t *testing.T) {
+	body := ownerRuntimeConnectionContract(t)
+	for _, marker := range []string{`"id":"openai-tunnel"`, `"id":"openai-tunnel-secondary"`, `"name":"GPT 2 · OpenAI Secure Tunnel"`, `"profile_name":"mar-openai-secondary"`, `"api_key_env":"CONTROL_PLANE_API_KEY_2"`} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("runtime missing secondary GPT tunnel marker %q: %s", marker, body)
+		}
 	}
 }
 

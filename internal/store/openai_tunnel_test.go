@@ -37,6 +37,53 @@ func TestOpenAITunnelConfigPersistsWithoutSecretValue(t *testing.T) {
 	}
 }
 
+func TestOpenAITunnelConfigsKeepPrimaryAndSecondaryIndependent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mar.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	primary, err := db.EnsureOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondary, err := db.EnsureOpenAITunnelConfigForID(ctx, OpenAITunnelSecondaryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if primary.ProfileName != DefaultOpenAITunnelProfile || primary.APIKeyEnv != DefaultOpenAITunnelKeyEnv {
+		t.Fatalf("unexpected primary defaults: %+v", primary)
+	}
+	if secondary.ProfileName != SecondaryOpenAITunnelProfile || secondary.APIKeyEnv != SecondaryOpenAITunnelKeyEnv {
+		t.Fatalf("unexpected secondary defaults: %+v", secondary)
+	}
+	primary.TunnelID = "tunnel_primary012345"
+	primary.DesiredRunning = true
+	primary.UpdatedAt = time.Now().UTC().Round(0)
+	secondary.TunnelID = "tunnel_secondary012345"
+	secondary.DesiredRunning = true
+	secondary.UpdatedAt = primary.UpdatedAt
+	if err := db.UpsertOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID, primary); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertOpenAITunnelConfigForID(ctx, OpenAITunnelSecondaryID, secondary); err != nil {
+		t.Fatal(err)
+	}
+	gotPrimary, err := db.GetOpenAITunnelConfigForID(ctx, OpenAITunnelPrimaryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotSecondary, err := db.GetOpenAITunnelConfigForID(ctx, OpenAITunnelSecondaryID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPrimary.TunnelID != primary.TunnelID || gotSecondary.TunnelID != secondary.TunnelID || gotPrimary.ProfileName == gotSecondary.ProfileName || gotPrimary.APIKeyEnv == gotSecondary.APIKeyEnv {
+		t.Fatalf("primary/secondary configs collided: primary=%+v secondary=%+v", gotPrimary, gotSecondary)
+	}
+}
+
 func TestOpenAITunnelConfigRejectsUnsafeInputs(t *testing.T) {
 	base := DefaultOpenAITunnelConfig()
 	for name, mutate := range map[string]func(*OpenAITunnelConfig){
