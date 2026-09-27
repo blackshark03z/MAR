@@ -67,7 +67,8 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if subtle.ConstantTimeCompare([]byte(r.URL.Path), []byte(healthPath)) == 1 {
-			if r.Method != http.MethodGet {
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				w.Header().Set("Allow", "GET, HEAD")
 				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
@@ -76,6 +77,10 @@ func NewRemoteHTTPHandler(backend Backend, opts RemoteHTTPOptions) (http.Handler
 		}
 		if subtle.ConstantTimeCompare([]byte(r.URL.Path), []byte(expectedPath)) != 1 {
 			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if !remoteOriginAllowed(r.Header.Get("Origin"), allowedOrigins) {

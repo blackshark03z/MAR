@@ -54,6 +54,30 @@ func advanceControlTaskToAttempt(t *testing.T, svc *TaskService, taskID string) 
 	return attempt
 }
 
+func TestAttemptTerminalStatusIsOnlyUserFacingForActionableTerminalStates(t *testing.T) {
+	for _, state := range []domain.TaskState{
+		domain.TaskSubmitted,
+		domain.TaskRunning,
+		domain.TaskVerifying,
+		domain.TaskVerified,
+		domain.TaskComplete,
+	} {
+		if exposeAttemptTerminalStatus(state) {
+			t.Fatalf("internal attempt terminal status leaked for non-actionable task state %s", state)
+		}
+	}
+	for _, state := range []domain.TaskState{
+		domain.TaskBlocked,
+		domain.TaskFailed,
+		domain.TaskCancelled,
+		domain.TaskRetryWait,
+	} {
+		if !exposeAttemptTerminalStatus(state) {
+			t.Fatalf("actionable terminal status hidden for task state %s", state)
+		}
+	}
+}
+
 func TestSteerIsDurableIdempotentAndCannotRewriteGoalContract(t *testing.T) {
 	db, svc, task := newControlServiceHarness(t)
 	defer db.Close()

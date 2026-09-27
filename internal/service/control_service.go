@@ -71,7 +71,7 @@ func (s *TaskService) StatusSnapshot(ctx context.Context, taskID string) (TaskSt
 	}
 	if attempt, ok, err := s.store.CurrentAttemptByTask(ctx, taskID); err != nil {
 		return TaskStatusSnapshot{}, err
-	} else if ok && strings.TrimSpace(attempt.TerminalStatus) != "" {
+	} else if ok && exposeAttemptTerminalStatus(snapshot.Task.State) && strings.TrimSpace(attempt.TerminalStatus) != "" {
 		snapshot.Detail = attempt.TerminalStatus
 	}
 	switch snapshot.Task.State {
@@ -107,6 +107,15 @@ func (s *TaskService) StatusSnapshot(ctx context.Context, taskID string) (TaskSt
 		snapshot.NextAction = "No further action is required unless the Goal should be submitted again."
 	}
 	return snapshot, nil
+}
+
+func exposeAttemptTerminalStatus(state domain.TaskState) bool {
+	switch state {
+	case domain.TaskBlocked, domain.TaskFailed, domain.TaskCancelled, domain.TaskRetryWait:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *TaskService) Steer(ctx context.Context, taskID, idempotencyKey string, payload domain.SteerPayload) (domain.TaskControl, bool, error) {

@@ -119,6 +119,29 @@ func TestRemoteHTTPHealthRequiresSameCapabilityTokenAndDoesNotEnterMCP(t *testin
 	}
 }
 
+func TestRemoteHTTPHealthAndMCPHeadSupportLivenessProbes(t *testing.T) {
+	const token = "0123456789abcdef0123456789abcdef"
+	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{PathToken: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/health/" + token, "/mcp/" + token} {
+		req := httptest.NewRequest(http.MethodHead, path, nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("HEAD %q status=%d want=%d body=%s", path, rec.Code, http.StatusNoContent, rec.Body.String())
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/mcp/"+token, nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code >= 200 && rec.Code < 300 {
+		t.Fatalf("GET MCP request must preserve MCP method semantics instead of acting as a liveness probe: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestRemoteHTTPRejectsUnknownCapabilityPathBeforeMCP(t *testing.T) {
 	const token = "0123456789abcdef0123456789abcdef"
 	handler, err := NewRemoteHTTPHandler(&fakeBackend{}, RemoteHTTPOptions{PathToken: token})
