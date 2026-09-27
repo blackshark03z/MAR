@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -34,6 +36,60 @@ func connectorState(t *testing.T, state remoteBridgeState, id string) remoteConn
 	}
 	t.Fatalf("connector %s missing from %+v", id, state)
 	return remoteConnectorState{}
+}
+
+func TestRemoteBridgeChatGPTAdvertisesModernStatelessProtocol(t *testing.T) {
+	requireLoopbackTCP(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s, err := store.Open(t.TempDir() + `\\mar.db`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	manager := newRemoteBridgeManager(ctx, service.NewTaskService(s), t.TempDir())
+	manager.listenAddr = "127.0.0.1:0"
+	if err := manager.ConfigureProfiles(testRemoteProfiles(t)); err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	endpoint := manager.localEndpointFor(store.RemoteConnectorChatGPTWeb)
+
+	post := func(body, method string) (int, http.Header, string) {
+		req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Origin", "https://chatgpt.com")
+		req.Header.Set("MCP-Protocol-Version", "2026-07-28")
+		if method != "" {
+			req.Header.Set("Mcp-Method", method)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, resp.Header, string(data)
+	}
+
+	status, _, body := post(`{"jsonrpc":"2.0","id":"discover-modern","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"chatgpt-probe","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`, "server/discover")
+	if status != http.StatusOK || !strings.Contains(body, `"supportedVersions":["2026-07-28"`) {
+		t.Fatalf("ChatGPT fallback did not advertise modern MCP protocol: status=%d body=%s", status, body)
+	}
+	status, headers, body := post(`{"jsonrpc":"2.0","id":"tools-modern","method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"chatgpt-probe","version":"1"},"io.modelcontextprotocol/clientCapabilities":{}}}}`, "tools/list")
+	if status != http.StatusOK || !strings.Contains(body, `"tools"`) {
+		t.Fatalf("ChatGPT fallback rejected modern stateless tools/list: status=%d body=%s", status, body)
+	}
+	if strings.TrimSpace(headers.Get("Mcp-Session-Id")) != "" {
+		t.Fatalf("ChatGPT fallback tools/list unexpectedly created a stateful MCP session: %q", headers.Get("Mcp-Session-Id"))
+	}
 }
 
 func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
@@ -123,8 +179,8 @@ func TestRemoteBridgeExposesIndependentGPTAndClaudeLinks(t *testing.T) {
 		}
 	}
 	gpt = connectorState(t, manager.State(), store.RemoteConnectorChatGPTWeb)
-	if gpt.Status != "IDLE" || !gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil || !gpt.ActiveSessionsAvailable || gpt.ActiveSessions != 0 {
-		t.Fatalf("GPT fallback telemetry should show observed activity but no active session after explicit close: %+v", gpt)
+	if gpt.Status != "CONNECTED" || gpt.Initialized || !gpt.ToolsListed || gpt.Requests < 2 || gpt.LastSeenAt == nil || gpt.ActiveSessionsAvailable || gpt.ActiveSessions != 0 || !gpt.ClientAttached || !gpt.UsableFromClient || gpt.ConnectionStage != "USABLE" {
+		t.Fatalf("GPT stateless fallback telemetry did not reflect usable sessionless activity: %+v", gpt)
 	}
 
 	if err := manager.StopTemporary(); err != nil {

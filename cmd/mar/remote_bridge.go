@@ -160,6 +160,7 @@ func (m *remoteBridgeManager) ConfigureProfiles(profiles []store.RemoteConnector
 			PathToken: profile.PathToken, AllowedOriginHosts: allowed,
 			Observe:     func(event mcpedge.RemoteHTTPEvent) { m.observe(connectorID, event) },
 			ObserveTool: func(event mcpedge.ToolCallEvent) { m.observeTool(connectorID, event) },
+			Stateless:   connectorID == store.RemoteConnectorChatGPTWeb,
 		})
 		if err != nil {
 			return fmt.Errorf("build %s remote MCP handler: %w", connectorID, err)
@@ -298,11 +299,13 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 	now := time.Now().UTC()
 	pruneRemoteSessionTelemetry(telemetry, now)
 	sessionsAvailable := telemetry.sessionTrackingSeen && telemetry.sessionTrackingUnreliableUntil.IsZero()
+	statelessClientObserved := profile.ID == store.RemoteConnectorChatGPTWeb && telemetry.toolsListed
+	clientAttached := telemetry.initialized || statelessClientObserved
 	state := remoteConnectorState{
 		ID: profile.ID, PreferredMode: profile.PreferredMode, StableBaseURL: profile.StableBaseURL,
 		LocalTarget: m.localBaseURL, Initialized: telemetry.initialized, ToolsListed: telemetry.toolsListed,
 		Requests: telemetry.requests, LastError: telemetry.stableError, ActiveSessionsAvailable: sessionsAvailable,
-		ClientAttached: telemetry.initialized, ToolsDiscovered: telemetry.toolsListed,
+		ClientAttached: clientAttached, ToolsDiscovered: telemetry.toolsListed,
 		EndpointStable: profile.PreferredMode == store.RemoteConnectorModeStable, ConnectionStage: "ROUTE_UNAVAILABLE",
 	}
 	state.RecentOperations, state.DroppedOperations = telemetry.activity.Snapshot()
@@ -361,15 +364,15 @@ func (m *remoteBridgeManager) connectorStateLocked(profile store.RemoteConnector
 	}
 
 	state.ConnectionStage = "ROUTE_READY"
-	if telemetry.initialized {
+	if clientAttached {
 		state.ConnectionStage = "CLIENT_ATTACHED"
 	}
-	if telemetry.initialized && telemetry.toolsListed {
+	if clientAttached && telemetry.toolsListed {
 		state.ConnectionStage = "USABLE"
 		state.UsableFromClient = true
 	}
 
-	if telemetry.initialized {
+	if clientAttached {
 		if state.ActiveSessionsAvailable {
 			if state.ActiveSessions > 0 {
 				state.Status = "CONNECTED"
