@@ -153,7 +153,7 @@ func TestOpenAITunnelStartDoctorHealthReadinessStopAndCommandSafety(t *testing.T
 		t.Fatalf("health/readiness did not produce connected state: %+v", state)
 	}
 	joined := strings.Join(*calls, "\n")
-	for _, required := range []string{"init --force --sample sample_mcp_with_dcr", "--tunnel-id " + config.TunnelID, "--control-plane-api-key-ref env:" + config.APIKeyEnv, "--mcp-server-url http://127.0.0.1:", "doctor --profile mar-openai --explain", "run --profile mar-openai"} {
+	for _, required := range []string{"init --force --sample sample_mcp_with_dcr", "--tunnel-id " + config.TunnelID, "--control-plane-api-key-ref env:" + config.APIKeyEnv, "--mcp-server-url http://127.0.0.1:", "doctor --profile mar-openai --explain", "run --profile mar-openai --control-plane.api-key env:" + config.APIKeyEnv} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("missing tunnel-client command %q in %s", required, joined)
 		}

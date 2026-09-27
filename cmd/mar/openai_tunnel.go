@@ -323,7 +323,7 @@ func (m *openAITunnelManager) start() (openAITunnelState, error) {
 	if err := startCtx.Err(); err != nil {
 		return m.failStart(epoch, fmt.Errorf("tunnel start cancelled: %w", err))
 	}
-	process, err := m.startProcess(clientPath, []string{"run", "--profile", config.ProfileName}, m.observeProcessOutput)
+	process, err := m.startProcess(clientPath, []string{"run", "--profile", config.ProfileName, "--control-plane.api-key", "env:" + config.APIKeyEnv}, m.observeProcessOutput)
 	if err != nil {
 		return m.failStart(epoch, fmt.Errorf("start tunnel-client: %w", err))
 	}
