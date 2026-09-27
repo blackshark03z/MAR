@@ -540,6 +540,47 @@ func TestTunnelControlPlaneStallDetectionUsesUpstreamDeadline(t *testing.T) {
 	}
 }
 
+func TestOpenAITunnelDegradedControlPlaneBackoffIsTruthfulWithoutRecovery(t *testing.T) {
+	m, _, _ := testOpenAITunnelManager(t)
+	config := validOpenAITunnelConfig()
+	config.DesiredRunning = true
+	config.AdminBaseURL = "http://127.0.0.1:1"
+	t.Setenv(config.APIKeyEnv, "test-secret")
+	m.probe = func(context.Context, string, string) (bool, string) { return true, "" }
+	m.probeControlPlane = func(context.Context, string) *tunnelControlPlaneHealth {
+		return &tunnelControlPlaneHealth{
+			Component:  "control-plane",
+			Status:     "degraded",
+			State:      "backoff",
+			ReasonCode: "http_error",
+			Details: tunnelControlPlaneDetails{
+				ConsecutiveFailures: 3,
+				HTTPStatus:          401,
+				DeadlineSeconds:     35,
+			},
+		}
+	}
+	if err := m.Configure(config); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Start(); err != nil {
+		t.Fatal(err)
+	}
+	m.refreshHealth()
+	state := m.State()
+	if !state.Running || !state.Healthy || state.Ready || state.Connected || state.Status != "DEGRADED" {
+		t.Fatalf("degraded control-plane was misreported as connected: %+v", state)
+	}
+	if state.RecoveryInProgress || state.RecoveryAttempts != 0 {
+		t.Fatalf("valid upstream backoff must not trigger restart recovery: %+v", state)
+	}
+	for _, part := range []string{"control-plane degraded", "state=backoff", "reason=http_error", "http_status=401", "consecutive_failures=3"} {
+		if !strings.Contains(state.LastError, part) {
+			t.Fatalf("missing control-plane degradation detail %q in %q", part, state.LastError)
+		}
+	}
+}
+
 func TestTunnelClientControlPlaneProbeReadsV0015Health(t *testing.T) {
 	requireLoopbackTCP(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

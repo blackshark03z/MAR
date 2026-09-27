@@ -67,10 +67,11 @@ type openAITunnelState struct {
 }
 
 type tunnelControlPlaneHealth struct {
-	Component string                    `json:"component"`
-	Status    string                    `json:"status"`
-	State     string                    `json:"state"`
-	Details   tunnelControlPlaneDetails `json:"details"`
+	Component  string                    `json:"component"`
+	Status     string                    `json:"status"`
+	State      string                    `json:"state"`
+	ReasonCode string                    `json:"reason_code,omitempty"`
+	Details    tunnelControlPlaneDetails `json:"details"`
 }
 
 type tunnelControlPlaneDetails struct {
@@ -78,6 +79,7 @@ type tunnelControlPlaneDetails struct {
 	ConsecutiveFailures   uint64     `json:"consecutive_failures"`
 	CurrentPollAgeSeconds float64    `json:"current_poll_age_seconds"`
 	DeadlineSeconds       float64    `json:"deadline_seconds"`
+	HTTPStatus            int        `json:"http_status,omitempty"`
 }
 
 type tunnelClientProcess interface {
@@ -777,6 +779,7 @@ func (m *openAITunnelManager) refreshHealth() {
 	}
 
 	now := time.Now().UTC()
+	controlPlaneDegraded, controlPlaneDetail := tunnelControlPlaneDegraded(controlPlane)
 	stalled, stallDetail := tunnelControlPlaneStalled(controlPlane, now)
 
 	m.mu.Lock()
@@ -787,7 +790,7 @@ func (m *openAITunnelManager) refreshHealth() {
 	m.lastHealthAt = now
 	m.healthy = healthy
 	m.ready = ready
-	if ready && !stalled {
+	if ready && !stalled && !controlPlaneDegraded {
 		m.lastSuccessAt = now
 		if m.connectedSince.IsZero() {
 			m.connectedSince = now
@@ -800,9 +803,13 @@ func (m *openAITunnelManager) refreshHealth() {
 		m.ready = false
 		m.connectedSince = time.Time{}
 		m.lastError = stallDetail
+	} else if controlPlaneDegraded {
+		m.ready = false
+		m.connectedSince = time.Time{}
+		m.lastError = controlPlaneDetail
 	} else if !healthy || !ready {
 		m.lastError = joinTunnelProbeDetails(healthDetail, readyDetail)
-	} else if strings.Contains(m.lastError, "healthz") || strings.Contains(m.lastError, "readyz") || strings.Contains(m.lastError, "control-plane poll stalled") {
+	} else if strings.Contains(m.lastError, "healthz") || strings.Contains(m.lastError, "readyz") || strings.Contains(m.lastError, "control-plane poll stalled") || strings.Contains(m.lastError, "control-plane degraded") {
 		m.lastError = ""
 	}
 	m.mu.Unlock()
@@ -947,6 +954,28 @@ func (w *tunnelOutputWriter) emit(line string) {
 	if w.onLine != nil && line != "" {
 		w.onLine(line)
 	}
+}
+
+func tunnelControlPlaneDegraded(snapshot *tunnelControlPlaneHealth) (bool, string) {
+	if snapshot == nil || !strings.EqualFold(strings.TrimSpace(snapshot.Component), "control-plane") {
+		return false, ""
+	}
+	status := strings.ToLower(strings.TrimSpace(snapshot.Status))
+	if status == "" || status == "ok" {
+		return false, ""
+	}
+	state := strings.TrimSpace(snapshot.State)
+	detail := fmt.Sprintf("control-plane degraded: status=%s state=%s", snapshot.Status, state)
+	if reason := strings.TrimSpace(snapshot.ReasonCode); reason != "" {
+		detail += " reason=" + reason
+	}
+	if snapshot.Details.HTTPStatus != 0 {
+		detail += fmt.Sprintf(" http_status=%d", snapshot.Details.HTTPStatus)
+	}
+	if snapshot.Details.ConsecutiveFailures != 0 {
+		detail += fmt.Sprintf(" consecutive_failures=%d", snapshot.Details.ConsecutiveFailures)
+	}
+	return true, detail
 }
 
 func tunnelControlPlaneStalled(snapshot *tunnelControlPlaneHealth, now time.Time) (bool, string) {
