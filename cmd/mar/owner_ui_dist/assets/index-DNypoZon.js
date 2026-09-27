@@ -13034,6 +13034,11 @@ function systemHealth(runtime) {
 		tone: "warning",
 		detail: "Sandbox Windows chưa sẵn sàng."
 	};
+	if (String(runtime?.fast_path_execution?.state || "").toUpperCase() === "DEGRADED") return {
+		label: "Suy giảm",
+		tone: "warning",
+		detail: `Fast Path execution: ${runtime?.fast_path_execution?.last_error || runtime?.fast_path_execution?.detail || "process start failed"}`
+	};
 	const problems = primaryConnections(runtime).filter(actionableConnection);
 	if (problems.length) return {
 		label: "Suy giảm",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -201,5 +202,33 @@ func TestProjectActionWriteCreatesAndReplacesWithRevisionGuard(t *testing.T) {
 		ProjectID: projectID, Path: "../escape.txt", ExpectedSHA256: "ABSENT", Content: "bad\n",
 	}); err == nil {
 		t.Fatal("expected write traversal rejection")
+	}
+}
+
+func TestProjectActionDistinguishesExecutableLookupFromProcessStartFailure(t *testing.T) {
+	svc, root, projectID, _ := newProjectContextFixture(t, "fast-process-start", map[string]string{
+		"go.mod": "module example.com/fastprocessstart\n\ngo 1.27\n",
+	})
+	if err := svc.store.PutProjectPolicy(context.Background(), domain.ProjectPolicy{
+		ProjectID: projectID, LocalFileWrite: true, NetworkAllowed: true, UpdatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.RunProjectCommand(context.Background(), projectID, "mar-command-that-does-not-exist-9f6d0b", nil, ".", 30, 1024)
+	if err == nil || !strings.Contains(err.Error(), "resolve project command executable") {
+		t.Fatalf("missing executable should remain an invocation error, got %v", err)
+	}
+	if errors.Is(err, ErrProjectCommandStart) {
+		t.Fatalf("missing executable must not degrade the process-start health signal: %v", err)
+	}
+
+	notExecutable := filepath.Join(root, "not-an-executable.exe")
+	if err := os.WriteFile(notExecutable, []byte("not-a-valid-pe-image"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.RunProjectCommand(context.Background(), projectID, notExecutable, nil, ".", 30, 1024)
+	if !errors.Is(err, ErrProjectCommandStart) {
+		t.Fatalf("resolved path that cannot start must carry ErrProjectCommandStart, got %v", err)
 	}
 }

@@ -24,6 +24,11 @@ const (
 	maxFastOutputBytes        = 1 << 20
 )
 
+// ErrProjectCommandStart identifies a failure after an executable resolved but
+// before MAR could start the host process. Callers may use it to distinguish
+// execution-path availability from ordinary command input/policy failures.
+var ErrProjectCommandStart = errors.New("project command process start failed")
+
 type ProjectWriteRequest struct {
 	ProjectID      string
 	Path           string
@@ -423,6 +428,9 @@ func (s *TaskService) RunProjectCommand(ctx context.Context, projectID, executab
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, executable, args...)
+	if cmd.Err != nil {
+		return ProjectCommandResult{}, fmt.Errorf("resolve project command executable: %w", cmd.Err)
+	}
 	cmd.Dir = runDir
 	cmd.Env = os.Environ()
 	buf := &boundedActionOutput{max: maxOutputBytes}
@@ -436,7 +444,7 @@ func (s *TaskService) RunProjectCommand(ctx context.Context, projectID, executab
 		} else if ee, ok := runErr.(*exec.ExitError); ok {
 			exitCode = ee.ExitCode()
 		} else {
-			return ProjectCommandResult{}, fmt.Errorf("run project command: %w", runErr)
+			return ProjectCommandResult{}, fmt.Errorf("%w: %v", ErrProjectCommandStart, runErr)
 		}
 	}
 	rel, _ := filepath.Rel(project.Root, runDir)

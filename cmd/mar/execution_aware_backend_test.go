@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -36,6 +37,19 @@ func (b *executionAwareDeltaFixture) AutomaticCognitionDelta(_ context.Context, 
 
 type executionAwareNoDeltaFixture struct {
 	mcpedge.Backend
+}
+
+type executionAwareRunFixture struct {
+	mcpedge.Backend
+	err error
+}
+
+func (f *executionAwareRunFixture) RunProjectCommand(context.Context, string, string, []string, string, int, int) (service.ProjectCommandResult, error) {
+	return service.ProjectCommandResult{ExitCode: 0}, f.err
+}
+
+func (f *executionAwareRunFixture) RunProjectCommands(context.Context, string, []service.ProjectVerifyCommand) (service.ProjectCommandBatchResult, error) {
+	return service.ProjectCommandBatchResult{Passed: true}, f.err
 }
 
 func TestExecutionAwareBackendPreservesBrainTurnCognitionDelta(t *testing.T) {
@@ -88,5 +102,36 @@ func TestExecutionAwareBackendKeepsRespondWebTurnReadinessGate(t *testing.T) {
 	}}
 	if _, _, err := backend.RespondWebTurn(context.Background(), "task", "turn", model.Message{Role: model.RoleAssistant, Content: "resume"}, "stop"); !errors.Is(err, errExecutionRuntimeUnavailable) {
 		t.Fatalf("RespondWebTurn must remain fail-closed while execution is unavailable: %v", err)
+	}
+}
+
+func TestExecutionAwareBackendTracksFastPathProcessStartHealth(t *testing.T) {
+	health := newFastPathExecutionHealth()
+	fixture := &executionAwareRunFixture{err: fmt.Errorf("%w: access denied", service.ErrProjectCommandStart)}
+	backend := executionAwareBackend{Backend: fixture, fastPathHealth: health}
+
+	if _, err := backend.RunProjectCommand(context.Background(), "mar", "cmd.exe", []string{"/c", "echo", "x"}, ".", 5, 1024); err == nil || !strings.Contains(err.Error(), "FAST_PATH_EXECUTION_UNAVAILABLE") {
+		t.Fatalf("process-start failure was not classified for the remote caller: %v", err)
+	}
+	snapshot := health.snapshot()
+	if snapshot.State != fastPathExecutionDegraded || snapshot.LastFailureAt == nil || !strings.Contains(snapshot.LastError, "access denied") {
+		t.Fatalf("fast path health did not record degradation: %+v", snapshot)
+	}
+
+	fixture.err = errors.New("project local_file_write policy is disabled")
+	if _, err := backend.RunProjectCommand(context.Background(), "mar", "cmd.exe", nil, ".", 5, 1024); err == nil {
+		t.Fatal("expected policy error")
+	}
+	if health.snapshot().State != fastPathExecutionDegraded {
+		t.Fatalf("ordinary policy error must not rewrite execution health: %+v", health.snapshot())
+	}
+
+	fixture.err = nil
+	if _, err := backend.RunProjectCommands(context.Background(), "mar", []service.ProjectVerifyCommand{{Executable: "cmd.exe"}}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot = health.snapshot()
+	if snapshot.State != fastPathExecutionHealthy || snapshot.LastSuccessAt == nil || snapshot.LastError != "" {
+		t.Fatalf("successful process execution did not recover health: %+v", snapshot)
 	}
 }

@@ -74,6 +74,7 @@ type ownerUIBackend struct {
 	projectPicker         func(context.Context) (string, error)
 	executionProbe        func(context.Context) error
 	executionPID          int
+	fastPathExecution     *fastPathExecutionHealth
 	runtimeIdentity       runtimeIdentity
 }
 
@@ -341,28 +342,29 @@ func runOwnerUI(ctx context.Context, opts ownerUIOptions) error {
 		executionPID = cmd.Process.Pid
 	}
 	backend := &ownerUIBackend{
-		db:              db,
-		svc:             service.NewTaskService(db),
-		session:         session,
-		brainMode:       strings.ToLower(strings.TrimSpace(opts.BrainMode)),
-		providerBaseURL: strings.TrimSpace(opts.ProviderBaseURL),
-		apiKeyEnv:       strings.TrimSpace(opts.APIKeyEnv),
-		model:           strings.TrimSpace(opts.Model),
-		reasoning:       strings.TrimSpace(opts.Reasoning),
-		executable:      executable,
-		dbPath:          opts.DBPath,
-		dataRoot:        opts.DataRoot,
-		goPath:          opts.GoPath,
-		maxWorkers:      opts.MaxWorkers,
-		startedAt:       time.Now(),
-		sessionToken:    newOwnerUIID("session"),
-		sandboxPrepare:  runElevatedSandboxPrepare,
-		sandboxCheck:    checkSandboxHostReadiness,
-		executionPID:    executionPID,
-		runtimeIdentity: identity,
+		db:                db,
+		svc:               service.NewTaskService(db),
+		session:           session,
+		brainMode:         strings.ToLower(strings.TrimSpace(opts.BrainMode)),
+		providerBaseURL:   strings.TrimSpace(opts.ProviderBaseURL),
+		apiKeyEnv:         strings.TrimSpace(opts.APIKeyEnv),
+		model:             strings.TrimSpace(opts.Model),
+		reasoning:         strings.TrimSpace(opts.Reasoning),
+		executable:        executable,
+		dbPath:            opts.DBPath,
+		dataRoot:          opts.DataRoot,
+		goPath:            opts.GoPath,
+		maxWorkers:        opts.MaxWorkers,
+		startedAt:         time.Now(),
+		sessionToken:      newOwnerUIID("session"),
+		sandboxPrepare:    runElevatedSandboxPrepare,
+		sandboxCheck:      checkSandboxHostReadiness,
+		executionPID:      executionPID,
+		fastPathExecution: newFastPathExecutionHealth(),
+		runtimeIdentity:   identity,
 	}
 	backend.executionProbe = func(context.Context) error { return processIsRunning(cmd.Process) }
-	executionBackend := executionAwareBackend{Backend: backend.svc, readiness: backend.executionRuntimeReadiness}
+	executionBackend := executionAwareBackend{Backend: backend.svc, readiness: backend.executionRuntimeReadiness, fastPathHealth: backend.fastPathExecution}
 	backend.bridge = newRemoteBridgeManager(ctx, executionBackend, opts.DataRoot)
 	profiles, err := ensureRemoteConnectorProfiles(ctx, db)
 	if err != nil {
@@ -1228,6 +1230,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	tunnel := b.currentOpenAITunnelState()
 	secondaryTunnel := b.currentSecondaryOpenAITunnelState()
 	executionReady, executionDetail := b.executionRuntimeReadiness(r.Context())
+	fastPathExecution := b.fastPathExecution.snapshot()
 	sandboxReady, sandboxDetail := b.sandboxReadiness(r.Context())
 	nextAction := "Provider brain is configured for autonomous task cognition from this UI."
 	if b.brainMode == "web" {
@@ -1317,6 +1320,14 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	attention := buildOwnerSystemAttention(executionReady, executionDetail, sandboxReady, sandboxDetail, connections)
+	if fastPathExecution.State == fastPathExecutionDegraded {
+		attention = append(attention, ownerAttentionItem{
+			ID: "fast-path-execution", Severity: "high", Title: "Fast Path execution đang suy giảm",
+			Detail:     fastPathExecution.LastError,
+			NextAction: "Thử lại một action/run tối thiểu. Nếu process vẫn không khởi động được, restart MAR runtime rồi kiểm tra lại.",
+			View:       "diagnostics",
+		})
+	}
 	if !b.runtimeIdentity.TrustedForRelease {
 		attention = append(attention, ownerAttentionItem{ID: "release-identity", Severity: "medium", Title: "Runtime chưa được xác thực theo release manifest", Detail: strings.Join(b.runtimeIdentity.Reasons, "; "), NextAction: "Dùng binary + release manifest cùng nguồn trước khi coi runtime là release-trusted.", View: "diagnostics"})
 	}
@@ -1329,7 +1340,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 	}
 	workerCapacityAvailable := executionReady && sandboxReady
 	runtimeHealth := "HEALTHY"
-	if !workerCapacityAvailable || !b.runtimeIdentity.TrustedForRelease {
+	if !workerCapacityAvailable || !b.runtimeIdentity.TrustedForRelease || fastPathExecution.State == fastPathExecutionDegraded {
 		runtimeHealth = "DEGRADED"
 	}
 	uptimeSeconds := int64(0)
@@ -1348,6 +1359,7 @@ func (b *ownerUIBackend) serveRuntime(w http.ResponseWriter, r *http.Request) {
 		"execution_runtime_ready":       executionReady,
 		"execution_runtime_detail":      executionDetail,
 		"execution_runtime_pid":         b.executionPID,
+		"fast_path_execution":           fastPathExecution,
 		"worker_capacity_available":     workerCapacityAvailable,
 		"model":                         b.model,
 		"reasoning":                     b.reasoning,

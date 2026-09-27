@@ -137,6 +137,7 @@ function liveAggregate(tasks: any[]) {
 function systemHealth(runtime: any) {
   if (!runtime) return { label: 'Đang kết nối', tone: 'neutral', detail: 'Đang đọc runtime MAR.' }
   if (!runtime.sandbox_host_ready) return { label: 'Cần xử lý', tone: 'warning', detail: 'Sandbox Windows chưa sẵn sàng.' }
+  if (String(runtime?.fast_path_execution?.state || '').toUpperCase() === 'DEGRADED') return { label: 'Suy giảm', tone: 'warning', detail: `Fast Path execution: ${runtime?.fast_path_execution?.last_error || runtime?.fast_path_execution?.detail || 'process start failed'}` }
   const conns = primaryConnections(runtime)
   const problems = conns.filter(actionableConnection)
   if (problems.length) return { label: 'Suy giảm', tone: 'warning', detail: problems.map((c: any) => `${connectionProvider(c)}: ${c.status}`).join(' · ') }

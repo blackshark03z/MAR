@@ -269,6 +269,60 @@ func TestOwnerUIRuntimeSeparatesExecutionReadinessFromSurfaceReachability(t *tes
 	}
 }
 
+func TestOwnerUIRuntimeExposesFastPathExecutionDegradation(t *testing.T) {
+	health := newFastPathExecutionHealth()
+	health.recordFailure(errors.New("project command process start failed: access denied"))
+	backend := &ownerUIBackend{
+		brainMode:         "web",
+		model:             "gpt-5.6-sol",
+		reasoning:         "high",
+		executable:        "mar.exe",
+		dataRoot:          t.TempDir(),
+		executionPID:      4242,
+		fastPathExecution: health,
+		executionProbe: func(context.Context) error {
+			return nil
+		},
+		sandboxCheck: func(context.Context, string, string) (bool, string) {
+			return true, "prepared"
+		},
+		runtimeIdentity: runtimeIdentity{Status: "ALIGNED", TrustedForRelease: true},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/runtime", nil)
+	req.Host = "127.0.0.1:8787"
+	rec := httptest.NewRecorder()
+	backend.routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	fastPath, ok := payload["fast_path_execution"].(map[string]any)
+	if !ok || fastPath["state"] != fastPathExecutionDegraded || !strings.Contains(fmt.Sprint(fastPath["last_error"]), "access denied") {
+		t.Fatalf("missing fast path degradation payload: %#v", payload["fast_path_execution"])
+	}
+	if payload["runtime_health"] != "DEGRADED" {
+		t.Fatalf("runtime health did not reflect fast path degradation: %#v", payload)
+	}
+	attention, ok := payload["attention"].([]any)
+	if !ok {
+		t.Fatalf("missing attention payload: %#v", payload["attention"])
+	}
+	found := false
+	for _, raw := range attention {
+		item, _ := raw.(map[string]any)
+		if item["id"] == "fast-path-execution" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("fast path attention missing: %#v", attention)
+	}
+}
+
 func TestExecutionAwareBackendRejectsMutationAdmissionWhenExecutionUnavailable(t *testing.T) {
 	backend := executionAwareBackend{readiness: func(context.Context) (bool, string) {
 		return false, "mcp-stdio child exited"
