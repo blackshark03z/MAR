@@ -287,14 +287,25 @@ func callProject(ctx context.Context, backend Backend, args projectArgs) (map[st
 			return nil, err
 		}
 		return map[string]any{"projects": items}, nil
-	case "context_batch", "context_status":
+	case "context_status":
+		projectID := strings.TrimSpace(args.ProjectID)
+		items, err := backend.ProjectContext(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		status, err := backend.ProjectGitStatus(ctx, projectID)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"projects": items, "git_status": status}, nil
+	case "context_batch":
 		projectID := strings.TrimSpace(args.ProjectID)
 		result, err := backend.BuildProjectContextBatch(ctx, projectID, args.Query, args.MaxResults, args.MaxEntries, args.MaxBytes)
 		if err != nil {
 			return nil, err
 		}
 		response := map[string]any{"context_batch": result}
-		if operation == "context_status" || args.IncludeGitStatus {
+		if args.IncludeGitStatus {
 			status, err := backend.ProjectGitStatus(ctx, projectID)
 			if err != nil {
 				return nil, err

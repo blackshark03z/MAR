@@ -794,7 +794,7 @@ func TestCallProjectContextBatch(t *testing.T) {
 		t.Fatalf("context_batch did not include git status: %#v", withStatus["git_status"])
 	}
 	legacySchemaSafe, err := callProject(context.Background(), &fakeBackend{}, projectArgs{
-		Operation: "context_status", ProjectID: "mar", Query: "Project Brain",
+		Operation: "context_status", ProjectID: "mar",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -803,7 +803,11 @@ func TestCallProjectContextBatch(t *testing.T) {
 	if !ok || aliasStatus.ProjectID != "mar" || aliasStatus.Branch != "master" {
 		t.Fatalf("context_status did not include git status: %#v", legacySchemaSafe["git_status"])
 	}
-	if _, ok := legacySchemaSafe["context_batch"].(service.ProjectContextBatchResult); !ok {
-		t.Fatalf("context_status did not include context batch: %#v", legacySchemaSafe["context_batch"])
+	projects, ok := legacySchemaSafe["projects"].([]service.ProjectContextItem)
+	if !ok || len(projects) != 1 || projects[0].ProjectID != "mar" {
+		t.Fatalf("context_status did not include project context: %#v", legacySchemaSafe["projects"])
+	}
+	if _, ok := legacySchemaSafe["context_batch"]; ok {
+		t.Fatalf("context_status unexpectedly routed through context_batch: %#v", legacySchemaSafe)
 	}
 }
