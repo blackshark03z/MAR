@@ -63,6 +63,9 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 	if err := pruneHistoricalDataRootScratch(root, &result); err != nil {
 		return Result{}, err
 	}
+	if err := pruneLegacyRuntimeExecutables(root, &result); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }
 
@@ -233,6 +236,58 @@ func pruneHistoricalRuntimeScratch(root string, result *Result) error {
 	}
 	sort.Strings(result.RemovedHistoricalScratch)
 	return nil
+}
+
+func pruneLegacyRuntimeExecutables(root string, result *Result) error {
+	runtimeRoot := filepath.Join(root, "runtime")
+	ok, err := realOptionalDir(runtimeRoot)
+	if err != nil || !ok {
+		return err
+	}
+	keep := map[string]bool{
+		"mar-v1-stable.exe": true,
+		"tunnel-client.exe": true,
+		"cloudflared.exe":   true,
+	}
+	entries, err := os.ReadDir(runtimeRoot)
+	if err != nil {
+		return fmt.Errorf("read runtime root for legacy executables: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		if keep[lower] || !legacyRuntimeExecutableName(lower) {
+			continue
+		}
+		path := filepath.Join(runtimeRoot, name)
+		if !isDirectChild(runtimeRoot, path) {
+			continue
+		}
+		if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("runtime", name)), result); err != nil {
+			return err
+		}
+	}
+	sort.Strings(result.RemovedHistoricalScratch)
+	return nil
+}
+
+func legacyRuntimeExecutableName(lower string) bool {
+	if lower == "mar.exe" || lower == "owner_web_client.exe" {
+		return true
+	}
+	if strings.HasPrefix(lower, "mar-") && (strings.HasSuffix(lower, ".exe") || strings.HasSuffix(lower, ".exe~")) {
+		return true
+	}
+	if strings.HasPrefix(lower, "mcp_") && strings.HasSuffix(lower, ".exe") {
+		return true
+	}
+	if strings.HasPrefix(lower, "selfhost_") && strings.HasSuffix(lower, ".exe") {
+		return true
+	}
+	return strings.HasPrefix(lower, "tunnel-client-v") && strings.HasSuffix(lower, ".exe")
 }
 
 func pruneHistoricalDataRootScratch(root string, result *Result) error {

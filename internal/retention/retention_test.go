@@ -388,6 +388,50 @@ func TestPruneHistoricalDataRootsKeepsMetadataShells(t *testing.T) {
 	}
 }
 
+func TestPruneLegacyRuntimeExecutablesKeepsLiveBinariesAndUnknownExecutables(t *testing.T) {
+	root := t.TempDir()
+	runtimeRoot := filepath.Join(root, "runtime")
+	files := map[string]string{
+		"mar-v1-stable.exe":              "live",
+		"tunnel-client.exe":               "live",
+		"cloudflared.exe":                 "live",
+		"unknown-tool.exe":                "keep-unknown",
+		"mar-head-deadbeef.exe":           "remove",
+		"mar-v1-stable.prev.exe":          "remove",
+		"mar-v4-candidate.exe~":           "remove",
+		"mar.exe":                         "remove",
+		"mcp_call.exe":                    "remove",
+		"owner_web_client.exe":            "remove",
+		"selfhost_v4.exe":                 "remove",
+		"tunnel-client-v0.0.14-backup.exe": "remove",
+	}
+	for name, body := range files {
+		if err := os.MkdirAll(runtimeRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(runtimeRoot, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := Prune(root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"mar-v1-stable.exe", "tunnel-client.exe", "cloudflared.exe", "unknown-tool.exe"} {
+		if _, err := os.Stat(filepath.Join(runtimeRoot, name)); err != nil {
+			t.Fatalf("live or unknown executable removed %s: %v", name, err)
+		}
+	}
+	for _, name := range []string{"mar-head-deadbeef.exe", "mar-v1-stable.prev.exe", "mar-v4-candidate.exe~", "mar.exe", "mcp_call.exe", "owner_web_client.exe", "selfhost_v4.exe", "tunnel-client-v0.0.14-backup.exe"} {
+		if _, err := os.Stat(filepath.Join(runtimeRoot, name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy executable still exists %s: %v", name, err)
+		}
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive freed-byte evidence")
+	}
+}
+
 func TestPrunePressureCachesClearsOnlyPositiveAllowlistAndPreservesRoots(t *testing.T) {
 	root := t.TempDir()
 	buildCache := filepath.Join(root, "runtime", "go-build-cache")
