@@ -269,6 +269,57 @@ func TestPruneRejectsSymlinkDataRootWhenSupported(t *testing.T) {
 	}
 }
 
+func TestPruneHistoricalRuntimeScratchKeepsAuditEvidenceAndUnknownRuntimeState(t *testing.T) {
+	root := t.TempDir()
+	ownerScratch := filepath.Join(root, "runtime", "owner_realuse_demo", "w", "workspace")
+	audit := filepath.Join(root, "runtime", "audit-20260915")
+	paths := map[string]string{
+		filepath.Join(ownerScratch, "cache.bin"):                         "owner scratch",
+		filepath.Join(audit, "candidate", "build.bin"):                  "candidate scratch",
+		filepath.Join(audit, "temp-recovery-qualify", "state.bin"):     "recovery scratch",
+		filepath.Join(audit, "orchestrator.test.exe"):                   "test binary",
+		filepath.Join(audit, "test-summary.json"):                       "authoritative evidence",
+		filepath.Join(audit, "consolidated-host-tests.jsonl"):           "authoritative evidence",
+		filepath.Join(audit, "unknown-state", "keep.bin"):              "unknown keep",
+		filepath.Join(root, "runtime", "unrelated-runtime", "keep.bin"): "unrelated keep",
+	}
+	for path, body := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Prune(root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantRemoved := []string{
+		"runtime/audit-20260915/candidate",
+		"runtime/audit-20260915/orchestrator.test.exe",
+		"runtime/audit-20260915/temp-recovery-qualify",
+		"runtime/owner_realuse_demo",
+	}
+	if !slices.Equal(result.RemovedHistoricalScratch, wantRemoved) {
+		t.Fatalf("removed historical scratch = %v, want %v", result.RemovedHistoricalScratch, wantRemoved)
+	}
+	for _, path := range []string{
+		filepath.Join(audit, "test-summary.json"),
+		filepath.Join(audit, "consolidated-host-tests.jsonl"),
+		filepath.Join(audit, "unknown-state", "keep.bin"),
+		filepath.Join(root, "runtime", "unrelated-runtime", "keep.bin"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("retention removed evidence or unknown runtime state %s: %v", path, err)
+		}
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive freed-byte evidence")
+	}
+}
+
 func TestPrunePressureCachesClearsOnlyPositiveAllowlistAndPreservesRoots(t *testing.T) {
 	root := t.TempDir()
 	buildCache := filepath.Join(root, "runtime", "go-build-cache")

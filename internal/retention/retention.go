@@ -18,6 +18,7 @@ const activationMetadataFile = "activation.json"
 type Result struct {
 	RemovedActivationBackups []string `json:"removed_activation_backups"`
 	RemovedStagingFiles      []string `json:"removed_staging_files"`
+	RemovedHistoricalScratch []string `json:"removed_historical_scratch"`
 	ClearedRebuildableCaches []string `json:"cleared_rebuildable_caches"`
 	FreedBytes               int64    `json:"freed_bytes"`
 }
@@ -54,6 +55,9 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 		return Result{}, err
 	}
 	if err := pruneStaging(root, &result); err != nil {
+		return Result{}, err
+	}
+	if err := pruneHistoricalRuntimeScratch(root, &result); err != nil {
 		return Result{}, err
 	}
 	return result, nil
@@ -191,6 +195,116 @@ func readActivationMetadata(path string) (time.Time, bool, error) {
 		return time.Time{}, false, nil
 	}
 	return created.UTC(), true, nil
+}
+
+func pruneHistoricalRuntimeScratch(root string, result *Result) error {
+	runtimeRoot := filepath.Join(root, "runtime")
+	ok, err := realOptionalDir(runtimeRoot)
+	if err != nil || !ok {
+		return err
+	}
+	entries, err := os.ReadDir(runtimeRoot)
+	if err != nil {
+		return fmt.Errorf("read runtime root: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		path := filepath.Join(runtimeRoot, name)
+		if !isDirectChild(runtimeRoot, path) {
+			continue
+		}
+		if strings.HasPrefix(name, "owner_realuse_") {
+			if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("runtime", name)), result); err != nil {
+				return err
+			}
+			continue
+		}
+		if name == "audit-20260915" {
+			if err := pruneHistoricalAudit20260915(root, path, result); err != nil {
+				return err
+			}
+		}
+	}
+	sort.Strings(result.RemovedHistoricalScratch)
+	return nil
+}
+
+func pruneHistoricalAudit20260915(root, auditRoot string, result *Result) error {
+	ok, err := realOptionalDir(auditRoot)
+	if err != nil || !ok {
+		return err
+	}
+	entries, err := os.ReadDir(auditRoot)
+	if err != nil {
+		return fmt.Errorf("read historical audit root: %w", err)
+	}
+	allowedDirs := map[string]bool{
+		"candidate":              true,
+		"temp-recovery-qualify":  true,
+		"temp-retention":         true,
+		"temp-retention-q1":      true,
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		path := filepath.Join(auditRoot, entry.Name())
+		if !isDirectChild(auditRoot, path) {
+			continue
+		}
+		if entry.IsDir() && allowedDirs[entry.Name()] {
+			if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("runtime", "audit-20260915", entry.Name())), result); err != nil {
+				return err
+			}
+			continue
+		}
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".test.exe") {
+			if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("runtime", "audit-20260915", entry.Name())), result); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func removeHistoricalScratchPath(root, path, label string, result *Result) error {
+	if !isWithinRoot(root, path) {
+		return errors.New("historical scratch path escaped MAR data root")
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+	var size int64
+	if info.IsDir() {
+		var safe bool
+		size, safe, err = safeTreeSize(path)
+		if err != nil {
+			return err
+		}
+		if !safe {
+			return nil
+		}
+	} else if info.Mode().IsRegular() {
+		size = info.Size()
+	} else {
+		return nil
+	}
+	if err := os.RemoveAll(path); err != nil {
+		return fmt.Errorf("remove historical scratch %s: %w", label, err)
+	}
+	result.RemovedHistoricalScratch = append(result.RemovedHistoricalScratch, label)
+	result.FreedBytes += size
+	return nil
 }
 
 func pruneStaging(root string, result *Result) error {
