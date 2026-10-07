@@ -99,6 +99,69 @@ type convergenceAttempt struct {
 	terminated *time.Time
 }
 
+func (s *SQLite) webWaitDurationForAttempt(ctx context.Context, taskID, attemptID string, epoch int64, attemptStart, attemptEnd time.Time) (time.Duration, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT created_at, responded_at
+FROM web_turns
+WHERE task_id=? AND attempt_id=? AND run_epoch=?
+ORDER BY created_at`, taskID, attemptID, epoch)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	var total time.Duration
+	var mergedStart, mergedEnd time.Time
+	haveMerged := false
+	for rows.Next() {
+		var createdRaw string
+		var respondedRaw sql.NullString
+		if err := rows.Scan(&createdRaw, &respondedRaw); err != nil {
+			return 0, err
+		}
+		start, err := time.Parse(time.RFC3339Nano, createdRaw)
+		if err != nil {
+			return 0, fmt.Errorf("parse web wait start: %w", err)
+		}
+		end := attemptEnd.UTC()
+		if respondedRaw.Valid {
+			end, err = time.Parse(time.RFC3339Nano, respondedRaw.String)
+			if err != nil {
+				return 0, fmt.Errorf("parse web wait response: %w", err)
+			}
+		}
+		start = start.UTC()
+		if start.Before(attemptStart.UTC()) {
+			start = attemptStart.UTC()
+		}
+		if end.After(attemptEnd.UTC()) {
+			end = attemptEnd.UTC()
+		}
+		if !end.After(start) {
+			continue
+		}
+		if !haveMerged {
+			mergedStart, mergedEnd, haveMerged = start, end, true
+			continue
+		}
+		if !start.After(mergedEnd) {
+			if end.After(mergedEnd) {
+				mergedEnd = end
+			}
+			continue
+		}
+		total += mergedEnd.Sub(mergedStart)
+		mergedStart, mergedEnd = start, end
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if haveMerged {
+		total += mergedEnd.Sub(mergedStart)
+	}
+	return total, nil
+}
+
 func (s *SQLite) TaskConvergenceUsage(ctx context.Context, taskID string, now time.Time) (TaskConvergenceUsage, error) {
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
@@ -154,7 +217,16 @@ FROM execution_attempts WHERE task_id=? ORDER BY run_epoch`, taskID)
 			end = a.terminated.UTC()
 		}
 		if end.After(a.started) {
-			out.ActiveExecution += end.Sub(a.started)
+			envelope := end.Sub(a.started)
+			waited, err := s.webWaitDurationForAttempt(ctx, taskID, a.id, a.epoch, a.started, end)
+			if err != nil {
+				return TaskConvergenceUsage{}, err
+			}
+			active := envelope - waited
+			if active < 0 {
+				active = 0
+			}
+			out.ActiveExecution += active
 		}
 		episode, err := s.WebEpisodeUsage(ctx, taskID, a.id, a.epoch, false)
 		if err != nil {

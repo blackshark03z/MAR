@@ -94,6 +94,7 @@ type StartRequest struct {
 	Provider              ProviderConfig          `json:"provider"`
 	AgentProfile          agent.Profile           `json:"agent_profile"`
 	AgentConfig           agent.Config            `json:"agent_config"`
+	WebWaitTimeout        time.Duration           `json:"web_wait_timeout,omitempty"`
 	HarnessExecutable     string                  `json:"harness_executable,omitempty"`
 	HarnessArguments      []string                `json:"harness_arguments,omitempty"`
 	SandboxReadPaths      []string                `json:"sandbox_read_paths,omitempty"`
@@ -180,6 +181,9 @@ func (r StartRequest) Validate() error {
 		if readPath == "" || !filepath.IsAbs(readPath) {
 			return errors.New("worker sandbox read paths must be explicit absolute paths")
 		}
+	}
+	if r.WebWaitTimeout < 0 {
+		return errors.New("worker web wait timeout cannot be negative")
 	}
 	if r.MemoryPressurePercent < 0 || r.MemoryPressurePercent > 100 {
 		return errors.New("worker memory pressure percent must be in [0,100]")

@@ -253,6 +253,48 @@ func TestWebTurnCapacityReacquireKeepsAttemptLeaseAlive(t *testing.T) {
 	}
 }
 
+func TestWorkerAgentLoopConfigUsesDedicatedWebWaitTimeout(t *testing.T) {
+	start := workerProcessTestStart()
+	start.AgentConfig.MaxDuration = 30 * time.Minute
+	start.WebWaitTimeout = 2 * time.Hour
+
+	start.Provider.BrainMode = BrainWeb
+	if got := workerAgentLoopConfig(start); got.MaxDuration != 30*time.Minute || !got.ExcludeModelWaitFromDuration || got.ModelWaitTimeout != 2*time.Hour {
+		t.Fatalf("web agent loop budget/wait split is wrong: %+v", got)
+	}
+
+	start.Provider.BrainMode = BrainProvider
+	if got := workerAgentLoopConfig(start); got.MaxDuration != 30*time.Minute || got.ExcludeModelWaitFromDuration || got.ModelWaitTimeout != 0 {
+		t.Fatalf("provider agent loop config changed: %+v", got)
+	}
+}
+
+func TestWebTurnWaitUsesDedicatedTimeoutInsteadOfActiveExecutionDuration(t *testing.T) {
+	start := workerProcessTestStart()
+	start.AgentConfig.MaxDuration = 20 * time.Millisecond
+	start.WebWaitTimeout = 120 * time.Millisecond
+	backend := &webWaitBackend{
+		fakeControlBackend: &fakeControlBackend{authoritative: true},
+		turn: domain.WebTurn{
+			ID: "turn-dedicated-timeout", TaskID: start.Task.ID, AttemptID: start.Attempt.ID,
+			RunEpoch: start.Attempt.RunEpoch, RequestID: "request-dedicated-timeout", CreatedAt: time.Now().UTC(),
+		},
+	}
+	runner := &ProcessRunner{kernel: backend, harness: backend, cfg: ProcessConfig{LeaseDuration: time.Minute}}
+
+	started := time.Now()
+	_, err := runner.waitForWebTurn(context.Background(), start, webTurnRequest{
+		TaskID: start.Task.ID, AttemptID: start.Attempt.ID, RunEpoch: start.Attempt.RunEpoch,
+	})
+	elapsed := time.Since(started)
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for ChatGPT response") {
+		t.Fatalf("expected dedicated Web wait timeout, got err=%v", err)
+	}
+	if elapsed < 90*time.Millisecond {
+		t.Fatalf("Web wait reused active-execution duration: elapsed=%s active=%s web_wait=%s", elapsed, start.AgentConfig.MaxDuration, start.WebWaitTimeout)
+	}
+}
+
 func TestWorkerStartFrameOwnsPayloadAcrossRepeatedOuterEncoding(t *testing.T) {
 	start := workerProcessTestStart()
 	start.Task.Contract.Goal = strings.Repeat("large-goal-", 2048)

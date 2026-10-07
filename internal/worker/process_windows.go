@@ -330,6 +330,15 @@ func (r *ProcessRunner) handleRequest(ctx context.Context, start StartRequest, r
 	}
 }
 
+const defaultWebBrainWaitTimeout = 24 * time.Hour
+
+func webBrainWaitTimeout(start StartRequest) time.Duration {
+	if start.WebWaitTimeout > 0 {
+		return start.WebWaitTimeout
+	}
+	return defaultWebBrainWaitTimeout
+}
+
 func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, request webTurnRequest) (model.TurnResponse, error) {
 	turn, _, err := r.harness.RequestWebTurnForAttempt(ctx, request.TaskID, request.AttemptID, request.RunEpoch, request.Request)
 	if err != nil {
@@ -346,10 +355,7 @@ func (r *ProcessRunner) waitForWebTurn(ctx context.Context, start StartRequest, 
 		}
 		capacityReleased = released
 	}
-	waitLimit := start.AgentConfig.MaxDuration
-	if waitLimit <= 0 {
-		waitLimit = 30 * time.Minute
-	}
+	waitLimit := webBrainWaitTimeout(start)
 	timer := time.NewTimer(waitLimit)
 	defer timer.Stop()
 	poll := time.NewTicker(200 * time.Millisecond)

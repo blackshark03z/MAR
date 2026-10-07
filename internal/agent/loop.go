@@ -76,18 +76,20 @@ type Profile struct {
 }
 
 type Config struct {
-	MaxTurns               int
-	MaxToolCalls           int
-	MaxToolCallsPerTurn    int
-	MaxTotalTokens         int64
-	MaxOutputTokensPerTurn int64
-	MaxContextBytes        int
-	MaxResumeBytes         int
-	MaxRequestBytes        int
-	MaxAssistantBytes      int
-	MaxObservationBytes    int
-	MaxEpisodePayloadBytes int
-	MaxDuration            time.Duration
+	MaxTurns                     int
+	MaxToolCalls                 int
+	MaxToolCallsPerTurn          int
+	MaxTotalTokens               int64
+	MaxOutputTokensPerTurn       int64
+	MaxContextBytes              int
+	MaxResumeBytes               int
+	MaxRequestBytes              int
+	MaxAssistantBytes            int
+	MaxObservationBytes          int
+	MaxEpisodePayloadBytes       int
+	MaxDuration                  time.Duration
+	ExcludeModelWaitFromDuration bool
+	ModelWaitTimeout             time.Duration
 }
 
 type RunRequest struct {
@@ -216,7 +218,61 @@ func withDefaults(cfg Config) Config {
 	if cfg.MaxDuration <= 0 {
 		cfg.MaxDuration = 30 * time.Minute
 	}
+	if cfg.ExcludeModelWaitFromDuration && cfg.ModelWaitTimeout <= 0 {
+		cfg.ModelWaitTimeout = 24 * time.Hour
+	}
 	return cfg
+}
+
+type activeExecutionClock struct {
+	parent    context.Context
+	remaining time.Duration
+	started   time.Time
+	ctx       context.Context
+	cancel    context.CancelFunc
+}
+
+func newActiveExecutionClock(parent context.Context, budget time.Duration) *activeExecutionClock {
+	c := &activeExecutionClock{parent: parent, remaining: budget}
+	c.resume()
+	return c
+}
+
+func (c *activeExecutionClock) context() context.Context {
+	return c.ctx
+}
+
+func (c *activeExecutionClock) pause() bool {
+	if c == nil || c.cancel == nil {
+		return false
+	}
+	elapsed := time.Since(c.started)
+	if elapsed >= c.remaining {
+		c.remaining = 0
+		c.cancel()
+		c.cancel = nil
+		return false
+	}
+	c.remaining -= elapsed
+	c.cancel()
+	c.cancel = nil
+	return true
+}
+
+func (c *activeExecutionClock) resume() context.Context {
+	if c.cancel != nil {
+		c.cancel()
+	}
+	c.ctx, c.cancel = context.WithTimeout(c.parent, c.remaining)
+	c.started = time.Now()
+	return c.ctx
+}
+
+func (c *activeExecutionClock) close() {
+	if c != nil && c.cancel != nil {
+		c.cancel()
+		c.cancel = nil
+	}
 }
 
 func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
@@ -242,8 +298,9 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		return Result{Status: terminal, Blocker: blocker}, nil
 	}
 
-	loopCtx, cancel := context.WithTimeout(ctx, l.cfg.MaxDuration)
-	defer cancel()
+	activeClock := newActiveExecutionClock(ctx, l.cfg.MaxDuration)
+	loopCtx := activeClock.context()
+	defer activeClock.close()
 	projectionMode := l.decisionProjection != nil
 	expectedGoalHash, err := req.Contract.Hash()
 	if err != nil {
@@ -433,7 +490,22 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		}
 		episodePayloadBytes += len(wire)
 
-		resp, turnErr := l.gateway.Turn(loopCtx, turnReq)
+		var resp model.TurnResponse
+		var turnErr error
+		if l.cfg.ExcludeModelWaitFromDuration {
+			if !activeClock.pause() {
+				result.Status = StatusBudgetExhausted
+				result.Turns = turn - 1
+				result.Blocker = "agent active execution wall-clock budget exhausted"
+				return result, nil
+			}
+			waitCtx, cancelWait := context.WithTimeout(ctx, l.cfg.ModelWaitTimeout)
+			resp, turnErr = l.gateway.Turn(waitCtx, turnReq)
+			cancelWait()
+			loopCtx = activeClock.resume()
+		} else {
+			resp, turnErr = l.gateway.Turn(loopCtx, turnReq)
+		}
 		if turnErr != nil {
 			if terminal := contextTerminal(ctx, loopCtx); terminal != "" {
 				result.Status = terminal

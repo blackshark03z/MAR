@@ -153,6 +153,15 @@ func (p *webBrainProvider) Turn(ctx context.Context, req model.TurnRequest) (mod
 	return p.rpc.WebTurn(ctx, p.taskID, p.attemptID, p.runEpoch, req)
 }
 
+func workerAgentLoopConfig(start StartRequest) agent.Config {
+	cfg := start.AgentConfig
+	if start.Provider.Mode() == BrainWeb {
+		cfg.ExcludeModelWaitFromDuration = true
+		cfg.ModelWaitTimeout = webBrainWaitTimeout(start)
+	}
+	return cfg
+}
+
 func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 	if input == nil || output == nil {
 		return errors.New("worker child requires protocol input/output")
@@ -183,6 +192,7 @@ func RunChild(ctx context.Context, input io.Reader, output io.Writer) error {
 		return runExternalHarnessChild(ctx, start, encoder)
 	}
 	harness := start.HarnessConfig()
+	harness.AgentConfig = workerAgentLoopConfig(start)
 
 	rpc := &rpcClient{decoder: decoder, encoder: encoder}
 	repository, err := contextengine.NewGitRepository(8 << 20)

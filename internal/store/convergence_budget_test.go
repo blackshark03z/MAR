@@ -123,6 +123,81 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	}
 }
 
+func TestTaskConvergenceUsageExcludesDurableWebWaitFromActiveExecution(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	started := time.Date(2026, 10, 7, 8, 0, 0, 0, time.UTC)
+	project := domain.Project{ID: "web-wait-project", Root: t.TempDir(), CreatedAt: started}
+	if _, _, err := s.RegisterProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "exclude external cognition wait from active execution",
+		Acceptance:          []string{"web wait does not burn active budget"},
+		ProjectID:           project.ID,
+		BaseRevision:        "base-web-wait",
+		VerificationProfile: "test",
+		Priority:            "P1",
+	}
+	hash, err := contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := domain.Task{ID: "web-wait-task", IdempotencyKey: "web-wait-key", Contract: contract, ContractHash: hash, State: domain.TaskSubmitted, CreatedAt: started, UpdatedAt: started}
+	if _, _, err := s.SubmitTask(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO execution_attempts(attempt_id, task_id, run_epoch, worker_id, supervisor_id, authority_state, started_at, heartbeat_at, lease_deadline)
+VALUES ('web-wait-attempt', ?, 1, 'worker', 'supervisor', ?, ?, ?, ?)`,
+		task.ID, string(domain.AttemptActive), started.Format(time.RFC3339Nano), started.Format(time.RFC3339Nano), started.Add(time.Hour).Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatal(err)
+	}
+	request := json.RawMessage(`{"messages":[]}`)
+	requestHash, err := domain.HashWebTurnJSON(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := domain.WebTurn{
+		ID:          "web-wait-turn",
+		TaskID:      task.ID,
+		AttemptID:   "web-wait-attempt",
+		RunEpoch:    1,
+		RequestID:   "web-wait-request",
+		Request:     request,
+		RequestHash: requestHash,
+		CreatedAt:   started.Add(5 * time.Minute),
+	}
+	turn.IntegrityHash, err = turn.IntegrityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, `
+INSERT INTO web_turns(turn_id, task_id, attempt_id, run_epoch, request_id, request_json, request_hash, response_hash, integrity_hash, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)`,
+		turn.ID, turn.TaskID, turn.AttemptID, turn.RunEpoch, turn.RequestID, []byte(turn.Request), turn.RequestHash, turn.IntegrityHash, turn.CreatedAt.Format(time.RFC3339Nano),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	usage, err := s.TaskConvergenceUsage(ctx, task.ID, started.Add(35*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.ActiveExecution != 5*time.Minute {
+		t.Fatalf("active execution included parked Web wait: got=%s want=5m", usage.ActiveExecution)
+	}
+	if usage.Attempts != 1 {
+		t.Fatalf("attempt count=%d want=1", usage.Attempts)
+	}
+}
+
 func TestSemanticProgressSignatureRejectsCorruptCheckpointAndNormalizesOrder(t *testing.T) {
 	payloadA := domain.SemanticCheckpointPayload{CompletedWork: []string{"b", "a"}, CurrentHypothesis: "ignored", ChangedAreas: []string{"z", "x"}, VerificationStatus: " pass ", NextAction: "ignored", CriticalEvidenceRefs: []string{"two", "one"}}
 	payloadB := domain.SemanticCheckpointPayload{CompletedWork: []string{"a", "b"}, CurrentHypothesis: "different", ChangedAreas: []string{"x", "z"}, VerificationStatus: "pass", NextAction: "different", CriticalEvidenceRefs: []string{"one", "two"}}

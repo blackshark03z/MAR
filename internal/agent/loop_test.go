@@ -45,6 +45,22 @@ func (blockingGateway) Turn(ctx context.Context, _ model.TurnRequest) (model.Tur
 	return model.TurnResponse{}, ctx.Err()
 }
 
+type delayedGateway struct {
+	delay    time.Duration
+	response model.TurnResponse
+}
+
+func (g delayedGateway) Turn(ctx context.Context, _ model.TurnRequest) (model.TurnResponse, error) {
+	timer := time.NewTimer(g.delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return model.TurnResponse{}, ctx.Err()
+	case <-timer.C:
+		return g.response, nil
+	}
+}
+
 type fakeTools struct {
 	safe    bool
 	defs    []model.ToolDefinition
@@ -680,6 +696,30 @@ func TestLoopInternalDeadlineIsBudgetExhausted(t *testing.T) {
 	}
 	if result.Status != StatusBudgetExhausted || !strings.Contains(result.Blocker, "wall-clock") {
 		t.Fatalf("internal deadline terminal mismatch: %+v", result)
+	}
+}
+
+func TestLoopModelWaitDoesNotConsumeActiveExecutionBudgetWhenExcluded(t *testing.T) {
+	cfg := testConfig()
+	cfg.MaxDuration = 150 * time.Millisecond
+	cfg.ExcludeModelWaitFromDuration = true
+	cfg.ModelWaitTimeout = 750 * time.Millisecond
+	gateway := delayedGateway{
+		delay:    300 * time.Millisecond,
+		response: assistantResponse(20, model.Message{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "finish-delayed", Name: finishToolName, Arguments: `{"status":"completed_candidate","summary":"wait excluded"}`}}}),
+	}
+	loop := newTestLoop(t, gateway, newFakeTools(true, "read_file"), cfg)
+	started := time.Now()
+	result, err := loop.Run(context.Background(), testRunRequest(false))
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != StatusCompletedCandidate {
+		t.Fatalf("model wait consumed active execution budget: elapsed=%s result=%+v", elapsed, result)
+	}
+	if elapsed < 250*time.Millisecond {
+		t.Fatalf("test did not actually wait beyond active budget: elapsed=%s", elapsed)
 	}
 }
 
