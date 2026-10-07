@@ -28,7 +28,7 @@ func (s *TaskService) RequestWebTurnForAttempt(ctx context.Context, taskID, atte
 	}
 	requestHash, err := domain.HashWebTurnJSON(raw)
 	if err != nil {
-		return domain.WebTurn{}, false, err
+		return domain.WebTurn{}, false, fmt.Errorf("hash web turn request request_id=%s bytes=%d: %w", req.RequestID, len(raw), err)
 	}
 	now := s.now().UTC()
 	turn := domain.WebTurn{
@@ -43,7 +43,7 @@ func (s *TaskService) RequestWebTurnForAttempt(ctx context.Context, taskID, atte
 	}
 	turn.IntegrityHash, err = turn.IntegrityDigest()
 	if err != nil {
-		return domain.WebTurn{}, false, err
+		return domain.WebTurn{}, false, fmt.Errorf("build pending web turn integrity turn_id=%s request_id=%s request_bytes=%d: %w", turn.ID, turn.RequestID, len(turn.Request), err)
 	}
 	return s.store.PublishWebTurn(ctx, turn)
 }
@@ -92,7 +92,7 @@ func (s *TaskService) RespondWebTurn(ctx context.Context, taskID, turnID string,
 	}
 	responseHash, err := domain.HashWebTurnJSON(raw)
 	if err != nil {
-		return domain.WebTurn{}, false, err
+		return domain.WebTurn{}, false, fmt.Errorf("hash web turn response turn_id=%s request_id=%s bytes=%d: %w", turn.ID, turn.RequestID, len(raw), err)
 	}
 	respondedAt := s.now().UTC()
 	turn.Response = append(json.RawMessage(nil), raw...)
@@ -100,7 +100,7 @@ func (s *TaskService) RespondWebTurn(ctx context.Context, taskID, turnID string,
 	turn.RespondedAt = &respondedAt
 	turn.IntegrityHash, err = turn.IntegrityDigest()
 	if err != nil {
-		return domain.WebTurn{}, false, err
+		return domain.WebTurn{}, false, fmt.Errorf("build completed web turn integrity turn_id=%s request_id=%s request_bytes=%d response_bytes=%d: %w", turn.ID, turn.RequestID, len(turn.Request), len(turn.Response), err)
 	}
 	return s.store.RespondWebTurn(ctx, turn)
 }

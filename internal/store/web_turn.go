@@ -152,7 +152,7 @@ LIMIT 1`, taskID, string(domain.TaskInputRequired), string(domain.AttemptActive)
 		return domain.WebTurn{}, false, err
 	}
 	if !turn.IntegrityValid() {
-		return domain.WebTurn{}, false, errors.New("pending web turn integrity is invalid")
+		return domain.WebTurn{}, false, fmt.Errorf("pending web turn integrity is invalid turn_id=%s request_id=%s request_bytes=%d response_bytes=%d responded=%t", turn.ID, turn.RequestID, len(turn.Request), len(turn.Response), turn.RespondedAt != nil)
 	}
 	return turn, true, nil
 }
@@ -163,7 +163,7 @@ func (s *SQLite) GetWebTurn(ctx context.Context, turnID string) (domain.WebTurn,
 		return domain.WebTurn{}, err
 	}
 	if !turn.IntegrityValid() {
-		return domain.WebTurn{}, errors.New("web turn integrity is invalid")
+		return domain.WebTurn{}, fmt.Errorf("web turn integrity is invalid turn_id=%s request_id=%s request_bytes=%d response_bytes=%d responded=%t", turn.ID, turn.RequestID, len(turn.Request), len(turn.Response), turn.RespondedAt != nil)
 	}
 	return turn, nil
 }
@@ -263,7 +263,7 @@ func (s *SQLite) ListWebTurnsByTaskEpoch(ctx context.Context, taskID string, epo
 			return nil, err
 		}
 		if !turn.IntegrityValid() {
-			return nil, errors.New("web turn integrity is invalid")
+			return nil, fmt.Errorf("web turn integrity is invalid turn_id=%s request_id=%s request_bytes=%d response_bytes=%d responded=%t", turn.ID, turn.RequestID, len(turn.Request), len(turn.Response), turn.RespondedAt != nil)
 		}
 		turns = append(turns, turn)
 	}

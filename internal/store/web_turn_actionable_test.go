@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,6 +83,70 @@ func TestPendingWebTurnRequiresCurrentEpochActiveAttemptAndInputState(t *testing
 	}
 	if got, ok, err := s.PendingWebTurn(ctx, task.ID); err != nil || !ok || got.ID != turn4.ID || got.RunEpoch != 4 {
 		t.Fatalf("current epoch-4 turn should be actionable: got=%+v ok=%v err=%v", got, ok, err)
+	}
+}
+
+func TestGetWebTurnInvalidIntegrityIncludesBoundedDiagnostics(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "mar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	now := time.Now().UTC()
+	project := domain.Project{ID: "diag-project", Root: t.TempDir(), CreatedAt: now}
+	if _, _, err := s.RegisterProject(ctx, project); err != nil {
+		t.Fatal(err)
+	}
+	contract := domain.GoalContract{
+		Goal:                "diagnose web turn integrity",
+		Acceptance:          []string{"diagnostics are bounded"},
+		ProjectID:           project.ID,
+		BaseRevision:        "base-diag",
+		VerificationProfile: "test",
+		Priority:            "P2",
+	}
+	hash, err := contract.Hash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := domain.Task{ID: "diag-task", IdempotencyKey: "diag-key", Contract: contract, ContractHash: hash, State: domain.TaskSubmitted, CreatedAt: now, UpdatedAt: now}
+	if _, _, err := s.SubmitTask(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	for _, tr := range []struct{ from, to domain.TaskState }{
+		{domain.TaskSubmitted, domain.TaskPreflight},
+		{domain.TaskPreflight, domain.TaskWaitingResource},
+		{domain.TaskWaitingResource, domain.TaskWorkspaceReady},
+	} {
+		if err := s.OrchestratorTransition(ctx, task.ID, tr.from, tr.to, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	attempt, err := s.BeginAttempt(ctx, task.ID, "diag-attempt", "worker", "supervisor", now, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := makeStoreWebTurn(t, task.ID, attempt.ID, attempt.RunEpoch, "diag-turn", "diag-request", now.Add(time.Second))
+	if _, created, err := s.PublishWebTurn(ctx, turn); err != nil || !created {
+		t.Fatalf("publish diagnostic turn: created=%v err=%v", created, err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE web_turns SET request_json = ? WHERE turn_id = ?`, []byte("{broken"), turn.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.GetWebTurn(ctx, turn.ID)
+	if err == nil {
+		t.Fatal("expected invalid integrity error")
+	}
+	msg := err.Error()
+	for _, want := range []string{"turn_id=diag-turn", "request_id=diag-request", "request_bytes=7", "response_bytes=0", "responded=false"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("diagnostic error missing %q: %s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "{broken") {
+		t.Fatalf("diagnostic error leaked payload: %s", msg)
 	}
 }
 
