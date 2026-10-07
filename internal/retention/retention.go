@@ -364,6 +364,14 @@ func pruneHistoricalDataRootScratch(root string, result *Result) error {
 		"final-uat-f01731e-v2": {
 			"w",
 		},
+		"owner-uat-final": {
+			filepath.Join("data", "runtime"),
+			filepath.Join("runtime", "mar-owner-uat.exe"),
+		},
+		"remote-full-goal-7c847ee": {
+			filepath.Join("data", "runtime"),
+			"mar.exe",
+		},
 	}
 	for rootName, relatives := range allow {
 		historicalRoot := filepath.Join(root, rootName)
@@ -378,6 +386,42 @@ func pruneHistoricalDataRootScratch(root string, result *Result) error {
 			path := filepath.Join(historicalRoot, relative)
 			label := filepath.ToSlash(filepath.Join(rootName, relative))
 			if err := removeHistoricalScratchPath(root, path, label, result); err != nil {
+				return err
+			}
+		}
+	}
+	for _, rootName := range []string{
+		"candidate-v1.2-final",
+		"candidate-v1.2-webwait",
+		"candidate-v1.2-metrics",
+		"verify",
+		"fastpath-git-convenience",
+		"fastpath-apply-verify",
+		"research-worktrees",
+	} {
+		path := filepath.Join(root, rootName)
+		if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(rootName), result); err != nil {
+			return err
+		}
+	}
+	stagingRoot := filepath.Join(root, "staging")
+	if ok, err := realOptionalDir(stagingRoot); err != nil {
+		return err
+	} else if ok {
+		entries, err := os.ReadDir(stagingRoot)
+		if err != nil {
+			return fmt.Errorf("read historical staging root: %w", err)
+		}
+		for _, entry := range entries {
+			if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !strings.HasPrefix(name, "requalification") && !strings.HasPrefix(name, "slice-") {
+				continue
+			}
+			path := filepath.Join(stagingRoot, name)
+			if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("staging", name)), result); err != nil {
 				return err
 			}
 		}

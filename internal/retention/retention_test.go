@@ -388,6 +388,71 @@ func TestPruneHistoricalDataRootsKeepsMetadataShells(t *testing.T) {
 	}
 }
 
+func TestPruneHistoricalQualificationRootsAndStagingUseExactAllowlist(t *testing.T) {
+	root := t.TempDir()
+	paths := map[string]string{
+		filepath.Join(root, "owner-uat-final", "data", "runtime", "cloudflared.exe"): "remove",
+		filepath.Join(root, "owner-uat-final", "runtime", "mar-owner-uat.exe"):       "remove",
+		filepath.Join(root, "owner-uat-final", "runtime", "START_MAR_OWNER_UAT.cmd"): "keep",
+		filepath.Join(root, "owner-uat-final", "data", "mar.db"):                    "keep",
+		filepath.Join(root, "remote-full-goal-7c847ee", "data", "runtime", "cloudflared.exe"): "remove",
+		filepath.Join(root, "remote-full-goal-7c847ee", "mar.exe"):                   "remove",
+		filepath.Join(root, "remote-full-goal-7c847ee", "data", "mar.db"):           "keep",
+		filepath.Join(root, "candidate-v1.2-final", "binary.exe"):                    "remove",
+		filepath.Join(root, "candidate-v1.2-webwait", "binary.exe"):                  "remove",
+		filepath.Join(root, "candidate-v1.2-metrics", "binary.exe"):                  "remove",
+		filepath.Join(root, "verify", "binary.exe"):                                  "remove",
+		filepath.Join(root, "fastpath-git-convenience", "README.md"):                 "remove",
+		filepath.Join(root, "fastpath-apply-verify", "README.md"):                    "remove",
+		filepath.Join(root, "research-worktrees", "observability", "README.md"):     "remove",
+		filepath.Join(root, "staging", "requalification6", "candidate.exe"):         "remove",
+		filepath.Join(root, "staging", "slice-a-r5", "candidate.exe"):               "remove",
+		filepath.Join(root, "staging", "manual-keep", "note.txt"):                   "keep",
+		filepath.Join(root, "unknown-history", "keep.bin"):                           "keep",
+	}
+	for path, body := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Prune(root, 1); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "owner-uat-final", "data", "runtime"),
+		filepath.Join(root, "owner-uat-final", "runtime", "mar-owner-uat.exe"),
+		filepath.Join(root, "remote-full-goal-7c847ee", "data", "runtime"),
+		filepath.Join(root, "remote-full-goal-7c847ee", "mar.exe"),
+		filepath.Join(root, "candidate-v1.2-final"),
+		filepath.Join(root, "candidate-v1.2-webwait"),
+		filepath.Join(root, "candidate-v1.2-metrics"),
+		filepath.Join(root, "verify"),
+		filepath.Join(root, "fastpath-git-convenience"),
+		filepath.Join(root, "fastpath-apply-verify"),
+		filepath.Join(root, "research-worktrees"),
+		filepath.Join(root, "staging", "requalification6"),
+		filepath.Join(root, "staging", "slice-a-r5"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("historical qualification scratch still exists %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(root, "owner-uat-final", "runtime", "START_MAR_OWNER_UAT.cmd"),
+		filepath.Join(root, "owner-uat-final", "data", "mar.db"),
+		filepath.Join(root, "remote-full-goal-7c847ee", "data", "mar.db"),
+		filepath.Join(root, "staging", "manual-keep", "note.txt"),
+		filepath.Join(root, "unknown-history", "keep.bin"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("allowlist cleanup removed protected path %s: %v", path, err)
+		}
+	}
+}
+
 func TestPruneLegacyRuntimeExecutablesKeepsLiveBinariesAndUnknownExecutables(t *testing.T) {
 	root := t.TempDir()
 	runtimeRoot := filepath.Join(root, "runtime")
