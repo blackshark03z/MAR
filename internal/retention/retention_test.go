@@ -432,6 +432,57 @@ func TestPruneLegacyRuntimeExecutablesKeepsLiveBinariesAndUnknownExecutables(t *
 	}
 }
 
+func TestPruneLegacyRecoveryScratchKeepsMarkedRollbackAndUnknownRecovery(t *testing.T) {
+	root := t.TempDir()
+	base := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
+	markedName := "activation-20260918-marked-keep"
+	marked := writeActivation(t, root, markedName, base, true)
+	legacy := []string{
+		"cads-purge-old",
+		"cads-bench-purge-old",
+		"activate-requalification-old",
+		"python-support-old",
+		"activation-20260918-old-unmarked",
+		"activate-retention-old",
+		"owner-reconcile-old",
+		"index-refresh-old",
+	}
+	for _, name := range legacy {
+		path := filepath.Join(root, "recovery", name, "payload.bin")
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("legacy"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unknown := filepath.Join(root, "recovery", "manual-keep", "payload.bin")
+	if err := os.MkdirAll(filepath.Dir(unknown), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unknown, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Prune(root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range legacy {
+		if _, err := os.Stat(filepath.Join(root, "recovery", name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy recovery still exists %s: %v", name, err)
+		}
+	}
+	for _, path := range []string{marked, filepath.Dir(unknown)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("protected recovery path was removed %s: %v", path, err)
+		}
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive freed-byte evidence")
+	}
+}
+
 func TestPrunePressureCachesClearsOnlyPositiveAllowlistAndPreservesRoots(t *testing.T) {
 	root := t.TempDir()
 	buildCache := filepath.Join(root, "runtime", "go-build-cache")

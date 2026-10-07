@@ -66,6 +66,9 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 	if err := pruneLegacyRuntimeExecutables(root, &result); err != nil {
 		return Result{}, err
 	}
+	if err := pruneLegacyRecoveryScratch(root, &result); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }
 
@@ -232,6 +235,58 @@ func pruneHistoricalRuntimeScratch(root string, result *Result) error {
 			if err := pruneHistoricalAudit20260915(root, path, result); err != nil {
 				return err
 			}
+		}
+	}
+	sort.Strings(result.RemovedHistoricalScratch)
+	return nil
+}
+
+func pruneLegacyRecoveryScratch(root string, result *Result) error {
+	recoveryRoot := filepath.Join(root, "recovery")
+	ok, err := realOptionalDir(recoveryRoot)
+	if err != nil || !ok {
+		return err
+	}
+	prefixes := []string{
+		"cads-bench-purge-",
+		"cads-purge-",
+		"activate-requalification",
+		"python-support-",
+		"activation-20260918-",
+		"activate-retention",
+		"owner-reconcile-",
+		"index-refresh-",
+	}
+	entries, err := os.ReadDir(recoveryRoot)
+	if err != nil {
+		return fmt.Errorf("read recovery root for historical scratch: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		matched := false
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(name, prefix) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		path := filepath.Join(recoveryRoot, name)
+		if !isDirectChild(recoveryRoot, path) {
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(path, activationMetadataFile)); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("recovery", name)), result); err != nil {
+			return err
 		}
 	}
 	sort.Strings(result.RemovedHistoricalScratch)
