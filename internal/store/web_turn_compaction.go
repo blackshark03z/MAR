@@ -84,5 +84,8 @@ func (s *SQLite) Vacuum(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, "VACUUM"); err != nil {
 		return fmt.Errorf("vacuum sqlite: %w", err)
 	}
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return fmt.Errorf("truncate sqlite WAL after vacuum: %w", err)
+	}
 	return nil
 }
