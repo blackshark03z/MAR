@@ -36,7 +36,7 @@ func TestActivateCurrentHeadScriptPreservesPromotionRollbackAndRetentionContract
 		"Get-MARStableProcesses -StableExe $StableExe",
 		"Restore-BackupFile",
 		"retention-prune",
-		"-keep-activation 5",
+		"-keep-activation 2",
 		"UTF8Encoding($false)",
 		"WriteAllText",
 		`Write-Warning "MAR retention cleanup failed`,

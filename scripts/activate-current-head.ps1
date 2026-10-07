@@ -243,7 +243,7 @@ try {
     $identity = Wait-MARRuntime -ExpectedRevision $head -RequireTrusted $true
 
     try {
-        $retentionOutput = & $stableExe retention-prune -data-root $dataRoot -keep-activation 5
+        $retentionOutput = & $stableExe retention-prune -data-root $dataRoot -keep-activation 2
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "MAR retention cleanup failed with exit code $LASTEXITCODE."
         }
