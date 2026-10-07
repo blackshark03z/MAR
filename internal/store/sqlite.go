@@ -24,7 +24,7 @@ var (
 	ErrPhysicalFenceRequired = errors.New("previous mutation-capable attempt is not confirmed physically terminated")
 )
 
-const latestSchemaVersion = 18
+const latestSchemaVersion = 19
 
 func SupportedSchemaVersion() int { return latestSchemaVersion }
 
@@ -469,6 +469,10 @@ INSERT INTO openai_tunnel_configs(connector_id,tunnel_id,profile_name,api_key_en
 SELECT 'openai-tunnel',tunnel_id,profile_name,api_key_env,client_path,admin_base_url,desired_running,updated_at FROM openai_tunnel_config WHERE singleton_id=1;
 INSERT OR IGNORE INTO openai_tunnel_configs(connector_id,tunnel_id,profile_name,api_key_env,client_path,admin_base_url,desired_running,updated_at)
 VALUES ('openai-tunnel-secondary','','mar-openai-secondary','CONTROL_PLANE_API_KEY_2','','',0,strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+`
+	case 19:
+		script = `
+ALTER TABLE web_turns ADD COLUMN request_compacted INTEGER NOT NULL DEFAULT 0;
 `
 	default:
 		return fmt.Errorf("unknown migration version %d", version)

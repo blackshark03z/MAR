@@ -6,6 +6,28 @@ import (
 	"time"
 )
 
+func TestCompactedWebTurnRetainsHashBasedIntegrity(t *testing.T) {
+	request := json.RawMessage(`{"request_id":"r-compact","messages":[{"role":"user","content":"large prompt"}]}`)
+	requestHash, err := HashWebTurnJSON(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn := WebTurn{ID: "turn-compact", TaskID: "task-compact", AttemptID: "attempt-compact", RunEpoch: 1, RequestID: "r-compact", Request: request, RequestHash: requestHash, CreatedAt: time.Unix(2, 0).UTC()}
+	turn.IntegrityHash, err = turn.IntegrityDigest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	turn.Request = nil
+	turn.RequestCompacted = true
+	if !turn.IntegrityValid() {
+		t.Fatal("compacted web turn lost hash-based integrity")
+	}
+	turn.RequestHash = ""
+	if turn.IntegrityValid() {
+		t.Fatal("compacted web turn accepted missing original request hash")
+	}
+}
+
 func TestWebTurnIntegritySurvivesEquivalentJSONReserialization(t *testing.T) {
 	requestA := json.RawMessage(`{"request_id":"r1","model":"gpt-5.6-sol","messages":[{"role":"user","content":"fix it"}]}`)
 	requestB := json.RawMessage(`{ "messages" : [ { "content":"fix it", "role":"user" } ], "model":"gpt-5.6-sol", "request_id":"r1" }`)

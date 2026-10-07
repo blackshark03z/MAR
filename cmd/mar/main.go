@@ -47,6 +47,9 @@ func run(ctx context.Context, args []string) error {
 	case "maintenance-report":
 		return runMaintenanceReport(ctx, args[1:])
 
+	case "maintenance-compact":
+		return runMaintenanceCompact(ctx, args[1:])
+
 	case "init":
 		fs := flag.NewFlagSet("init", flag.ContinueOnError)
 		dbPath := fs.String("db", defaultDB, "SQLite database path")
@@ -612,5 +615,5 @@ func printJSON(v any) error {
 }
 
 func usage() error {
-	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|runtime-identity|release-manifest|retention-prune|maintenance-report|sandbox-host-check|sandbox-host-prepare> [options]")
+	return errors.New("usage: mar <init|project-add|submit|status|mcp-stdio|ui|runtime-identity|release-manifest|retention-prune|maintenance-report|maintenance-compact|sandbox-host-check|sandbox-host-prepare> [options]")
 }

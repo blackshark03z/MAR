@@ -55,7 +55,7 @@ WHERE t.id=?`, attemptID, epoch, taskID).Scan(&currentEpoch, &authority)
 		}
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json,
+SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, request_compacted, response_json,
        request_hash, response_hash, integrity_hash, created_at, responded_at
 FROM web_turns WHERE task_id=? AND attempt_id=? AND run_epoch=? ORDER BY created_at`, taskID, attemptID, epoch)
 	if err != nil {

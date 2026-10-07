@@ -10,18 +10,19 @@ import (
 )
 
 type WebTurn struct {
-	ID            string          `json:"turn_id"`
-	TaskID        string          `json:"task_id"`
-	AttemptID     string          `json:"attempt_id"`
-	RunEpoch      int64           `json:"run_epoch"`
-	RequestID     string          `json:"request_id"`
-	Request       json.RawMessage `json:"request"`
-	Response      json.RawMessage `json:"response,omitempty"`
-	RequestHash   string          `json:"request_hash"`
-	ResponseHash  string          `json:"response_hash,omitempty"`
-	IntegrityHash string          `json:"integrity_hash"`
-	CreatedAt     time.Time       `json:"created_at"`
-	RespondedAt   *time.Time      `json:"responded_at,omitempty"`
+	ID               string          `json:"turn_id"`
+	TaskID           string          `json:"task_id"`
+	AttemptID        string          `json:"attempt_id"`
+	RunEpoch         int64           `json:"run_epoch"`
+	RequestID        string          `json:"request_id"`
+	Request          json.RawMessage `json:"request,omitempty"`
+	RequestCompacted bool            `json:"request_compacted,omitempty"`
+	Response         json.RawMessage `json:"response,omitempty"`
+	RequestHash      string          `json:"request_hash"`
+	ResponseHash     string          `json:"response_hash,omitempty"`
+	IntegrityHash    string          `json:"integrity_hash"`
+	CreatedAt        time.Time       `json:"created_at"`
+	RespondedAt      *time.Time      `json:"responded_at,omitempty"`
 }
 
 func HashWebTurnJSON(raw json.RawMessage) (string, error) {
@@ -54,9 +55,15 @@ func (t WebTurn) ValidateIdentity() error {
 	if t.RunEpoch <= 0 || t.CreatedAt.IsZero() {
 		return errors.New("web turn run_epoch and created_at are required")
 	}
-	requestHash, err := HashWebTurnJSON(t.Request)
-	if err != nil || !strings.EqualFold(requestHash, strings.TrimSpace(t.RequestHash)) {
-		return errors.New("web turn request hash is invalid")
+	if t.RequestCompacted {
+		if len(t.Request) != 0 || strings.TrimSpace(t.RequestHash) == "" {
+			return errors.New("compacted web turn request metadata is invalid")
+		}
+	} else {
+		requestHash, err := HashWebTurnJSON(t.Request)
+		if err != nil || !strings.EqualFold(requestHash, strings.TrimSpace(t.RequestHash)) {
+			return errors.New("web turn request hash is invalid")
+		}
 	}
 	if len(t.Response) == 0 {
 		if t.ResponseHash != "" || t.RespondedAt != nil {

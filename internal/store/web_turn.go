@@ -133,7 +133,7 @@ func (s *SQLite) PendingWebTurn(ctx context.Context, taskID string) (domain.WebT
 	// cognition. Historical unanswered rows remain durable evidence but must
 	// never be rediscovered merely because they are the newest unanswered row.
 	row := s.db.QueryRowContext(ctx, `
-SELECT w.turn_id, w.task_id, w.attempt_id, w.run_epoch, w.request_id, w.request_json, w.response_json, w.request_hash, w.response_hash, w.integrity_hash, w.created_at, w.responded_at
+SELECT w.turn_id, w.task_id, w.attempt_id, w.run_epoch, w.request_id, w.request_json, w.request_compacted, w.response_json, w.request_hash, w.response_hash, w.integrity_hash, w.created_at, w.responded_at
 FROM web_turns w
 JOIN tasks t ON t.id = w.task_id
 JOIN execution_attempts a ON a.attempt_id = w.attempt_id AND a.task_id = w.task_id AND a.run_epoch = w.run_epoch
@@ -251,7 +251,7 @@ func (s *SQLite) ListWebTurnsByTaskEpoch(ctx context.Context, taskID string, epo
 	if limit <= 0 || limit > 128 {
 		return nil, errors.New("web turn listing limit must be in [1,128]")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND run_epoch = ? ORDER BY created_at ASC LIMIT ?`, taskID, epoch, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, request_compacted, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND run_epoch = ? ORDER BY created_at ASC LIMIT ?`, taskID, epoch, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ type webTurnQueryer interface {
 }
 
 func webTurnByTaskRequest(ctx context.Context, q webTurnQueryer, taskID, requestID string) (domain.WebTurn, bool, error) {
-	row := q.QueryRowContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND request_id = ?`, taskID, requestID)
+	row := q.QueryRowContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, request_compacted, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE task_id = ? AND request_id = ?`, taskID, requestID)
 	turn, err := scanWebTurn(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WebTurn{}, false, nil
@@ -291,7 +291,7 @@ func webTurnByTaskRequest(ctx context.Context, q webTurnQueryer, taskID, request
 }
 
 func webTurnByID(ctx context.Context, q webTurnQueryer, turnID string) (domain.WebTurn, error) {
-	row := q.QueryRowContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE turn_id = ?`, turnID)
+	row := q.QueryRowContext(ctx, `SELECT turn_id, task_id, attempt_id, run_epoch, request_id, request_json, request_compacted, response_json, request_hash, response_hash, integrity_hash, created_at, responded_at FROM web_turns WHERE turn_id = ?`, turnID)
 	turn, err := scanWebTurn(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.WebTurn{}, ErrNotFound
@@ -302,12 +302,16 @@ func webTurnByID(ctx context.Context, q webTurnQueryer, turnID string) (domain.W
 func scanWebTurn(row webTurnScanner) (domain.WebTurn, error) {
 	var turn domain.WebTurn
 	var request, response []byte
+	var requestCompacted int
 	var created string
 	var responded sql.NullString
-	if err := row.Scan(&turn.ID, &turn.TaskID, &turn.AttemptID, &turn.RunEpoch, &turn.RequestID, &request, &response, &turn.RequestHash, &turn.ResponseHash, &turn.IntegrityHash, &created, &responded); err != nil {
+	if err := row.Scan(&turn.ID, &turn.TaskID, &turn.AttemptID, &turn.RunEpoch, &turn.RequestID, &request, &requestCompacted, &response, &turn.RequestHash, &turn.ResponseHash, &turn.IntegrityHash, &created, &responded); err != nil {
 		return domain.WebTurn{}, err
 	}
-	turn.Request = append(json.RawMessage(nil), request...)
+	turn.RequestCompacted = requestCompacted != 0
+	if !turn.RequestCompacted {
+		turn.Request = append(json.RawMessage(nil), request...)
+	}
 	if len(response) != 0 {
 		turn.Response = append(json.RawMessage(nil), response...)
 	}
