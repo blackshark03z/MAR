@@ -320,6 +320,74 @@ func TestPruneHistoricalRuntimeScratchKeepsAuditEvidenceAndUnknownRuntimeState(t
 	}
 }
 
+func TestPruneHistoricalDataRootsKeepsMetadataShells(t *testing.T) {
+	root := t.TempDir()
+	paths := map[string]string{
+		filepath.Join(root, "selfdev", "w", "scratch.bin"):                                  "scratch",
+		filepath.Join(root, "selfdev", "runtime", "cloudflared.exe"):                    "binary",
+		filepath.Join(root, "selfdev", "runtime", "ui.stdout.log"):                     "keep-log",
+		filepath.Join(root, "selfdev", "mar.db"):                                         "keep-db",
+		filepath.Join(root, "remote-full-goal-final", "data", "w", "scratch.bin"):      "scratch",
+		filepath.Join(root, "remote-full-goal-final", "data", "runtime", "tool.exe"):   "runtime",
+		filepath.Join(root, "remote-full-goal-final", "data", "mar.db"):                  "keep-db",
+		filepath.Join(root, "remote-full-goal-final", "control", "state.json"):           "keep-control",
+		filepath.Join(root, "remote-full-goal-final", "mar.exe"):                          "binary",
+		filepath.Join(root, "remote-full-goal-final", "remote-client.exe"):                "binary",
+		filepath.Join(root, "remote-full-goal-final", "remote-owner-driver.exe"):          "binary",
+		filepath.Join(root, "selfhost-v4", "w", "scratch.bin"):                          "scratch",
+		filepath.Join(root, "selfhost-v4", "project", "go.mod"):                          "keep-project",
+		filepath.Join(root, "selfhost-v4", "mar.db"):                                      "keep-db",
+		filepath.Join(root, "final-uat-f01731e-v2", "w", "scratch.bin"):                  "scratch",
+		filepath.Join(root, "final-uat-f01731e-v2", "typed-selfhost-control", "state"):   "keep-control",
+		filepath.Join(root, "final-uat-f01731e-v2", "mar.db"):                              "keep-db",
+	}
+	for path, body := range paths {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Prune(root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "selfdev", "w"),
+		filepath.Join(root, "selfdev", "runtime", "cloudflared.exe"),
+		filepath.Join(root, "remote-full-goal-final", "data", "w"),
+		filepath.Join(root, "remote-full-goal-final", "data", "runtime"),
+		filepath.Join(root, "remote-full-goal-final", "mar.exe"),
+		filepath.Join(root, "remote-full-goal-final", "remote-client.exe"),
+		filepath.Join(root, "remote-full-goal-final", "remote-owner-driver.exe"),
+		filepath.Join(root, "selfhost-v4", "w"),
+		filepath.Join(root, "final-uat-f01731e-v2", "w"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("historical scratch still exists %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(root, "selfdev", "runtime", "ui.stdout.log"),
+		filepath.Join(root, "selfdev", "mar.db"),
+		filepath.Join(root, "remote-full-goal-final", "data", "mar.db"),
+		filepath.Join(root, "remote-full-goal-final", "control", "state.json"),
+		filepath.Join(root, "selfhost-v4", "project", "go.mod"),
+		filepath.Join(root, "selfhost-v4", "mar.db"),
+		filepath.Join(root, "final-uat-f01731e-v2", "typed-selfhost-control", "state"),
+		filepath.Join(root, "final-uat-f01731e-v2", "mar.db"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("historical metadata shell was removed %s: %v", path, err)
+		}
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive freed-byte evidence")
+	}
+}
+
 func TestPrunePressureCachesClearsOnlyPositiveAllowlistAndPreservesRoots(t *testing.T) {
 	root := t.TempDir()
 	buildCache := filepath.Join(root, "runtime", "go-build-cache")

@@ -60,6 +60,9 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 	if err := pruneHistoricalRuntimeScratch(root, &result); err != nil {
 		return Result{}, err
 	}
+	if err := pruneHistoricalDataRootScratch(root, &result); err != nil {
+		return Result{}, err
+	}
 	return result, nil
 }
 
@@ -224,6 +227,47 @@ func pruneHistoricalRuntimeScratch(root string, result *Result) error {
 		}
 		if name == "audit-20260915" {
 			if err := pruneHistoricalAudit20260915(root, path, result); err != nil {
+				return err
+			}
+		}
+	}
+	sort.Strings(result.RemovedHistoricalScratch)
+	return nil
+}
+
+func pruneHistoricalDataRootScratch(root string, result *Result) error {
+	allow := map[string][]string{
+		"selfdev": {
+			"w",
+			filepath.Join("runtime", "cloudflared.exe"),
+		},
+		"remote-full-goal-final": {
+			filepath.Join("data", "w"),
+			filepath.Join("data", "runtime"),
+			"mar.exe",
+			"remote-client.exe",
+			"remote-owner-driver.exe",
+		},
+		"selfhost-v4": {
+			"w",
+		},
+		"final-uat-f01731e-v2": {
+			"w",
+		},
+	}
+	for rootName, relatives := range allow {
+		historicalRoot := filepath.Join(root, rootName)
+		ok, err := realOptionalDir(historicalRoot)
+		if err != nil || !ok {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		for _, relative := range relatives {
+			path := filepath.Join(historicalRoot, relative)
+			label := filepath.ToSlash(filepath.Join(rootName, relative))
+			if err := removeHistoricalScratchPath(root, path, label, result); err != nil {
 				return err
 			}
 		}
