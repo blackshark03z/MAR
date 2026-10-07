@@ -453,6 +453,59 @@ func TestPruneHistoricalQualificationRootsAndStagingUseExactAllowlist(t *testing
 	}
 }
 
+func TestPruneLegacyDataRootExecutablesKeepsUnknownAndCanonicalRuntime(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		filepath.Join(root, "mar.exe"):                                           "remove",
+		filepath.Join(root, "sandbox-probe.exe"):                                 "remove",
+		filepath.Join(root, "verify-v1.2-webwait.exe"):                           "remove",
+		filepath.Join(root, "keep-root.exe"):                                     "keep",
+		filepath.Join(root, "runtime", "archive", "mar-root-stale-AAAA.exe"):     "remove",
+		filepath.Join(root, "runtime", "archive", "mar-stable-pre-v12-BBBB.exe"): "remove",
+		filepath.Join(root, "runtime", "archive", "mar-v1-stable.CCCC.exe"):      "remove",
+		filepath.Join(root, "runtime", "archive", "manual-preserve.exe"):         "keep",
+		filepath.Join(root, "runtime", "mar-v1-stable.exe"):                      "keep-live",
+	}
+	for path, body := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	result, err := Prune(root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		filepath.Join(root, "mar.exe"),
+		filepath.Join(root, "sandbox-probe.exe"),
+		filepath.Join(root, "verify-v1.2-webwait.exe"),
+		filepath.Join(root, "runtime", "archive", "mar-root-stale-AAAA.exe"),
+		filepath.Join(root, "runtime", "archive", "mar-stable-pre-v12-BBBB.exe"),
+		filepath.Join(root, "runtime", "archive", "mar-v1-stable.CCCC.exe"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("legacy data-root executable still exists %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(root, "keep-root.exe"),
+		filepath.Join(root, "runtime", "archive", "manual-preserve.exe"),
+		filepath.Join(root, "runtime", "mar-v1-stable.exe"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("protected executable removed %s: %v", path, err)
+		}
+	}
+	if result.FreedBytes <= 0 {
+		t.Fatal("expected positive freed-byte evidence")
+	}
+}
+
 func TestPruneLegacyRuntimeExecutablesKeepsLiveBinariesAndUnknownExecutables(t *testing.T) {
 	root := t.TempDir()
 	runtimeRoot := filepath.Join(root, "runtime")

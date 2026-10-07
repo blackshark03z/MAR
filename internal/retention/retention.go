@@ -63,6 +63,9 @@ func Prune(dataRoot string, keepActivation int) (Result, error) {
 	if err := pruneHistoricalDataRootScratch(root, &result); err != nil {
 		return Result{}, err
 	}
+	if err := pruneLegacyDataRootExecutables(root, &result); err != nil {
+		return Result{}, err
+	}
 	if err := pruneLegacyRuntimeExecutables(root, &result); err != nil {
 		return Result{}, err
 	}
@@ -286,6 +289,52 @@ func pruneLegacyRecoveryScratch(root string, result *Result) error {
 			return err
 		}
 		if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(filepath.Join("recovery", name)), result); err != nil {
+			return err
+		}
+	}
+	sort.Strings(result.RemovedHistoricalScratch)
+	return nil
+}
+
+func pruneLegacyDataRootExecutables(root string, result *Result) error {
+	for _, name := range []string{
+		"mar.exe",
+		"sandbox-probe.exe",
+		"verify-v1.2-webwait.exe",
+	} {
+		path := filepath.Join(root, name)
+		if err := removeHistoricalScratchPath(root, path, filepath.ToSlash(name), result); err != nil {
+			return err
+		}
+	}
+
+	archiveRoot := filepath.Join(root, "runtime", "archive")
+	ok, err := realOptionalDir(archiveRoot)
+	if err != nil || !ok {
+		return err
+	}
+	entries, err := os.ReadDir(archiveRoot)
+	if err != nil {
+		return fmt.Errorf("read runtime archive: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.Type()&os.ModeSymlink != 0 || entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(entry.Name())
+		allowed := (strings.HasPrefix(name, "mar-root-") ||
+			strings.HasPrefix(name, "mar-stable-pre-v12-") ||
+			strings.HasPrefix(name, "mar-v1-stable.")) &&
+			strings.HasSuffix(name, ".exe")
+		if !allowed {
+			continue
+		}
+		path := filepath.Join(archiveRoot, entry.Name())
+		if !isDirectChild(archiveRoot, path) {
+			continue
+		}
+		label := filepath.ToSlash(filepath.Join("runtime", "archive", entry.Name()))
+		if err := removeHistoricalScratchPath(root, path, label, result); err != nil {
 			return err
 		}
 	}
