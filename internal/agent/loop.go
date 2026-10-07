@@ -315,7 +315,6 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		}
 	}
 	protocolTail := []model.Message(nil)
-	recentEvidence := []contextengine.DecisionProjectionEvent(nil)
 	controlVersion := int64(0)
 	episodePayloadBytes := 0
 
@@ -388,7 +387,7 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 			}
 			pack = freshPack
 			result.ContextRevision = pack.Revision
-			projection, projectionErr := contextengine.BuildDecisionProjection(contextengine.DecisionProjectionInput{Contract: req.Contract, State: state, Repository: pack, Recent: recentEvidence}, contextengine.DecisionProjectionConfig{MaxBytes: l.cfg.MaxContextBytes})
+			projection, projectionErr := contextengine.BuildDecisionProjection(contextengine.DecisionProjectionInput{Contract: req.Contract, State: state, Repository: pack}, contextengine.DecisionProjectionConfig{MaxBytes: l.cfg.MaxContextBytes})
 			if projectionErr != nil {
 				result.Status = StatusBlocked
 				result.Turns = turn - 1
@@ -676,15 +675,11 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (Result, error) {
 		}
 		if projectionMode {
 			protocolTail = protocolTail[:0]
-			recentEvidence = recentEvidence[:0]
 			for _, message := range messages[protocolStart:] {
 				if message.Role != model.RoleAssistant && message.Role != model.RoleTool {
 					continue
 				}
 				protocolTail = append(protocolTail, cloneMessage(message))
-				if message.Role == model.RoleTool {
-					recentEvidence = append(recentEvidence, contextengine.DecisionProjectionEvent{Role: "tool", ToolCallID: message.ToolCallID, Kind: "tool_result", Content: message.Content})
-				}
 			}
 			// Projection mode never carries an append-only transcript across model turns.
 			// Durable controls/checkpoints/evidence are reloaded through DecisionProjection;

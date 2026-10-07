@@ -1010,6 +1010,9 @@ func testLoopDecisionProjectionRetainsOnlyImmediateProtocolTail(t *testing.T) {
 	if second[2].Role != model.RoleAssistant || second[2].Content != "FIRST_ASSISTANT_MARKER" || second[3].Role != model.RoleTool || second[3].ToolCallID != "call-one" {
 		t.Fatalf("second turn lacks exact immediate assistant/tool pair: %+v", second)
 	}
+	if strings.Contains(second[1].Content, "recent_protocol_evidence") || strings.Contains(gateway.requests[2].Messages[1].Content, "recent_protocol_evidence") {
+		t.Fatal("DecisionProjection duplicated the immediate protocol tail into recent_protocol_evidence")
+	}
 	thirdRaw, err := json.Marshal(gateway.requests[2].Messages)
 	if err != nil {
 		t.Fatal(err)
